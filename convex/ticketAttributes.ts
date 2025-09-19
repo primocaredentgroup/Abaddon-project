@@ -1,6 +1,7 @@
 import { v } from "convex/values"
 import { mutation, query, internalMutation } from "./_generated/server"
 import { ConvexError } from "convex/values"
+import { internal } from "./_generated/api"
 
 // Query to get all attributes for a ticket
 export const getByTicket = query({
@@ -160,19 +161,19 @@ export const setTicketAttributes = mutation({
     const categoryAttributes = await ctx.db
       .query("categoryAttributes")
       .withIndex("by_category", (q) => q.eq("categoryId", ticket.categoryId))
-      .filter((q) => q.eq(q.field("isActive"), true))
+      .filter((q: any) => q.eq(q.field("isActive"), true))
       .collect()
 
     const attributeMap = new Map(categoryAttributes.map(attr => [attr.slug, attr]))
 
     // Validate attributes using the validation function
-    const validationErrors = await ctx.runMutation("categoryAttributes:validateTicketAttributes", {
+    const validationErrors = await ctx.runMutation(internal.categoryAttributes.validateTicketAttributes, {
       categoryId: ticket.categoryId,
       attributes,
     })
 
     if (validationErrors.length > 0) {
-      throw new ConvexError(`Validation errors: ${validationErrors.map(e => e.message).join(', ')}`)
+      throw new ConvexError(`Validation errors: ${validationErrors.map((e: any) => e.message).join(', ')}`)
     }
 
     // Get existing ticket attributes
@@ -257,8 +258,8 @@ export const updateAttribute = mutation({
     const attributeDef = await ctx.db
       .query("categoryAttributes")
       .withIndex("by_category", (q) => q.eq("categoryId", ticket.categoryId))
-      .filter((q) => q.eq(q.field("slug"), attributeSlug))
-      .filter((q) => q.eq(q.field("isActive"), true))
+      .filter((q: any) => q.eq(q.field("slug"), attributeSlug))
+      .filter((q: any) => q.eq(q.field("isActive"), true))
       .first()
 
     if (!attributeDef) {
@@ -266,7 +267,7 @@ export const updateAttribute = mutation({
     }
 
     // Validate single attribute
-    const validationErrors = await ctx.runMutation("categoryAttributes:validateTicketAttributes", {
+    const validationErrors = await ctx.runMutation(internal.categoryAttributes.validateTicketAttributes, {
       categoryId: ticket.categoryId,
       attributes: { [attributeSlug]: value },
     })
@@ -278,9 +279,8 @@ export const updateAttribute = mutation({
     // Find existing ticket attribute
     const existingAttribute = await ctx.db
       .query("ticketAttributes")
-      .withIndex("by_ticket_attribute", (q) => 
-        q.eq("ticketId", ticketId).eq("attributeId", attributeDef._id)
-      )
+      .withIndex("by_ticket", (q: any) => q.eq("ticketId", ticketId))
+      .filter((q: any) => q.eq(q.field("attributeId"), attributeDef._id))
       .first()
 
     if (value === undefined || value === null || value === '') {
@@ -331,10 +331,10 @@ export const deleteByTicket = internalMutation({
 })
 
 // Helper function to get ticket attribute count
-async function getTicketAttributeCount(ctx: any, ticketId: string): Promise<number> {
+async function getTicketAttributeCount(ctx: any, ticketId: any): Promise<number> {
   const attributes = await ctx.db
     .query("ticketAttributes")
-    .withIndex("by_ticket", (q) => q.eq("ticketId", ticketId))
+    .withIndex("by_ticket", (q: any) => q.eq("ticketId", ticketId))
     .collect()
 
   return attributes.length
@@ -371,5 +371,3 @@ function formatAttributeValue(attributeDef: any, value: any): string {
       return String(value)
   }
 }
-
-

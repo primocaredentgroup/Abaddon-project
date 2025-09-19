@@ -135,8 +135,8 @@ export const getActiveUsers = query({
         const presenceUser = await ctx.db.get(presence.userId)
         return {
           _id: presenceUser?._id,
-          name: presenceUser?.name,
-          email: presenceUser?.email,
+          name: presenceUser && 'name' in presenceUser ? presenceUser.name : undefined,
+          email: presenceUser && 'email' in presenceUser ? presenceUser.email : undefined,
           lastSeen: presence.lastSeen,
           isActive: presence.isActive,
         }
@@ -202,8 +202,8 @@ export const getActiveUsersInClinic = query({
         const presenceUser = await ctx.db.get(presence.userId)
         return {
           _id: presenceUser?._id,
-          name: presenceUser?.name,
-          email: presenceUser?.email,
+          name: presenceUser && 'name' in presenceUser ? presenceUser.name : undefined,
+          email: presenceUser && 'email' in presenceUser ? presenceUser.email : undefined,
           lastSeen: presence.lastSeen,
           isActive: presence.isActive,
           currentTicket: presence.ticketId,
@@ -291,5 +291,3 @@ export const getPresenceStats = query({
     }
   },
 })
-
-

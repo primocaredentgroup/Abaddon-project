@@ -1,6 +1,7 @@
 import { v } from "convex/values"
 import { mutation, query } from "./_generated/server"
 import { ConvexError } from "convex/values"
+import { internal } from "./_generated/api"
 
 // Query to get comments for a ticket
 export const getByTicket = query({
@@ -127,7 +128,7 @@ export const create = mutation({
     })
 
     // Log the comment creation
-    await ctx.runMutation("auditLogs:log", {
+    await ctx.runMutation(internal.auditLogs.log, {
       entityType: "ticket",
       entityId: args.ticketId,
       action: "comment_added",
@@ -199,7 +200,7 @@ export const update = mutation({
     })
 
     // Log the edit
-    await ctx.runMutation("auditLogs:log", {
+    await ctx.runMutation(internal.auditLogs.log, {
       entityType: "ticket",
       entityId: comment.ticketId,
       action: "comment_edited",
@@ -253,7 +254,7 @@ export const remove = mutation({
     }
 
     // Log the deletion before removing
-    await ctx.runMutation("auditLogs:log", {
+    await ctx.runMutation(internal.auditLogs.log, {
       entityType: "ticket",
       entityId: comment.ticketId,
       action: "comment_deleted",
@@ -290,7 +291,7 @@ export const getStats = query({
       throw new ConvexError("User not found")
     }
 
-    let query = ctx.db.query("comments")
+    let comments: any[]
 
     if (ticketId) {
       // Verify ticket access first
@@ -310,10 +311,13 @@ export const getStats = query({
         throw new ConvexError("Access denied")
       }
 
-      query = query.withIndex("by_ticket", (q) => q.eq("ticketId", ticketId))
+      comments = await ctx.db
+        .query("comments")
+        .withIndex("by_ticket", (q) => q.eq("ticketId", ticketId))
+        .collect()
+    } else {
+      comments = await ctx.db.query("comments").collect()
     }
-
-    const comments = await query.collect()
 
     // Filter comments based on ticket access (if not filtering by specific ticket)
     let accessibleComments = comments
@@ -321,11 +325,11 @@ export const getStats = query({
       accessibleComments = []
       for (const comment of comments) {
         const ticket = await ctx.db.get(comment.ticketId)
-        if (ticket && ticket.clinicId === user.clinicId) {
+        if (ticket && 'clinicId' in ticket && ticket.clinicId === user.clinicId) {
           const hasAccess = 
-            ticket.visibility === 'public' ||
-            ticket.creatorId === user._id ||
-            ticket.assigneeId === user._id
+            'visibility' in ticket && ticket.visibility === 'public' ||
+            'creatorId' in ticket && ticket.creatorId === user._id ||
+            'assigneeId' in ticket && ticket.assigneeId === user._id
           
           if (hasAccess) {
             accessibleComments.push(comment)
@@ -345,5 +349,3 @@ export const getStats = query({
     }
   },
 })
-
-

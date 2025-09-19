@@ -2,6 +2,7 @@ import { v } from "convex/values"
 import { mutation, query } from "./_generated/server"
 import { ConvexError } from "convex/values"
 import { getCurrentUser, isValidClinicCode } from "./lib/utils"
+import { internal } from "./_generated/api"
 
 // Query per ottenere tutte le cliniche attive
 export const getAllClinics = query({
@@ -253,7 +254,7 @@ export const updateVisibilitySettings = mutation({
     await ctx.db.patch(targetClinicId, { settings: updatedSettings })
     
     // Log the change
-    await ctx.runMutation("auditLogs:log", {
+    await ctx.runMutation(internal.auditLogs.log, {
       entityType: "clinic",
       entityId: targetClinicId,
       action: "settings_updated",
@@ -329,7 +330,7 @@ export const togglePublicTickets = mutation({
       
       // Log the bulk change
       if (publicTickets.length > 0) {
-        await ctx.runMutation("auditLogs:log", {
+        await ctx.runMutation(internal.auditLogs.log, {
           entityType: "clinic",
           entityId: targetClinicId,
           action: "public_tickets_disabled",
@@ -341,7 +342,7 @@ export const togglePublicTickets = mutation({
     }
     
     // Log the setting change
-    await ctx.runMutation("auditLogs:log", {
+    await ctx.runMutation(internal.auditLogs.log, {
       entityType: "clinic",
       entityId: targetClinicId,
       action: "public_tickets_toggled",

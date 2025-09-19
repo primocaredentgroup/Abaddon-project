@@ -59,15 +59,15 @@ export const getByEntity = query({
     // For tickets, verify access to the entity
     if (args.entityType === "ticket") {
       const ticket = await ctx.db.get(args.entityId as any)
-      if (!ticket || ticket.clinicId !== user.clinicId) {
+      if (!ticket || ('clinicId' in ticket && ticket.clinicId !== user.clinicId)) {
         throw new ConvexError("Access denied")
       }
 
-      // Check visibility rules
+      // Check visibility rules for tickets
       const hasAccess = 
-        ticket.visibility === 'public' ||
-        ticket.creatorId === user._id ||
-        ticket.assigneeId === user._id
+        'visibility' in ticket && ticket.visibility === 'public' ||
+        'creatorId' in ticket && ticket.creatorId === user._id ||
+        'assigneeId' in ticket && ticket.assigneeId === user._id
 
       if (!hasAccess) {
         throw new ConvexError("Access denied")
@@ -147,11 +147,11 @@ export const getRecentByClinic = query({
 
       if (log.entityType === "ticket") {
         const ticket = await ctx.db.get(log.entityId as any)
-        if (ticket && ticket.clinicId === user.clinicId) {
+        if (ticket && 'clinicId' in ticket && ticket.clinicId === user.clinicId) {
           hasAccess = 
-            ticket.visibility === 'public' ||
-            ticket.creatorId === user._id ||
-            ticket.assigneeId === user._id
+            'visibility' in ticket && ticket.visibility === 'public' ||
+            'creatorId' in ticket && ticket.creatorId === user._id ||
+            'assigneeId' in ticket && ticket.assigneeId === user._id
         }
       } else if (log.entityType === "category" || log.entityType === "user") {
         // For other entity types, check if user has clinic access
@@ -190,7 +190,7 @@ export const getRecentByClinic = query({
             name: logUser.name,
             email: logUser.email,
           } : null,
-          entity: entity ? {
+          entity: entity && 'title' in entity ? {
             _id: entity._id,
             title: entity.title,
           } : null,
@@ -309,5 +309,3 @@ export const cleanup = mutation({
     return { deletedCount }
   },
 })
-
-
