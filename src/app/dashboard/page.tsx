@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { useRole } from '@/providers/RoleProvider'
+import { useAuth } from '@/hooks/useAuth'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -109,9 +110,19 @@ const priorityLabels = {
 
 export default function DashboardPage() {
   const { role, user } = useRole()
+  const { user: authUser, isLoading } = useAuth()
   const router = useRouter()
   const [selectedFilter, setSelectedFilter] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
+
+  // Controllo autenticazione: reindirizza al login se non autenticato
+  useEffect(() => {
+    if (!isLoading && !authUser) {
+      console.log('🚫 Accesso negato alla dashboard: utente non autenticato')
+      router.push('/')
+      return
+    }
+  }, [authUser, isLoading, router])
 
   // Redirect agenti alla dashboard specializzata
   useEffect(() => {
@@ -120,8 +131,27 @@ export default function DashboardPage() {
     }
   }, [role, router])
 
+  // Mostra loading se sta controllando autenticazione
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 animate-spin rounded-full border-2 border-primary border-t-transparent mx-auto mb-4" />
+          <p className="text-muted-foreground">Verificando autenticazione...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Se non autenticato, non mostrare nulla (il redirect è in corso)
+  if (!authUser) {
+    return null
+  }
+
+  // No loading state needed
+
   const myTickets = mockTickets.filter(ticket =>
-    ticket.assignee === 'Te' || ticket.assignee === user.name
+    ticket.assignee === 'Te' || ticket.assignee === user?.name
   )
   
   const clinicTickets = mockTickets.filter(ticket => 
@@ -158,7 +188,7 @@ export default function DashboardPage() {
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
             <p className="text-gray-600">
-              Benvenuto, {user.name} • {user.clinic}
+              Benvenuto, {user?.name || 'Utente'} • {user?.clinic || 'Clinica'}
             </p>
           </div>
           <div className="flex gap-3">

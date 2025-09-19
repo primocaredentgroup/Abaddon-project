@@ -1,39 +1,22 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
-import { useConvexTest } from '@/hooks/useConvexTest'
-import { Button } from '@/components/ui/Button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
+import { Button } from '@/components/ui/Button'
+import { LogIn } from 'lucide-react'
 
 export default function Home() {
-  const { isAuthenticated, isLoading } = useAuth()
+  const { user, login, isLoading } = useAuth()
   const router = useRouter()
-  const { initializeDatabase } = useConvexTest()
-  const [isInitializing, setIsInitializing] = useState(false)
-  const [initResult, setInitResult] = useState<string | null>(null)
 
   // Reindirizza alla dashboard se autenticato
   useEffect(() => {
-    if (isAuthenticated && !isLoading) {
+    if (user) {
       router.push('/dashboard')
     }
-  }, [isAuthenticated, isLoading, router])
-
-  const handleInitialize = async () => {
-    setIsInitializing(true)
-    setInitResult(null)
-    
-    try {
-      const result = await initializeDatabase()
-      setInitResult(`✅ Database inizializzato: ${JSON.stringify(result.data)}`)
-    } catch (error) {
-      setInitResult(`❌ Errore: ${error instanceof Error ? error.message : 'Unknown error'}`)
-    } finally {
-      setIsInitializing(false)
-    }
-  }
+  }, [user, router])
 
   if (isLoading) {
     return (
@@ -47,53 +30,32 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <Card className="max-w-md w-full">
-        <CardHeader className="text-center">
-          <CardTitle className="text-3xl">Healthcare Ticket System</CardTitle>
-          <CardDescription>
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex items-center justify-center">
+      <Card className="max-w-md w-full shadow-lg">
+        <CardHeader className="text-center pb-8">
+          <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          </div>
+          <CardTitle className="text-3xl font-bold text-gray-900">HealthDesk</CardTitle>
+          <CardDescription className="text-lg text-gray-600">
             Sistema di gestione ticket per cliniche sanitarie
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-3">
-            <div className="bg-green-50 border border-green-200 rounded-md p-3">
-              <p className="text-green-800 text-sm">✅ Next.js configurato</p>
-            </div>
-            <div className="bg-green-50 border border-green-200 rounded-md p-3">
-              <p className="text-green-800 text-sm">✅ Tailwind CSS configurato</p>
-            </div>
-            <div className="bg-green-50 border border-green-200 rounded-md p-3">
-              <p className="text-green-800 text-sm">✅ Convex configurato</p>
-            </div>
-            <div className="bg-green-50 border border-green-200 rounded-md p-3">
-              <p className="text-green-800 text-sm">✅ Schema database implementato</p>
-            </div>
-            <div className="bg-green-50 border border-green-200 rounded-md p-3">
-              <p className="text-green-800 text-sm">✅ Auth0 configurato</p>
-            </div>
-          </div>
+        <CardContent className="space-y-6">
+                <div className="text-center">
+                  <Button 
+                    onClick={login}
+                    className="bg-blue-600 hover:bg-blue-700 px-8 py-3 text-lg"
+                  >
+                    <LogIn className="w-5 h-5 mr-3" />
+                    Accedi con Auth0
+                  </Button>
+                </div>
           
-          <div className="pt-4 border-t space-y-4">
-            <Button
-              onClick={handleInitialize}
-              disabled={isInitializing}
-              className="w-full"
-            >
-              {isInitializing ? 'Inizializzando...' : 'Inizializza Database'}
-            </Button>
-            
-            <a href="/api/auth/login" className="w-full">
-              <Button variant="outline" className="w-full">
-                Accedi al Sistema
-              </Button>
-            </a>
-            
-            {initResult && (
-              <div className="p-3 bg-gray-50 rounded-md">
-                <p className="text-sm text-gray-700">{initResult}</p>
-              </div>
-            )}
+          <div className="text-center text-sm text-gray-500">
+            <p>Accedi con il tuo account Auth0 per iniziare</p>
           </div>
         </CardContent>
       </Card>

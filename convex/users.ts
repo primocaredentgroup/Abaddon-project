@@ -384,3 +384,85 @@ export const getAllUsers = query({
     return withRole
   }
 })
+
+// Query per ottenere un utente per email (richiesta dalla guida Auth0)
+export const getUserByEmail = query({
+  args: { email: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .unique();
+  },
+});
+
+// Mutation per aggiornare ultimo accesso (richiesta dalla guida Auth0)
+export const updateLastAccess = mutation({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.userId, {
+      lastLoginAt: Date.now(),
+    });
+  },
+});
+
+// Funzioni per la sincronizzazione Auth0 - VERSIONE SEMPLIFICATA PER LA GUIDA
+export const createUserSimple = mutation({
+  args: { 
+    email: v.string(),
+    nome: v.string(),
+    cognome: v.string(),
+    ruolo: v.string()
+  },
+  handler: async (ctx, args) => {
+    // Trova un ruolo di default
+    const roles = await ctx.db.query("roles").collect();
+    const defaultRole = roles.find(r => r.name === args.ruolo) || roles[0];
+    
+    if (!defaultRole) {
+      throw new Error("Nessun ruolo trovato nel sistema");
+    }
+    
+    // Trova o crea una clinica di default
+    let defaultClinicId;
+    const defaultClinic = await ctx.db
+      .query("clinics")
+      .filter((q) => q.eq(q.field("code"), "DEMO001"))
+      .first();
+    
+    if (!defaultClinic) {
+      // Crea clinica di default
+      defaultClinicId = await ctx.db.insert("clinics", {
+        name: "Clinica Esempio",
+        code: "DEMO001", 
+        address: "Via Roma 123, Milano",
+        phone: "+39 02 1234567",
+        email: "info@clinicaesempio.it",
+        settings: {
+          allowPublicTickets: true,
+          requireApprovalForCategories: false,
+          defaultSlaHours: 24,
+        },
+        isActive: true,
+      });
+    } else {
+      defaultClinicId = defaultClinic._id;
+    }
+
+    // Crea l'utente con lo schema completo
+    const userId = await ctx.db.insert("users", {
+      email: args.email,
+      name: `${args.nome} ${args.cognome}`,
+      auth0Id: `auth0|${args.email.replace('@', '_').replace('.', '_')}`,
+      roleId: defaultRole._id,
+      clinicId: defaultClinicId,
+      isActive: true,
+      preferences: {
+        notifications: { email: true, push: true },
+        dashboard: { defaultView: "my-tickets", itemsPerPage: 25 },
+      },
+    });
+    
+    return userId;
+  },
+});

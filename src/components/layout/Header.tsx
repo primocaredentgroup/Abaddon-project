@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Bell, Search, User, Menu, X, ChevronDown, Home as HomeIcon } from 'lucide-react';
+import { Bell, Search, User, Menu, X, Home as HomeIcon } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { useRole } from '@/providers/RoleProvider';
@@ -14,15 +14,27 @@ interface HeaderProps {
     name: string;
     email: string;
     clinic: string;
+    roleName?: string;
   };
 }
 
 export function Header({ onMenuClick, user }: HeaderProps) {
-  const { role, setRole } = useRole();
+  const { role, user: roleUser } = useRole();
+  
+  // Usa i dati da useRole invece della prop user
+  const displayUser = roleUser || user;
+  
+  // Debug: vediamo cosa contiene displayUser
+  // console.log('🔍 Header displayUser:', displayUser);
+  // console.log('🔍 Header roleUser:', roleUser);
+  // console.log('🔍 Header user prop:', user);
+  
   const [showNotifications, setShowNotifications] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const [showRoleMenu, setShowRoleMenu] = useState(false);
   const pathname = usePathname();
+
+  // Debug: vediamo cosa contiene user
+  // console.log('🔍 Header user data:', user);
 
   const notifications = [
     {
@@ -59,10 +71,7 @@ export function Header({ onMenuClick, user }: HeaderProps) {
     { key: 'admin', label: 'Admin', description: 'Amministrazione completa' }
   ] as const;
 
-  const handleRoleChange = (newRole: typeof role) => {
-    setRole(newRole);
-    setShowRoleMenu(false);
-  };
+
 
   return (
     <header className="bg-white border-b border-gray-200 px-4 py-3 relative">
@@ -98,61 +107,20 @@ export function Header({ onMenuClick, user }: HeaderProps) {
           </div>
         </div>
 
-        {/* Right side - Role selector, notifications and user menu */}
+        {/* Right side - User info, notifications and user menu */}
         <div className="flex items-center space-x-3">
-          {/* Role Selector */}
-          <div className="relative">
-            <Button
-              variant="outline"
-              size="sm"
-              className="flex items-center space-x-2"
-              onClick={() => setShowRoleMenu(!showRoleMenu)}
-            >
-              <span className="text-sm font-medium">
-                {roles.find(r => r.key === role)?.label || 'Utente'}
-              </span>
-              <ChevronDown className="h-4 w-4" />
-            </Button>
-
-            {/* Role Dropdown */}
-            {showRoleMenu && (
-              <div className="absolute right-0 top-full mt-2 w-64 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
-                <div className="p-3 border-b border-gray-200">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-semibold text-gray-900">Seleziona Ruolo</h3>
-                    <Button variant="ghost" size="sm" onClick={() => setShowRoleMenu(false)}>
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-                <div className="py-2">
-                  {roles.map((roleOption) => (
-                    <button
-                      key={roleOption.key}
-                      onClick={() => handleRoleChange(roleOption.key)}
-                      className={`w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors ${
-                        role === roleOption.key ? 'bg-blue-50 border-r-2 border-blue-600' : ''
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-medium text-gray-900">{roleOption.label}</p>
-                          <p className="text-sm text-gray-600">{roleOption.description}</p>
-                        </div>
-                        {role === roleOption.key && (
-                          <div className="w-2 h-2 bg-blue-600 rounded-full" />
-                        )}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-                <div className="p-3 border-t border-gray-200">
-                  <p className="text-xs text-gray-500">
-                    Usa questo menu per testare i diversi ruoli durante lo sviluppo
-                  </p>
-                </div>
-              </div>
-            )}
+          {/* User Email and Role Display */}
+          <div className="text-right">
+            <p className="text-sm font-medium text-gray-900">
+              {displayUser?.email || 'esempio@email.com'}
+            </p>
+            <p className="text-xs text-blue-600 font-medium">
+              {displayUser?.roleName || roles.find(r => r.key === role)?.label || 'Utente'}
+            </p>
+            {/* Debug temporaneo */}
+            {/* <p className="text-xs text-red-500 font-bold">
+              DEBUG: {displayUser ? 'DATI REALI' : 'DATI MOCK'}
+            </p> */}
           </div>
 
           {/* Notifications */}
@@ -217,50 +185,50 @@ export function Header({ onMenuClick, user }: HeaderProps) {
             )}
           </div>
 
-          {/* User info */}
-          {user && (
-            <div className="relative">
-              <div className="flex items-center space-x-3">
-                <div className="hidden md:block text-right">
-                  <p className="text-sm font-medium text-gray-900">{user.name}</p>
-                  <p className="text-xs text-gray-500">{user.clinic}</p>
-                </div>
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  className="rounded-full p-2"
-                  onClick={() => setShowUserMenu(!showUserMenu)}
-                >
-                  <User className="h-5 w-5" />
-                </Button>
-              </div>
+          {/* User menu */}
+          <div className="relative">
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="rounded-full p-2"
+              onClick={() => setShowUserMenu(!showUserMenu)}
+            >
+              <User className="h-5 w-5" />
+            </Button>
 
-              {/* User Menu Dropdown */}
-              {showUserMenu && (
-                <div className="absolute right-0 top-full mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
-                  <div className="p-3 border-b border-gray-200">
-                    <p className="text-sm font-medium text-gray-900">{user.name}</p>
-                    <p className="text-xs text-gray-500">{user.email}</p>
-                  </div>
-                  <div className="py-1">
-                    <a href="/profile" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
-                      Il mio profilo
-                    </a>
-                    <a href="/settings" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
-                      Impostazioni
-                    </a>
-                    <a href="/help" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
-                      Aiuto
-                    </a>
-                    <div className="border-t border-gray-200 my-1"></div>
-                    <a href="/logout" className="block px-4 py-2 text-sm text-red-600 hover:bg-gray-100">
+            {/* User Menu Dropdown */}
+            {showUserMenu && (
+              <div className="absolute right-0 top-full mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
+                <div className="p-3 border-b border-gray-200">
+                  <p className="text-sm font-medium text-gray-900">{displayUser?.name || 'Utente'}</p>
+                  <p className="text-xs text-gray-500">{displayUser?.email || 'esempio@email.com'}</p>
+                  <p className="text-xs text-blue-600 font-medium mt-1">{displayUser?.roleName || 'Utente'}</p>
+                  <p className="text-xs text-gray-400">{displayUser?.clinic || 'Nessuna clinica'}</p>
+                </div>
+                <div className="py-1">
+                  <a href="/profile" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                    Il mio profilo
+                  </a>
+                  <a href="/settings" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                    Impostazioni
+                  </a>
+                  <a href="/help" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                    Aiuto
+                  </a>
+                  <div className="border-t border-gray-200 my-1"></div>
+                  {displayUser ? (
+                    <a href="/api/auth/logout-local" className="block px-4 py-2 text-sm text-red-600 hover:bg-gray-100">
                       Disconnetti
                     </a>
-                  </div>
+                  ) : (
+                    <a href="/api/auth/login" className="block px-4 py-2 text-sm text-blue-600 hover:bg-gray-100">
+                      Login
+                    </a>
+                  )}
                 </div>
-              )}
-            </div>
-          )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -276,13 +244,12 @@ export function Header({ onMenuClick, user }: HeaderProps) {
       </div>
 
       {/* Click outside to close dropdowns */}
-      {(showNotifications || showUserMenu || showRoleMenu) && (
+      {(showNotifications || showUserMenu) && (
         <div
           className="fixed inset-0 z-40"
           onClick={() => {
             setShowNotifications(false);
             setShowUserMenu(false);
-            setShowRoleMenu(false);
           }}
         />
       )}
