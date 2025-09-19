@@ -46,19 +46,24 @@ export interface Ticket {
   title: string
   description: string
   status: TicketStatus
-  priority: Priority
   categoryId: string
   clinicId: string
   creatorId: string
   assigneeId?: string
   visibility: 'public' | 'private'
-  customFields: Record<string, unknown>
+  lastActivityAt: number
+  attributeCount: number
+  
+  // Legacy fields for backward compatibility
+  priority?: Priority
+  customFields?: Record<string, unknown>
   slaDeadline?: number
-  tags: string[]
+  tags?: string[]
   _creationTime: number
 }
 
-export type TicketStatus = 'new' | 'open' | 'in_progress' | 'resolved' | 'closed'
+// Simplified status: only 3 states as per requirements
+export type TicketStatus = 'open' | 'in_progress' | 'closed'
 export type Priority = 'low' | 'medium' | 'high' | 'urgent'
 
 export interface Role {
@@ -90,6 +95,59 @@ export interface Category {
   _creationTime: number
 }
 
+// Polymorphic Attribute System Types
+export type AttributeType = 
+  | 'text'
+  | 'number' 
+  | 'date'
+  | 'select'
+  | 'multiselect'
+  | 'boolean'
+
+export interface CategoryAttribute {
+  _id: string
+  categoryId: string
+  name: string
+  slug: string
+  type: AttributeType
+  required: boolean
+  showInCreation: boolean
+  showInList: boolean
+  order: number
+  config: AttributeConfig
+  conditions?: AttributeCondition
+  clinicId: string
+  isActive: boolean
+  _creationTime: number
+}
+
+export interface AttributeConfig {
+  placeholder?: string
+  options?: string[] // for select/multiselect
+  min?: number // for number/text length
+  max?: number
+  defaultValue?: any
+}
+
+export interface AttributeCondition {
+  field: string
+  operator: 'equals' | 'not_equals' | 'contains' | 'greater_than' | 'less_than'
+  value: any
+}
+
+export interface TicketAttribute {
+  _id: string
+  ticketId: string
+  attributeId: string
+  value: any // Polymorphic value based on attribute type
+  _creationTime: number
+}
+
+export interface ValidationError {
+  field: string
+  message: string
+}
+
 // API Response types
 export interface ApiResponse<T> {
   data?: T
@@ -102,8 +160,11 @@ export interface CreateTicketData {
   title: string
   description: string
   categoryId: string
-  priority: Priority
-  visibility: 'public' | 'private'
+  attributes: Record<string, any> // Dynamic attributes
+  visibility?: 'public' | 'private'
+  
+  // Legacy fields for backward compatibility
+  priority?: Priority
   customFields?: Record<string, unknown>
 }
 
@@ -111,9 +172,12 @@ export interface UpdateTicketData {
   title?: string
   description?: string
   status?: TicketStatus
-  priority?: Priority
   categoryId?: string
   assigneeId?: string
+  attributes?: Record<string, any>
+  
+  // Legacy fields for backward compatibility
+  priority?: Priority
   customFields?: Record<string, unknown>
 }
 

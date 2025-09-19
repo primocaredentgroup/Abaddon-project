@@ -132,41 +132,97 @@ export default defineSchema({
     .index("by_tag", ["tagId"])
     .index("by_ticket_tag", ["ticketId", "tagId"]),
 
-  // Tickets table
+  // Tickets table - Enhanced with simplified status and polymorphic support
   tickets: defineTable({
     title: v.string(),
     description: v.string(),
+    // Simplified status: only 3 states as per requirements
     status: v.union(
-      v.literal("new"),
       v.literal("open"),
-      v.literal("in_progress"),
-      v.literal("resolved"),
+      v.literal("in_progress"), 
       v.literal("closed")
-    ),
-    priority: v.union(
-      v.literal("low"),
-      v.literal("medium"),
-      v.literal("high"),
-      v.literal("urgent")
     ),
     categoryId: v.id("categories"),
     clinicId: v.id("clinics"),
     creatorId: v.id("users"),
     assigneeId: v.optional(v.id("users")),
     visibility: v.union(v.literal("public"), v.literal("private")),
-    customFields: v.any(),
+    
+    // Performance metadata
+    lastActivityAt: v.number(),
+    attributeCount: v.number(), // for query optimizations
+    
+    // Legacy fields for backward compatibility
+    priority: v.optional(v.union(
+      v.literal("low"),
+      v.literal("medium"),
+      v.literal("high"),
+      v.literal("urgent")
+    )),
+    customFields: v.optional(v.any()),
     slaDeadline: v.optional(v.number()),
-    tags: v.array(v.string()),
+    tags: v.optional(v.array(v.string())),
   })
     .index("by_clinic", ["clinicId"])
     .index("by_creator", ["creatorId"])
     .index("by_assignee", ["assigneeId"])
     .index("by_status", ["status"])
-    .index("by_priority", ["priority"])
     .index("by_category", ["categoryId"])
-    .index("by_sla", ["slaDeadline"])
     .index("by_clinic_status", ["clinicId", "status"])
-    .index("by_assignee_status", ["assigneeId", "status"]),
+    .index("by_assignee_status", ["assigneeId", "status"])
+    .index("by_activity", ["lastActivityAt"]),
+
+  // Category Attributes - Dynamic attributes configuration for categories
+  categoryAttributes: defineTable({
+    categoryId: v.id("categories"),
+    name: v.string(),
+    slug: v.string(), // for unique identification
+    type: v.union(
+      v.literal("text"),
+      v.literal("number"),
+      v.literal("date"),
+      v.literal("select"),
+      v.literal("multiselect"),
+      v.literal("boolean")
+    ),
+    required: v.boolean(),
+    showInCreation: v.boolean(),
+    showInList: v.boolean(),
+    order: v.number(),
+    
+    // Type-specific configuration
+    config: v.object({
+      placeholder: v.optional(v.string()),
+      options: v.optional(v.array(v.string())), // for select/multiselect
+      min: v.optional(v.number()), // for number/text length
+      max: v.optional(v.number()),
+      defaultValue: v.optional(v.any()),
+    }),
+    
+    // Conditions for dynamic visibility
+    conditions: v.optional(v.object({
+      field: v.string(),
+      operator: v.string(),
+      value: v.any(),
+    })),
+    
+    clinicId: v.id("clinics"),
+    isActive: v.boolean(),
+  })
+    .index("by_category", ["categoryId"])
+    .index("by_clinic", ["clinicId"])
+    .index("by_creation", ["categoryId", "showInCreation"])
+    .index("by_order", ["categoryId", "order"]),
+
+  // Ticket Attributes - Values for dynamic attributes
+  ticketAttributes: defineTable({
+    ticketId: v.id("tickets"),
+    attributeId: v.id("categoryAttributes"),
+    value: v.any(), // Polymorphic value based on attribute type
+  })
+    .index("by_ticket", ["ticketId"])
+    .index("by_attribute", ["attributeId"])
+    .index("by_ticket_attribute", ["ticketId", "attributeId"]),
 
   // Comments table
   comments: defineTable({
@@ -243,4 +299,18 @@ export default defineSchema({
     .index("by_clinic", ["clinicId"])
     .index("by_creator", ["createdBy"])
     .index("by_active", ["isActive"]),
+
+  // Presence table - Real-time user presence tracking
+  presence: defineTable({
+    userId: v.id("users"),
+    ticketId: v.optional(v.id("tickets")),
+    lastSeen: v.number(),
+    isActive: v.boolean(),
+    sessionId: v.string(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_ticket", ["ticketId"])
+    .index("by_user_ticket", ["userId", "ticketId"])
+    .index("by_active", ["isActive"])
+    .index("by_last_seen", ["lastSeen"]),
 })

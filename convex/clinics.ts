@@ -187,3 +187,172 @@ export const getClinicStats = query({
     }
   }
 })
+
+// Query per ottenere le impostazioni di visibilità di una clinica
+export const getVisibilitySettings = query({
+  args: { clinicId: v.optional(v.id("clinics")) },
+  handler: async (ctx, { clinicId }) => {
+    const currentUser = await getCurrentUser(ctx)
+    const targetClinicId = clinicId || currentUser.clinicId
+    
+    const clinic = await ctx.db.get(targetClinicId)
+    if (!clinic) {
+      throw new ConvexError("Clinic not found")
+    }
+    
+    // Verifica che l'utente abbia accesso a questa clinica
+    if (targetClinicId !== currentUser.clinicId) {
+      // TODO: Add role-based permission check for cross-clinic access
+      throw new ConvexError("Access denied")
+    }
+    
+    return {
+      allowPublicTickets: clinic.settings.allowPublicTickets,
+      requireApprovalForCategories: clinic.settings.requireApprovalForCategories,
+      defaultSlaHours: clinic.settings.defaultSlaHours,
+    }
+  }
+})
+
+// Mutation per aggiornare le impostazioni di visibilità
+export const updateVisibilitySettings = mutation({
+  args: {
+    clinicId: v.optional(v.id("clinics")),
+    allowPublicTickets: v.optional(v.boolean()),
+    requireApprovalForCategories: v.optional(v.boolean()),
+    defaultSlaHours: v.optional(v.number()),
+  },
+  handler: async (ctx, { clinicId, ...settings }) => {
+    const currentUser = await getCurrentUser(ctx)
+    const targetClinicId = clinicId || currentUser.clinicId
+    
+    const clinic = await ctx.db.get(targetClinicId)
+    if (!clinic) {
+      throw new ConvexError("Clinic not found")
+    }
+    
+    // Verifica che l'utente abbia i permessi per modificare le impostazioni
+    if (targetClinicId !== currentUser.clinicId) {
+      // TODO: Add role-based permission check (only admins can modify settings)
+      throw new ConvexError("Access denied")
+    }
+    
+    // Validazioni
+    if (settings.defaultSlaHours !== undefined && settings.defaultSlaHours < 1) {
+      throw new ConvexError("Default SLA hours must be at least 1")
+    }
+    
+    // Aggiorna le impostazioni
+    const updatedSettings = {
+      ...clinic.settings,
+      ...Object.fromEntries(
+        Object.entries(settings).filter(([_, value]) => value !== undefined)
+      ),
+    }
+    
+    await ctx.db.patch(targetClinicId, { settings: updatedSettings })
+    
+    // Log the change
+    await ctx.runMutation("auditLogs:log", {
+      entityType: "clinic",
+      entityId: targetClinicId,
+      action: "settings_updated",
+      changes: {
+        settings: {
+          from: clinic.settings,
+          to: updatedSettings,
+        },
+      },
+    })
+    
+    return updatedSettings
+  }
+})
+
+// Query per verificare se i ticket pubblici sono abilitati
+export const arePublicTicketsAllowed = query({
+  args: { clinicId: v.optional(v.id("clinics")) },
+  handler: async (ctx, { clinicId }) => {
+    const currentUser = await getCurrentUser(ctx)
+    const targetClinicId = clinicId || currentUser.clinicId
+    
+    const clinic = await ctx.db.get(targetClinicId)
+    if (!clinic) {
+      return false
+    }
+    
+    return clinic.settings.allowPublicTickets
+  }
+})
+
+// Mutation per abilitare/disabilitare i ticket pubblici
+export const togglePublicTickets = mutation({
+  args: {
+    clinicId: v.optional(v.id("clinics")),
+    enabled: v.boolean(),
+  },
+  handler: async (ctx, { clinicId, enabled }) => {
+    const currentUser = await getCurrentUser(ctx)
+    const targetClinicId = clinicId || currentUser.clinicId
+    
+    const clinic = await ctx.db.get(targetClinicId)
+    if (!clinic) {
+      throw new ConvexError("Clinic not found")
+    }
+    
+    // Verifica permessi
+    if (targetClinicId !== currentUser.clinicId) {
+      // TODO: Add role-based permission check
+      throw new ConvexError("Access denied")
+    }
+    
+    const oldSettings = clinic.settings
+    const newSettings = {
+      ...oldSettings,
+      allowPublicTickets: enabled,
+    }
+    
+    await ctx.db.patch(targetClinicId, { settings: newSettings })
+    
+    // Se stiamo disabilitando i ticket pubblici, 
+    // potremmo voler convertire tutti i ticket pubblici in privati
+    if (!enabled && oldSettings.allowPublicTickets) {
+      const publicTickets = await ctx.db
+        .query("tickets")
+        .withIndex("by_clinic", (q) => q.eq("clinicId", targetClinicId))
+        .filter((q) => q.eq(q.field("visibility"), "public"))
+        .collect()
+      
+      for (const ticket of publicTickets) {
+        await ctx.db.patch(ticket._id, { visibility: "private" })
+      }
+      
+      // Log the bulk change
+      if (publicTickets.length > 0) {
+        await ctx.runMutation("auditLogs:log", {
+          entityType: "clinic",
+          entityId: targetClinicId,
+          action: "public_tickets_disabled",
+          changes: {
+            convertedTickets: publicTickets.length,
+          },
+        })
+      }
+    }
+    
+    // Log the setting change
+    await ctx.runMutation("auditLogs:log", {
+      entityType: "clinic",
+      entityId: targetClinicId,
+      action: "public_tickets_toggled",
+      changes: {
+        allowPublicTickets: {
+          from: oldSettings.allowPublicTickets,
+          to: enabled,
+        },
+      },
+    })
+    
+    return newSettings
+  }
+})
