@@ -8,6 +8,8 @@ export function middleware(request: NextRequest) {
     '/dashboard',
     '/tickets', 
     '/users',
+    '/categories',
+    '/automation',
     '/admin',
     '/roles',
     '/kb'

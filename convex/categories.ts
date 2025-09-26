@@ -27,6 +27,9 @@ export const getCategoryTree = query({
       filteredCategories = filteredCategories.filter(cat => cat.isActive === isActive)
     }
     
+    // Escludi categorie eliminate (soft delete) di default
+    filteredCategories = filteredCategories.filter(cat => !cat.deletedAt)
+    
     // Costruisci l'albero
     const byId = new Map(filteredCategories.map(n => [n._id, { ...n, children: [] as any[] }]))
     const roots: any[] = []
@@ -76,6 +79,9 @@ export const getCategoriesByClinic = query({
       filteredCategories = filteredCategories.filter(cat => cat.isActive === isActive)
     }
     
+    // Escludi categorie eliminate (soft delete) di default
+    filteredCategories = filteredCategories.filter(cat => !cat.deletedAt)
+    
     // Ordina per depth e order
     filteredCategories.sort((a, b) => {
       if (a.depth !== b.depth) return a.depth - b.depth
@@ -124,10 +130,75 @@ export const getPublicCategories = query({
       .filter((q) => 
         q.and(
           q.eq(q.field("visibility"), "public"),
-          q.eq(q.field("isActive"), true)
+          q.eq(q.field("isActive"), true),
+          q.eq(q.field("deletedAt"), undefined) // escludi eliminate
         )
       )
       .collect()
+  }
+})
+
+// Query per ottenere tutte le categorie incluse quelle eliminate (per admin)
+export const getAllCategoriesByClinic = query({
+  args: { 
+    clinicId: v.id("clinics"),
+    includeDeleted: v.optional(v.boolean())
+  },
+  handler: async (ctx, { clinicId, includeDeleted = false }) => {
+    const categories = await ctx.db
+      .query("categories")
+      .withIndex("by_clinic", (q) => q.eq("clinicId", clinicId))
+      .collect()
+    
+    // Filtra o include categorie eliminate
+    const filteredCategories = includeDeleted 
+      ? categories 
+      : categories.filter(cat => !cat.deletedAt)
+    
+    // Ordina per depth e order
+    filteredCategories.sort((a, b) => {
+      if (a.depth !== b.depth) return a.depth - b.depth
+      return a.order - b.order
+    })
+    
+    // Popola i dati del dipartimento se presente
+    const categoriesWithDepartments = await Promise.all(
+      filteredCategories.map(async (category) => {
+        const department = category.departmentId 
+          ? await ctx.db.get(category.departmentId)
+          : null
+        return { ...category, department }
+      })
+    )
+    
+    return categoriesWithDepartments
+  }
+})
+
+// Query per ottenere solo le categorie eliminate (cestino)
+export const getDeletedCategories = query({
+  args: { clinicId: v.id("clinics") },
+  handler: async (ctx, { clinicId }) => {
+    const categories = await ctx.db
+      .query("categories")
+      .withIndex("by_clinic", (q) => q.eq("clinicId", clinicId))
+      .filter((q) => q.neq(q.field("deletedAt"), undefined))
+      .collect()
+    
+    // Ordina per data di eliminazione (più recenti prima)
+    categories.sort((a, b) => (b.deletedAt || 0) - (a.deletedAt || 0))
+    
+    // Popola i dati del dipartimento se presente
+    const categoriesWithDepartments = await Promise.all(
+      categories.map(async (category) => {
+        const department = category.departmentId 
+          ? await ctx.db.get(category.departmentId)
+          : null
+        return { ...category, department }
+      })
+    )
+    
+    return categoriesWithDepartments
   }
 })
 
@@ -347,7 +418,63 @@ export const rejectCategory = mutation({
   }
 })
 
-// Mutation per eliminare una categoria
+// Mutation per soft delete di una categoria
+export const softDeleteCategory = mutation({
+  args: { categoryId: v.id("categories") },
+  handler: async (ctx, { categoryId }) => {
+    // Verifica autenticazione
+    const currentUser = await getCurrentUser(ctx)
+    
+    // Verifica che la categoria esista
+    const category = await ctx.db.get(categoryId)
+    if (!category) {
+      throw new ConvexError("Category not found")
+    }
+    
+    // Verifica che non sia già eliminata
+    if (category.deletedAt) {
+      throw new ConvexError("Category is already deleted")
+    }
+    
+    // Soft delete: imposta deletedAt al timestamp corrente
+    await ctx.db.patch(categoryId, { 
+      deletedAt: Date.now(),
+      isActive: false // disattiva anche la categoria
+    })
+    
+    return categoryId
+  }
+})
+
+// Mutation per ripristinare una categoria eliminata (restore)
+export const restoreCategory = mutation({
+  args: { categoryId: v.id("categories") },
+  handler: async (ctx, { categoryId }) => {
+    // Verifica autenticazione
+    const currentUser = await getCurrentUser(ctx)
+    
+    // Verifica che la categoria esista
+    const category = await ctx.db.get(categoryId)
+    if (!category) {
+      throw new ConvexError("Category not found")
+    }
+    
+    // Verifica che sia eliminata
+    if (!category.deletedAt) {
+      throw new ConvexError("Category is not deleted")
+    }
+    
+    // Ripristina: rimuovi deletedAt e riattiva
+    await ctx.db.patch(categoryId, { 
+      deletedAt: undefined,
+      isActive: true
+    })
+    
+    return categoryId
+  }
+})
+
+// Mutation per eliminazione permanente (hard delete)
 export const deleteCategory = mutation({
   args: { categoryId: v.id("categories") },
   handler: async (ctx, { categoryId }) => {
@@ -370,7 +497,7 @@ export const deleteCategory = mutation({
       throw new ConvexError("Cannot delete category: there are tickets associated with it")
     }
     
-    // Elimina la categoria
+    // Elimina definitivamente la categoria
     await ctx.db.delete(categoryId)
     
     return categoryId
@@ -412,6 +539,128 @@ export const getPendingCategories = query({
     )
     
     return categoriesWithDetails
+  }
+})
+
+// Mutations semplici senza autenticazione per lo sviluppo
+export const createCategorySimple = mutation({
+  args: {
+    name: v.string(),
+    description: v.optional(v.string()),
+    clinicId: v.id("clinics"),
+    visibility: v.union(v.literal("public"), v.literal("private")),
+    synonyms: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, args) => {
+    // Genera slug
+    const slug = generateSlug(args.name)
+    
+    // Verifica che la clinica esista
+    const clinic = await ctx.db.get(args.clinicId)
+    if (!clinic) {
+      throw new ConvexError("Clinic not found")
+    }
+    
+    // Crea la categoria
+    const categoryId = await ctx.db.insert("categories", {
+      name: args.name,
+      slug,
+      description: args.description,
+      clinicId: args.clinicId,
+      visibility: args.visibility,
+      parentId: undefined, // Solo categorie root per ora
+      path: [],
+      depth: 0,
+      order: 0,
+      synonyms: args.synonyms || [],
+      requiresApproval: false,
+      isActive: true,
+    })
+    
+    return categoryId
+  }
+})
+
+export const updateCategorySimple = mutation({
+  args: {
+    categoryId: v.id("categories"),
+    name: v.optional(v.string()),
+    description: v.optional(v.string()),
+    visibility: v.optional(v.union(v.literal("public"), v.literal("private"))),
+  },
+  handler: async (ctx, { categoryId, ...updates }) => {
+    // Verifica che la categoria esista
+    const category = await ctx.db.get(categoryId)
+    if (!category) {
+      throw new ConvexError("Category not found")
+    }
+    
+    // Aggiorna la categoria
+    await ctx.db.patch(categoryId, updates)
+    
+    return categoryId
+  }
+})
+
+export const softDeleteCategorySimple = mutation({
+  args: { categoryId: v.id("categories") },
+  handler: async (ctx, { categoryId }) => {
+    // Verifica che la categoria esista
+    const category = await ctx.db.get(categoryId)
+    if (!category) {
+      throw new ConvexError("Category not found")
+    }
+    
+    if (category.deletedAt) {
+      throw new ConvexError("Category is already deleted")
+    }
+    
+    // Soft delete
+    await ctx.db.patch(categoryId, { 
+      deletedAt: Date.now(),
+      isActive: false
+    })
+    
+    return categoryId
+  }
+})
+
+export const restoreCategorySimple = mutation({
+  args: { categoryId: v.id("categories") },
+  handler: async (ctx, { categoryId }) => {
+    // Verifica che la categoria esista
+    const category = await ctx.db.get(categoryId)
+    if (!category) {
+      throw new ConvexError("Category not found")
+    }
+    
+    if (!category.deletedAt) {
+      throw new ConvexError("Category is not deleted")
+    }
+    
+    // Ripristina
+    await ctx.db.patch(categoryId, { 
+      deletedAt: undefined,
+      isActive: true
+    })
+    
+    return categoryId
+  }
+})
+
+export const hardDeleteCategorySimple = mutation({
+  args: { categoryId: v.id("categories") },
+  handler: async (ctx, { categoryId }) => {
+    // Verifica che la categoria esista
+    const category = await ctx.db.get(categoryId)
+    if (!category) {
+      throw new ConvexError("Category not found")
+    }
+    
+    // Elimina definitivamente
+    await ctx.db.delete(categoryId)
+    
+    return categoryId
   }
 })
 

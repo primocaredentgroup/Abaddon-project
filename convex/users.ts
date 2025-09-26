@@ -406,6 +406,45 @@ export const updateLastAccess = mutation({
   },
 });
 
+// Mutation per aggiornare ruolo utente senza autenticazione (solo per sviluppo)
+export const updateUserRoleByEmail = mutation({
+  args: {
+    email: v.string(),
+    newRoleName: v.string()
+  },
+  handler: async (ctx, { email, newRoleName }) => {
+    // Trova l'utente per email
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", email))
+      .unique()
+    
+    if (!user) {
+      throw new ConvexError(`Utente con email ${email} non trovato`)
+    }
+    
+    // Trova il ruolo per nome
+    const role = await ctx.db
+      .query("roles")
+      .filter((q) => q.eq(q.field("name"), newRoleName))
+      .unique()
+    
+    if (!role) {
+      throw new ConvexError(`Ruolo ${newRoleName} non trovato`)
+    }
+    
+    // Aggiorna il ruolo dell'utente
+    await ctx.db.patch(user._id, { roleId: role._id })
+    
+    return {
+      userId: user._id,
+      oldRoleId: user.roleId,
+      newRoleId: role._id,
+      newRoleName: role.name
+    }
+  }
+})
+
 // Funzioni per la sincronizzazione Auth0 - VERSIONE SEMPLIFICATA PER LA GUIDA
 export const createUserSimple = mutation({
   args: { 

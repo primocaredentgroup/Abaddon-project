@@ -208,7 +208,6 @@ export default function DashboardPage() {
         </div>
 
 
-
         {/* Urgent Tickets Alert */}
         {urgentTickets.length > 0 && (
           <Card className="border-red-200 bg-red-50">

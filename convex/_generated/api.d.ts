@@ -27,6 +27,7 @@ import type * as roles from "../roles.js";
 import type * as tags from "../tags.js";
 import type * as ticketAttributes from "../ticketAttributes.js";
 import type * as tickets from "../tickets.js";
+import type * as triggers from "../triggers.js";
 import type * as users from "../users.js";
 
 /**
@@ -52,6 +53,7 @@ declare const fullApi: ApiFromModules<{
   tags: typeof tags;
   ticketAttributes: typeof ticketAttributes;
   tickets: typeof tickets;
+  triggers: typeof triggers;
   users: typeof users;
 }>;
 export declare const api: FilterApi<

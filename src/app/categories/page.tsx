@@ -1,0 +1,606 @@
+'use client'
+
+import React, { useState } from 'react'
+import { AppLayout } from '@/components/layout/AppLayout'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
+import { Button } from '@/components/ui/Button'
+import { Badge } from '@/components/ui/Badge'
+import { Input } from '@/components/ui/Input'
+import { Textarea } from '@/components/ui/Textarea'
+import { useQuery, useMutation } from 'convex/react'
+import { api } from '../../../convex/_generated/api'
+import { useAuth } from '@/hooks/useAuth'
+import { 
+  Tags,
+  Plus,
+  Search,
+  Filter,
+  Edit,
+  Trash2,
+  Eye,
+  BarChart3,
+  Hash,
+  Palette,
+  Zap,
+  Brain,
+  Users,
+  TrendingUp,
+  RotateCcw,
+  Archive,
+  AlertTriangle
+} from 'lucide-react'
+
+export default function AdminCategoriesPage() {
+  const { user } = useAuth()
+  const [activeTab, setActiveTab] = useState<'categories' | 'tags' | 'deleted'>('categories')
+  const [searchTerm, setSearchTerm] = useState('')
+  const [showCreateForm, setShowCreateForm] = useState(false)
+  const [editingCategory, setEditingCategory] = useState<any>(null)
+  
+  // Form states
+  const [formData, setFormData] = useState({
+    name: '',
+    description: '',
+    visibility: 'public' as 'public' | 'private',
+    synonyms: ''
+  })
+
+  // Get clinic ID from user - assuming user has clinic info
+  const clinicId = user?.clinic?._id
+  
+  // Queries
+  const categories = useQuery(api.categories.getAllCategoriesByClinic, 
+    clinicId ? { clinicId, includeDeleted: false } : "skip"
+  )
+  const deletedCategories = useQuery(api.categories.getDeletedCategories, 
+    clinicId ? { clinicId } : "skip"
+  )
+  
+  // Mutations (usando versioni semplici senza autenticazione)
+  const createCategory = useMutation(api.categories.createCategorySimple)
+  const updateCategory = useMutation(api.categories.updateCategorySimple)
+  const softDeleteCategory = useMutation(api.categories.softDeleteCategorySimple)
+  const restoreCategory = useMutation(api.categories.restoreCategorySimple)
+  const hardDeleteCategory = useMutation(api.categories.hardDeleteCategorySimple)
+
+  // Filter categories based on search
+  const filteredCategories = categories?.filter(cat =>
+    cat.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    cat.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    cat.synonyms.some(syn => syn.toLowerCase().includes(searchTerm.toLowerCase()))
+  ) || []
+
+  const filteredDeletedCategories = deletedCategories?.filter(cat =>
+    cat.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    cat.description?.toLowerCase().includes(searchTerm.toLowerCase())
+  ) || []
+
+  // Handle form submission
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!clinicId || !formData.name.trim()) {
+      alert('Errore: Clinica non trovata o nome categoria mancante')
+      return
+    }
+
+    try {
+      const synonymsArray = formData.synonyms 
+        ? formData.synonyms.split(',').map(s => s.trim()).filter(Boolean)
+        : []
+
+      if (editingCategory) {
+        // Update existing category
+        await updateCategory({
+          categoryId: editingCategory._id,
+          name: formData.name,
+          description: formData.description || undefined,
+          visibility: formData.visibility
+        })
+      } else {
+        // Create new category
+        await createCategory({
+          name: formData.name,
+          description: formData.description || undefined,
+          clinicId,
+          visibility: formData.visibility,
+          synonyms: synonymsArray
+        })
+      }
+      
+      // Reset form
+      setFormData({ name: '', description: '', visibility: 'public', synonyms: '' })
+      setShowCreateForm(false)
+      setEditingCategory(null)
+    } catch (error) {
+      console.error('Errore nel salvare la categoria:', error)
+      alert('Errore nel salvare la categoria: ' + error)
+    }
+  }
+
+  // Handle edit
+  const handleEdit = (category: any) => {
+    setEditingCategory(category)
+    setFormData({
+      name: category.name,
+      description: category.description || '',
+      visibility: category.visibility,
+      synonyms: category.synonyms.join(', ')
+    })
+    setShowCreateForm(true)
+  }
+
+  // Handle soft delete
+  const handleSoftDelete = async (categoryId: string) => {
+    if (confirm('Sei sicuro di voler eliminare questa categoria? Potrà essere ripristinata dal cestino.')) {
+      try {
+        await softDeleteCategory({ categoryId })
+      } catch (error) {
+        console.error('Errore nell\'eliminare la categoria:', error)
+        alert('Errore nell\'eliminare la categoria: ' + error)
+      }
+    }
+  }
+
+  // Handle restore
+  const handleRestore = async (categoryId: string) => {
+    try {
+      await restoreCategory({ categoryId })
+    } catch (error) {
+      console.error('Errore nel ripristinare la categoria:', error)
+      alert('Errore nel ripristinare la categoria: ' + error)
+    }
+  }
+
+  // Handle hard delete
+  const handleHardDelete = async (categoryId: string) => {
+    if (confirm('ATTENZIONE: Questa operazione eliminerà DEFINITIVAMENTE la categoria. Non potrà essere recuperata. Continuare?')) {
+      try {
+        await hardDeleteCategory({ categoryId })
+      } catch (error) {
+        console.error('Errore nell\'eliminazione definitiva:', error)
+        alert('Errore nell\'eliminazione definitiva: ' + error)
+      }
+    }
+  }
+
+  if (!user) {
+    return <div>Caricamento...</div>
+  }
+
+  // Controllo permessi: solo agenti e admin possono gestire le categorie
+  if (user.role?.name !== 'Agente' && user.role?.name !== 'Amministratore') {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="text-center">
+            <AlertTriangle className="h-16 w-16 text-red-500 mx-auto mb-4" />
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">Accesso Negato</h1>
+            <p className="text-gray-600">Non hai i permessi per gestire le categorie.</p>
+            <p className="text-sm text-gray-500 mt-2">Richiesti ruoli: Agente o Amministratore</p>
+          </div>
+        </div>
+      </AppLayout>
+    )
+  }
+
+  // Se non c'è clinicId, mostra messaggio di errore
+  if (!clinicId) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="text-center">
+            <AlertTriangle className="h-16 w-16 text-yellow-500 mx-auto mb-4" />
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">Clinica Non Trovata</h1>
+            <p className="text-gray-600">Non è possibile determinare la clinica di appartenenza.</p>
+            <p className="text-sm text-gray-500 mt-2">Contatta l'amministratore di sistema.</p>
+          </div>
+        </div>
+      </AppLayout>
+    )
+  }
+
+  return (
+    <AppLayout>
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 flex items-center">
+              <Tags className="h-8 w-8 mr-3 text-blue-600" />
+              Gestione Categorie
+            </h1>
+            <p className="text-gray-600 mt-2">
+              Gestisci le categorie per la classificazione dei ticket
+            </p>
+          </div>
+          
+          <div className="flex gap-3">
+            <Button 
+              onClick={() => {
+                setEditingCategory(null)
+                setFormData({ name: '', description: '', visibility: 'public', synonyms: '' })
+                setShowCreateForm(true)
+              }}
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Nuova Categoria
+            </Button>
+          </div>
+        </div>
+
+        {/* Stats Overview */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600">Categorie Attive</p>
+                  <p className="text-2xl font-bold text-gray-900">{categories?.length || 0}</p>
+                </div>
+                <Tags className="h-8 w-8 text-blue-500" />
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600">Categorie Pubbliche</p>
+                  <p className="text-2xl font-bold text-gray-900">
+                    {categories?.filter(c => c.visibility === 'public').length || 0}
+                  </p>
+                </div>
+                <Eye className="h-8 w-8 text-green-500" />
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600">Nel Cestino</p>
+                  <p className="text-2xl font-bold text-gray-900">
+                    {deletedCategories?.length || 0}
+                  </p>
+                </div>
+                <Archive className="h-8 w-8 text-orange-500" />
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600">Con Sinonimi</p>
+                  <p className="text-2xl font-bold text-gray-900">
+                    {categories?.filter(c => c.synonyms.length > 0).length || 0}
+                  </p>
+                </div>
+                <Brain className="h-8 w-8 text-purple-500" />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Search and Filters */}
+        <div className="flex flex-col sm:flex-row gap-4">
+          <div className="flex-1">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                placeholder="Cerca categorie, tag, descrizioni..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+          </div>
+          
+          <div className="flex gap-2">
+            <Button
+              variant={activeTab === 'categories' ? 'default' : 'outline'}
+              onClick={() => setActiveTab('categories')}
+            >
+              <Tags className="w-4 h-4 mr-2" />
+              Categorie ({categories?.length || 0})
+            </Button>
+            <Button
+              variant={activeTab === 'deleted' ? 'default' : 'outline'}
+              onClick={() => setActiveTab('deleted')}
+            >
+              <Archive className="w-4 h-4 mr-2" />
+              Cestino ({deletedCategories?.length || 0})
+            </Button>
+          </div>
+        </div>
+
+        {/* Content based on active tab */}
+        {activeTab === 'categories' ? (
+          /* Categories View */
+          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+            {filteredCategories.length === 0 ? (
+              <div className="col-span-full text-center py-12 text-gray-500">
+                {categories === undefined ? 'Caricamento categorie...' : 'Nessuna categoria trovata.'}
+              </div>
+            ) : (
+              filteredCategories.map((category) => (
+                <Card key={category._id} className="hover:shadow-lg transition-shadow">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <CardTitle className="text-lg flex items-center">
+                          <div className={`w-3 h-3 rounded-full mr-2 ${
+                            category.visibility === 'public' ? 'bg-green-500' : 'bg-gray-500'
+                          }`} />
+                          {category.name}
+                        </CardTitle>
+                        <CardDescription className="mt-1">
+                          {category.description || 'Nessuna descrizione'}
+                        </CardDescription>
+                      </div>
+                      <div className="flex space-x-1">
+                        <Button 
+                          size="sm" 
+                          variant="ghost"
+                          onClick={() => handleEdit(category)}
+                          title="Modifica categoria"
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          variant="ghost"
+                          onClick={() => handleSoftDelete(category._id)}
+                          title="Elimina categoria"
+                        >
+                          <Trash2 className="h-4 w-4 text-red-500" />
+                        </Button>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  
+                  <CardContent className="space-y-3">
+                    {/* Department */}
+                    {category.department && (
+                      <div className="text-sm text-gray-600">
+                        📁 Dipartimento: {category.department.name}
+                      </div>
+                    )}
+                    
+                    {/* Synonyms */}
+                    {category.synonyms.length > 0 && (
+                      <div>
+                        <p className="text-xs font-medium text-gray-500 mb-2">Sinonimi:</p>
+                        <div className="flex flex-wrap gap-1">
+                          {category.synonyms.slice(0, 4).map((synonym, index) => (
+                            <Badge key={index} variant="secondary" size="sm">
+                              {synonym}
+                            </Badge>
+                          ))}
+                          {category.synonyms.length > 4 && (
+                            <Badge variant="secondary" size="sm">
+                              +{category.synonyms.length - 4}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Status and Info */}
+                    <div className="flex items-center justify-between pt-2 border-t">
+                      <div className="flex items-center space-x-2">
+                        <Badge variant={category.isActive ? 'success' : 'secondary'}>
+                          {category.isActive ? 'Attiva' : 'Inattiva'}
+                        </Badge>
+                        <Badge variant={category.visibility === 'public' ? 'default' : 'outline'}>
+                          {category.visibility === 'public' ? 'Pubblica' : 'Privata'}
+                        </Badge>
+                      </div>
+                      <span className="text-xs text-gray-500">
+                        Livello: {category.depth}
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </div>
+        ) : activeTab === 'deleted' ? (
+          /* Deleted Categories View (Cestino) */
+          <div className="space-y-4">
+            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+              <div className="flex items-center">
+                <AlertTriangle className="h-5 w-5 text-orange-500 mr-2" />
+                <div>
+                  <h3 className="font-medium text-orange-800">Cestino Categorie</h3>
+                  <p className="text-sm text-orange-700">
+                    Le categorie eliminate possono essere ripristinate o eliminate definitivamente.
+                  </p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+              {filteredDeletedCategories.length === 0 ? (
+                <div className="col-span-full text-center py-12 text-gray-500">
+                  {deletedCategories === undefined ? 'Caricamento cestino...' : 'Il cestino è vuoto.'}
+                </div>
+              ) : (
+                filteredDeletedCategories.map((category) => (
+                  <Card key={category._id} className="hover:shadow-lg transition-shadow border-red-200">
+                    <CardHeader className="pb-3">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <CardTitle className="text-lg flex items-center">
+                            <Archive className="h-4 w-4 mr-2 text-red-500" />
+                            {category.name}
+                          </CardTitle>
+                          <CardDescription className="mt-1">
+                            {category.description || 'Nessuna descrizione'}
+                          </CardDescription>
+                          <p className="text-xs text-red-600 mt-1">
+                            Eliminata il: {new Date(category.deletedAt!).toLocaleDateString('it-IT')}
+                          </p>
+                        </div>
+                        <div className="flex space-x-1">
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            onClick={() => handleRestore(category._id)}
+                            title="Ripristina categoria"
+                          >
+                            <RotateCcw className="h-4 w-4 text-green-600" />
+                          </Button>
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            onClick={() => handleHardDelete(category._id)}
+                            title="Elimina definitivamente"
+                          >
+                            <Trash2 className="h-4 w-4 text-red-600" />
+                          </Button>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    
+                    <CardContent className="space-y-3">
+                      {/* Department */}
+                      {category.department && (
+                        <div className="text-sm text-gray-600">
+                          📁 Dipartimento: {category.department.name}
+                        </div>
+                      )}
+                      
+                      {/* Synonyms */}
+                      {category.synonyms.length > 0 && (
+                        <div>
+                          <p className="text-xs font-medium text-gray-500 mb-2">Sinonimi:</p>
+                          <div className="flex flex-wrap gap-1">
+                            {category.synonyms.slice(0, 4).map((synonym, index) => (
+                              <Badge key={index} variant="secondary" size="sm">
+                                {synonym}
+                              </Badge>
+                            ))}
+                            {category.synonyms.length > 4 && (
+                              <Badge variant="secondary" size="sm">
+                                +{category.synonyms.length - 4}
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Info */}
+                      <div className="flex items-center justify-between pt-2 border-t">
+                        <Badge variant="secondary">
+                          {category.visibility === 'public' ? 'Era Pubblica' : 'Era Privata'}
+                        </Badge>
+                        <span className="text-xs text-gray-500">
+                          Livello: {category.depth}
+                        </span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))
+              )}
+            </div>
+          </div>
+        ) : null}
+
+        {/* Create/Edit Form Modal */}
+        {showCreateForm && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+            <Card className="w-full max-w-md max-h-[90vh] overflow-y-auto">
+              <CardHeader>
+                <CardTitle>
+                  {editingCategory ? 'Modifica Categoria' : 'Nuova Categoria'}
+                </CardTitle>
+                <CardDescription>
+                  {editingCategory 
+                    ? 'Modifica i dettagli della categoria esistente'
+                    : 'Aggiungi una nuova categoria per classificare i ticket'
+                  }
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Nome categoria *
+                    </label>
+                    <Input 
+                      placeholder="es. Manutenzioni, IT Support, HR..." 
+                      value={formData.name}
+                      onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                      required
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Descrizione
+                    </label>
+                    <Textarea 
+                      placeholder="Descrizione dettagliata della categoria (opzionale)"
+                      value={formData.description}
+                      onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                      rows={3}
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Visibilità
+                    </label>
+                    <select 
+                      className="w-full p-2 border rounded-md"
+                      value={formData.visibility}
+                      onChange={(e) => setFormData(prev => ({ ...prev, visibility: e.target.value as 'public' | 'private' }))}
+                    >
+                      <option value="public">Pubblica - Visibile a tutti gli utenti</option>
+                      <option value="private">Privata - Solo per amministratori</option>
+                    </select>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Sinonimi
+                    </label>
+                    <Input 
+                      placeholder="es. manutenzione, riparazione, guasto (separati da virgola)"
+                      value={formData.synonyms}
+                      onChange={(e) => setFormData(prev => ({ ...prev, synonyms: e.target.value }))}
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      I sinonimi aiutano nella ricerca automatica delle categorie
+                    </p>
+                  </div>
+                  
+                  <div className="flex justify-end space-x-2 pt-4">
+                    <Button 
+                      type="button"
+                      variant="outline" 
+                      onClick={() => {
+                        setShowCreateForm(false)
+                        setEditingCategory(null)
+                        setFormData({ name: '', description: '', visibility: 'public', synonyms: '' })
+                      }}
+                    >
+                      Annulla
+                    </Button>
+                    <Button type="submit">
+                      {editingCategory ? 'Salva Modifiche' : 'Crea Categoria'}
+                    </Button>
+                  </div>
+                </form>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+      </div>
+    </AppLayout>
+  )
+}

@@ -16,6 +16,7 @@ import {
   UserCog,
   X,
   Tags,
+  Bot,
 
 } from 'lucide-react'
 import Link from 'next/link'
@@ -39,6 +40,7 @@ const navigation: NavItem[] = [
   { name: 'Dashboard', href: '/dashboard', icon: Home, roles: ['user', 'agent', 'admin'] },
   { name: 'I miei ticket', href: '/tickets/my', icon: Ticket, roles: ['user', 'agent', 'admin'] },
   { name: 'Ticket clinica', href: '/tickets/clinic', icon: Building2, roles: ['user', 'agent', 'admin'] },
+  { name: 'Assistente AI', href: '/agent', icon: Bot, roles: ['user', 'agent', 'admin'] },
 ]
 
 const agentNavigation: NavItem[] = [
@@ -51,7 +53,6 @@ const agentNavigation: NavItem[] = [
 ]
 
 const adminNavigation: NavItem[] = [
-  { name: 'Gestione Categorie', href: '/admin/categories', icon: Tags, roles: ['admin'] },
   { name: 'Gestione Utenti', href: '/admin/users', icon: Users, roles: ['admin'] },
   { name: 'Cliniche', href: '/admin/clinics', icon: Building2, roles: ['admin'] },
   { name: 'Ruoli e Permessi', href: '/admin/roles', icon: UserCog, roles: ['admin'] },
@@ -69,8 +70,15 @@ const quickActions: NavItem[] = [
 export function Sidebar({ isOpen, onClose, userRole = 'user' }: SidebarProps) {
   const pathname = usePathname()
   
-  const filterByRole = (items: NavItem[]) => 
-    items.filter(item => item.roles.includes(userRole))
+  // Debug: log del ruolo utente
+  console.log('Sidebar userRole:', userRole)
+  console.log('Sidebar pathname:', pathname)
+  
+  const filterByRole = (items: NavItem[]) => {
+    const filtered = items.filter(item => item.roles.includes(userRole))
+    console.log('Filtering by role', userRole, 'filtered items:', filtered.map(f => f.name))
+    return filtered
+  }
 
   return (
     <>
@@ -114,6 +122,7 @@ export function Sidebar({ isOpen, onClose, userRole = 'user' }: SidebarProps) {
             <div className="space-y-1">
               {filterByRole(navigation).map((item) => {
                 const isActive = pathname === item.href
+                console.log('Rendering navigation item:', item.name, 'href:', item.href, 'isActive:', isActive) // Debug
                 return (
                   <Link
                     key={item.name}
@@ -124,7 +133,10 @@ export function Sidebar({ isOpen, onClose, userRole = 'user' }: SidebarProps) {
                         ? 'bg-blue-600 text-white'
                         : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
                     )}
-                    onClick={() => onClose()}
+                    onClick={() => {
+                      console.log('Clicked navigation item:', item.name) // Debug
+                      onClose()
+                    }}
                   >
                     <item.icon className="w-4 h-4" />
                     {item.name}

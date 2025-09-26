@@ -93,6 +93,9 @@ export default defineSchema({
 
     // AI / metadata per future funzionalità
     synonyms: v.array(v.string()),            // alias/termini simili per NLP
+    
+    // Soft delete
+    deletedAt: v.optional(v.number()),        // timestamp per soft delete
   })
     .index("by_clinic", ["clinicId"])
     .index("by_department", ["departmentId"])
