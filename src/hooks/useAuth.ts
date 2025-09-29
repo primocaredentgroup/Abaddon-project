@@ -38,8 +38,8 @@ export function useAuth() {
         // Trasforma i dati nel formato dell'app
         setUser({
           id: userData._id,
-          nome: userData.name?.split(' ')[0] || 'Utente',
-          cognome: userData.name?.split(' ').slice(1).join(' ') || 'Test',
+          nome: userData.email?.split('@')[0] || 'Utente', // Usa la parte prima della @ come nome
+          cognome: '', // Non abbiamo un cognome, lasciamo vuoto
           email: userData.email || '',
           ruolo: userData.role?.name || 'user',
           clinic: userData.clinic,

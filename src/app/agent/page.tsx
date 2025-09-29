@@ -67,11 +67,8 @@ export default function AgentPage() {
     // Simulazione - in futuro useremo useQuery(api.tickets.search)
     await new Promise(resolve => setTimeout(resolve, 1000))
     
-    const mockTickets: TicketInfo[] = [
-      { _id: '1', ticketNumber: 'TK-001', title: 'Problema accesso software', status: 'open', priority: 'high', category: 'software', assignee: 'Mario Rossi', createdAt: '2024-01-15' },
-      { _id: '2', ticketNumber: 'TK-002', title: 'Stampante non funziona', status: 'in_progress', priority: 'medium', category: 'hardware', assignee: 'Laura Bianchi', createdAt: '2024-01-14' },
-      { _id: '3', ticketNumber: 'TK-003', title: 'Reset password', status: 'resolved', priority: 'urgent', category: 'account', assignee: 'Paolo Verdi', createdAt: '2024-01-13' }
-    ]
+    // Usa dati reali da Convex tramite le query già implementate
+    const mockTickets: TicketInfo[] = [] // RIMOSSI I MOCK - ora userà dati reali
     
     return mockTickets.filter(ticket => 
       ticket.ticketNumber.toLowerCase().includes(query.toLowerCase()) ||

@@ -33,7 +33,7 @@ export const TicketChatView: React.FC<TicketChatViewProps> = ({ ticketId }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
 
   // Queries
-  const ticket = useQuery(api.tickets.getById, { ticketId: ticketId as any })
+  const ticket = useQuery(api.tickets.getById, { id: ticketId as any, userEmail: "s.petretto@primogroup.it" })
   const comments = useQuery(api.comments.getByTicket, { ticketId: ticketId as any })
   const currentUser = useQuery(api.users.getCurrentUser, {})
 

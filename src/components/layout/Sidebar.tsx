@@ -17,6 +17,7 @@ import {
   X,
   Tags,
   Bot,
+  Bell
 
 } from 'lucide-react'
 import Link from 'next/link'
@@ -44,9 +45,9 @@ const navigation: NavItem[] = [
 ]
 
 const agentNavigation: NavItem[] = [
-  { name: 'Tutti i ticket', href: '/tickets/all', icon: Ticket, roles: ['agent', 'admin'] },
   { name: 'Utenti', href: '/users', icon: Users, roles: ['agent', 'admin'] },
   { name: 'Categorie', href: '/categories', icon: Filter, roles: ['agent', 'admin'] },
+  { name: 'Solleciti', href: '/dashboard/nudges', icon: Bell, roles: ['agent', 'admin'] },
   { name: 'Trigger', href: '/automation/triggers', icon: Zap, roles: ['agent', 'admin'] },
   { name: 'Macro', href: '/automation/macros', icon: Zap, roles: ['agent', 'admin'] },
   { name: 'SLA Monitor', href: '/sla', icon: Clock, roles: ['agent', 'admin'] },
@@ -208,10 +209,12 @@ export function Sidebar({ isOpen, onClose, userRole = 'user' }: SidebarProps) {
 
           {/* Quick Actions */}
           <div className="border-t p-4">
-            <Button className="w-full mb-3" size="sm">
-              <Plus className="h-4 w-4 mr-2" />
-              Nuovo Ticket
-            </Button>
+            <Link href="/tickets/new" className="w-full mb-3 block">
+              <Button className="w-full" size="sm" onClick={() => onClose()}>
+                <Plus className="h-4 w-4 mr-2" />
+                Nuovo Ticket
+              </Button>
+            </Link>
             
             <h3 className="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
               Accesso rapido

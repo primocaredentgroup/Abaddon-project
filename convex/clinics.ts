@@ -357,3 +357,136 @@ export const togglePublicTickets = mutation({
     return newSettings
   }
 })
+
+// ==============================
+// FUNZIONI PER SINCRONIZZAZIONE SISTEMA ESTERNO
+// ==============================
+
+// Query per ottenere una clinica tramite externalClinicId
+export const getClinicByExternalId = query({
+  args: { externalClinicId: v.string() },
+  handler: async (ctx, { externalClinicId }) => {
+    return await ctx.db
+      .query("clinics")
+      .withIndex("by_external_id", (q) => q.eq("externalClinicId", externalClinicId))
+      .unique()
+  }
+})
+
+// Mutation per sincronizzare una clinica dal sistema esterno
+export const syncClinicFromExternal = mutation({
+  args: {
+    externalClinicId: v.string(),
+    name: v.string(),
+    code: v.string(),
+    address: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    email: v.optional(v.string()),
+    isActive: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    // Cerca se la clinica esiste già
+    const existingClinic = await ctx.db
+      .query("clinics")
+      .withIndex("by_external_id", (q) => q.eq("externalClinicId", args.externalClinicId))
+      .unique()
+
+    const clinicData = {
+      name: args.name,
+      code: args.code,
+      address: args.address || '',
+      phone: args.phone || '',
+      email: args.email || '',
+      externalClinicId: args.externalClinicId,
+      lastSyncAt: Date.now(),
+      isActive: args.isActive ?? true,
+    }
+
+    if (existingClinic) {
+      // Aggiorna clinica esistente
+      await ctx.db.patch(existingClinic._id, clinicData)
+      
+      console.log(`🔄 Clinica aggiornata: ${args.name} (External ID: ${args.externalClinicId})`)
+      return existingClinic._id
+    } else {
+      // Crea nuova clinica
+      const clinicId = await ctx.db.insert("clinics", {
+        ...clinicData,
+        settings: {
+          allowPublicTickets: true,
+          requireApprovalForCategories: false,
+          defaultSlaHours: 24,
+        },
+      })
+      
+      console.log(`✅ Nuova clinica creata: ${args.name} (External ID: ${args.externalClinicId})`)
+      return clinicId
+    }
+  }
+})
+
+// TODO: Implementare sincronizzazione batch quando risolviamo i problemi TypeScript
+
+// Query per ottenere tutte le cliniche sincronizzate di recente
+export const getRecentlySyncedClinics = query({
+  args: { 
+    hoursAgo: v.optional(v.number()) // Default 24 ore
+  },
+  handler: async (ctx, { hoursAgo = 24 }) => {
+    const cutoffTime = Date.now() - (hoursAgo * 60 * 60 * 1000)
+    
+    const allClinics = await ctx.db.query("clinics").collect()
+    
+    return allClinics.filter(clinic => 
+      clinic.lastSyncAt && clinic.lastSyncAt > cutoffTime
+    ).sort((a, b) => (b.lastSyncAt || 0) - (a.lastSyncAt || 0))
+  }
+})
+
+// Query per ottenere statistiche di sincronizzazione
+export const getSyncStats = query({
+  handler: async (ctx) => {
+    const allClinics = await ctx.db.query("clinics").collect()
+    
+    const syncedClinics = allClinics.filter(c => c.externalClinicId)
+    const localClinics = allClinics.filter(c => !c.externalClinicId)
+    const recentlyUpdated = allClinics.filter(c => 
+      c.lastSyncAt && c.lastSyncAt > (Date.now() - 24 * 60 * 60 * 1000)
+    )
+    
+    return {
+      total: allClinics.length,
+      syncedFromExternal: syncedClinics.length,
+      localOnly: localClinics.length,
+      recentlyUpdated: recentlyUpdated.length,
+      activeClinics: allClinics.filter(c => c.isActive).length,
+    }
+  }
+})
+
+// Mutation per marcare una clinica come "non più sincronizzata" (soft delete)
+export const markClinicAsUnsyncedFromExternal = mutation({
+  args: { 
+    externalClinicId: v.string(),
+    reason: v.optional(v.string()) 
+  },
+  handler: async (ctx, { externalClinicId, reason }) => {
+    const clinic = await ctx.db
+      .query("clinics")
+      .withIndex("by_external_id", (q) => q.eq("externalClinicId", externalClinicId))
+      .unique()
+
+    if (!clinic) {
+      throw new ConvexError(`Clinica con External ID ${externalClinicId} non trovata`)
+    }
+
+    await ctx.db.patch(clinic._id, {
+      isActive: false,
+      lastSyncAt: Date.now(),
+      // Opzionalmente potresti aggiungere un campo per il motivo
+    })
+
+    console.log(`🔴 Clinica marcata come non sincronizzata: ${clinic.name} (Motivo: ${reason || 'Non specificato'})`)
+    return clinic._id
+  }
+})

@@ -4,7 +4,6 @@ import "./globals.css";
 import { ConvexClientProvider } from "@/providers/ConvexProvider";
 import { AuthProvider } from "@/providers/AuthProvider";
 import { RoleProvider } from "@/providers/RoleProvider";
-import { Auth0Provider } from "@/providers/Auth0Provider";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -24,15 +23,13 @@ export default function RootLayout({
   return (
     <html lang="it">
       <body className={`${inter.variable} font-sans antialiased`}>
-        <Auth0Provider>
-          <ConvexClientProvider>
-            <AuthProvider>
-              <RoleProvider>
-                {children}
-              </RoleProvider>
-            </AuthProvider>
-          </ConvexClientProvider>
-        </Auth0Provider>
+        <ConvexClientProvider>
+          <AuthProvider>
+            <RoleProvider>
+              {children}
+            </RoleProvider>
+          </AuthProvider>
+        </ConvexClientProvider>
       </body>
     </html>
   );

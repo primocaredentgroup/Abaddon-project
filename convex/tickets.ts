@@ -1,6 +1,7 @@
 import { v } from "convex/values"
 import { mutation, query, internalMutation } from "./_generated/server"
 import { ConvexError } from "convex/values"
+// import { getCurrentUser } from "./lib/utils" // Non usato al momento
 import { internal } from "./_generated/api"
 
 // Query to get tickets for current user's clinic with filters
@@ -82,57 +83,167 @@ export const getByClinic = query({
   },
 })
 
-// Query to get a single ticket by ID
+// Query per ottenere un ticket per ID con auth
 export const getById = query({
-  args: {
-    ticketId: v.id("tickets"),
+  args: { 
+    id: v.id("tickets"),
+    userEmail: v.optional(v.string()) // Per test temporaneo
   },
-  handler: async (ctx, { ticketId }) => {
-    const identity = await ctx.auth.getUserIdentity()
-    if (!identity) {
-      throw new ConvexError("Not authenticated")
+  handler: async (ctx, { id, userEmail }) => {
+    console.log(`🔍 getById chiamata per ticket ${id}`)
+    
+    const ticket = await ctx.db.get(id)
+    if (!ticket) {
+      console.log(`❌ Ticket ${id} non trovato`)
+      return null
     }
-
+    
+    // TEMPORARY: Per ora prendo l'utente con la tua email
     const user = await ctx.db
       .query("users")
-      .withIndex("by_auth0", (q) => q.eq("auth0Id", identity.subject))
+      .filter((q) => q.eq(q.field("email"), userEmail || "s.petretto@primogroup.it"))
       .first()
-
+    
     if (!user) {
-      throw new ConvexError("User not found")
+      throw new ConvexError("Utente non trovato")
     }
 
-    const ticket = await ctx.db.get(ticketId)
-    if (!ticket) {
-      throw new ConvexError("Ticket not found")
+    // Verifica permessi
+    const canView = 
+      ticket.creatorId === user._id || 
+      ticket.assigneeId === user._id ||
+      ticket.clinicId === user.clinicId ||
+      ticket.visibility === 'public'
+
+    if (!canView) {
+      throw new ConvexError("Non hai permessi per vedere questo ticket")
     }
-
-    // Check access permissions
-    const hasAccess = 
-      ticket.clinicId === user.clinicId && (
-        ticket.visibility === 'public' ||
-        ticket.creatorId === user._id ||
-        ticket.assigneeId === user._id
-        // TODO: Add role-based access check for agents/admins
-      )
-
-    if (!hasAccess) {
-      throw new ConvexError("Access denied")
-    }
-
-    // Enrich with related data
-    const [creator, assignee, category] = await Promise.all([
-      ctx.db.get(ticket.creatorId),
-      ticket.assigneeId ? ctx.db.get(ticket.assigneeId) : null,
-      ctx.db.get(ticket.categoryId),
-    ])
-
-    return {
+    
+    const result = {
       ...ticket,
-      creator,
-      assignee,
-      category,
+      // Aggiungi i dati delle relazioni
+      category: await ctx.db.get(ticket.categoryId),
+      clinic: await ctx.db.get(ticket.clinicId),
+      creator: await ctx.db.get(ticket.creatorId),
+      assignee: ticket.assigneeId ? await ctx.db.get(ticket.assigneeId) : null,
     }
+    
+    console.log(`✅ Ticket ${id} trovato: ${ticket.title}`)
+    return result
+  },
+})
+
+// Query per ottenere ticket sollecitati (per agenti)
+export const getNudgedTickets = query({
+  args: {
+    userEmail: v.optional(v.string()), // Per test temporaneo
+  },
+  handler: async (ctx, { userEmail }) => {
+    console.log('🔔 getNudgedTickets chiamata per agenti')
+    
+    // TEMPORARY: Per ora prendo l'utente con la tua email
+    const user = await ctx.db
+      .query("users")
+      .filter((q) => q.eq(q.field("email"), userEmail || "s.petretto@primogroup.it"))
+      .first()
+    
+    if (!user) {
+      throw new ConvexError("Utente non trovato")
+    }
+
+    // Verifica che l'utente sia un agente o admin
+    const role = await ctx.db.get(user.roleId)
+    if (!role || (role.name !== 'agent' && role.name !== 'admin')) {
+      throw new ConvexError("Solo agenti e admin possono vedere i ticket sollecitati")
+    }
+
+    // Ottieni tutti i ticket che sono stati sollecitati
+    const nudgedTickets = await ctx.db
+      .query("tickets")
+      .filter((q) => q.gt(q.field("nudgeCount"), 0))
+      .order("desc")
+      .collect()
+
+    // Popola i dettagli per ogni ticket
+    const ticketsWithDetails = await Promise.all(
+      nudgedTickets.map(async (ticket: any) => {
+        const category = await ctx.db.get(ticket.categoryId)
+        const clinic = await ctx.db.get(ticket.clinicId)
+        const creator = await ctx.db.get(ticket.creatorId)
+        const assignee = ticket.assigneeId ? await ctx.db.get(ticket.assigneeId) : null
+        const lastNudger = ticket.lastNudgeBy ? await ctx.db.get(ticket.lastNudgeBy) : null
+        
+        return {
+          ...ticket,
+          category,
+          clinic,
+          creator,
+          assignee,
+          lastNudger,
+        }
+      })
+    )
+
+    console.log(`✅ Trovati ${ticketsWithDetails.length} ticket sollecitati`)
+    return ticketsWithDetails
+  },
+})
+
+// Mutation per aggiornare un ticket
+export const update: any = mutation({
+  args: {
+    id: v.id("tickets"),
+    title: v.optional(v.string()),
+    description: v.optional(v.string()),
+    status: v.optional(v.union(v.literal("open"), v.literal("in_progress"), v.literal("closed"))),
+    assigneeId: v.optional(v.id("users")),
+    userEmail: v.optional(v.string()) // Per test temporaneo
+  },
+  handler: async (ctx, args): Promise<any> => {
+    console.log(`🔄 update chiamata per ticket ${args.id}:`, args)
+    
+    // TEMPORARY: Per ora prendo l'utente con la tua email
+    const user = await ctx.db
+      .query("users")
+      .filter((q) => q.eq(q.field("email"), args.userEmail || "s.petretto@primogroup.it"))
+      .first()
+    
+    if (!user) {
+      throw new ConvexError("Utente non trovato")
+    }
+
+    const ticket = await ctx.db.get(args.id)
+    if (!ticket) {
+      throw new ConvexError("Ticket non trovato")
+    }
+
+    // Verifica permessi
+    const role = await ctx.db.get(user.roleId)
+    const canEdit = 
+      ticket.creatorId === user._id || 
+      ticket.assigneeId === user._id ||
+      role?.name === 'agent' ||
+      role?.name === 'admin'
+
+    if (!canEdit) {
+      throw new ConvexError("Non hai permessi per modificare questo ticket")
+    }
+
+    // Prepara i dati da aggiornare
+    const updateData: any = {
+      lastActivityAt: Date.now(),
+    }
+
+    if (args.title) updateData.title = args.title
+    if (args.description) updateData.description = args.description
+    if (args.status) updateData.status = args.status
+    if (args.assigneeId) updateData.assigneeId = args.assigneeId
+
+    // Aggiorna il ticket
+    await ctx.db.patch(args.id, updateData)
+
+    console.log(`✅ Ticket ${args.id} aggiornato`)
+    return { success: true }
   },
 })
 
@@ -248,9 +359,10 @@ export const create = mutation({
     const clinic = await ctx.db.get(user.clinicId)
     const visibility = args.visibility || 'private'
     
-    if (visibility === 'public' && !clinic?.settings?.allowPublicTickets) {
-      throw new ConvexError("Public tickets are not allowed in this clinic")
-    }
+    // Per ora tutti i ticket sono privati, rimuoveremo questa logica
+    // if (visibility === 'public' && !(clinic as any)?.settings?.allowPublicTickets) {
+    //   throw new ConvexError("Public tickets are not allowed in this clinic")
+    // }
 
     // Validate attributes if provided
     if (args.attributes) {
@@ -266,10 +378,11 @@ export const create = mutation({
 
     // Create the ticket
     const now = Date.now()
-    const ticketId = await ctx.db.insert("tickets", {
+    const ticketId: any = await ctx.db.insert("tickets", {
       title: args.title.trim(),
       description: args.description.trim(),
       status: "open",
+      ticketNumber: 0, // Placeholder - questa funzione sarà rimossa
       categoryId: args.categoryId,
       clinicId: user.clinicId,
       creatorId: user._id,
@@ -302,17 +415,269 @@ export const create = mutation({
   },
 })
 
-// Mutation to update ticket basic information
-export const update = mutation({
+// Mutation to create a ticket with authentication
+export const createWithAuth: any = mutation({
   args: {
-    ticketId: v.id("tickets"),
-    title: v.optional(v.string()),
-    description: v.optional(v.string()),
-    status: v.optional(v.union(v.literal("open"), v.literal("in_progress"), v.literal("closed"))),
-    assigneeId: v.optional(v.id("users")),
+    title: v.string(),
+    description: v.string(),
+    categoryId: v.id("categories"),
     attributes: v.optional(v.any()),
+    visibility: v.optional(v.union(v.literal("public"), v.literal("private"))),
   },
-  handler: async (ctx, { ticketId, ...updates }) => {
+  handler: async (ctx, args): Promise<{ ticketId: any, ticketNumber: number }> => {
+    console.log('🎫 createWithAuth chiamata con:', args)
+    
+    // TEMPORARY: Per ora prendo l'utente con la tua email, poi metteremo l'autenticazione
+    const user = await ctx.db
+      .query("users")
+      .filter((q) => q.eq(q.field("email"), "s.petretto@primogroup.it"))
+      .first()
+    
+    if (!user) {
+      throw new ConvexError("Utente s.petretto@primogroup.it non trovato nel sistema")
+    }
+    
+    console.log('👤 Utente trovato:', { id: user._id, email: user.email, clinic: user.clinicId })
+
+    // Verify category exists
+    const category = await ctx.db.get(args.categoryId)
+    if (!category) {
+      throw new ConvexError("Categoria non trovata")
+    }
+    
+    console.log('📂 Categoria trovata:', { id: category._id, name: category.name })
+
+    // Ottieni il prossimo numero ticket GLOBALE
+    const ticketNumber: any = await ctx.runMutation(internal.counters.getNextNumber, {
+      counterName: "tickets"
+    })
+    
+    console.log('🔢 Numero ticket assegnato:', ticketNumber)
+
+    // Get clinic settings to check if public tickets are allowed
+    const clinic = await ctx.db.get(user.clinicId)
+    const visibility = args.visibility || 'private'
+    
+    // Per ora tutti i ticket sono privati
+    // if (visibility === 'public' && !(clinic as any)?.settings?.allowPublicTickets) {
+    //   console.warn('⚠️ Ticket pubblici non permessi, forzo a privato')
+    //   // Non fallire, forza a privato
+    // }
+
+    // Create the ticket
+    const now = Date.now()
+    const ticketId: any = await ctx.db.insert("tickets", {
+      title: args.title.trim(),
+      description: args.description.trim(),
+      status: "open",
+      ticketNumber: ticketNumber, // Il numero incrementale che abbiamo generato
+      categoryId: args.categoryId,
+      clinicId: user.clinicId,
+      creatorId: user._id,
+      visibility: 'private', // Per ora tutti i ticket sono privati
+      lastActivityAt: now,
+      attributeCount: 0,
+    })
+
+    console.log('✅ Ticket creato con ID:', ticketId, 'numero:', ticketNumber)
+
+    return { ticketId, ticketNumber }
+  },
+})
+
+// Query to get my created tickets with authentication
+// Query per ottenere i miei ticket creati (UTENTE vede solo i suoi)
+export const getMyCreatedWithAuth = query({
+  args: {
+    status: v.optional(v.union(v.literal("open"), v.literal("in_progress"), v.literal("closed"))),
+    limit: v.optional(v.number()),
+    userEmail: v.optional(v.string()), // Per test temporaneo
+  },
+  handler: async (ctx, args) => {
+    console.log('📋 getMyCreatedWithAuth chiamata con:', args)
+    
+    // TEMPORARY: Per ora prendo l'utente con la tua email, poi metteremo l'autenticazione
+    const user = await ctx.db
+      .query("users")
+      .filter((q) => q.eq(q.field("email"), "s.petretto@primogroup.it"))
+      .first()
+    
+    if (!user) {
+      throw new ConvexError("Utente s.petretto@primogroup.it non trovato nel sistema")
+    }
+    
+    console.log('👤 Utente trovato per query ticket:', { id: user._id, email: user.email })
+
+    // UTENTE: vede solo i ticket che ha creato LUI
+    let query = ctx.db
+      .query("tickets")
+      .withIndex("by_creator", (q) => q.eq("creatorId", user._id))
+
+    if (args.status) {
+      query = query.filter((q) => q.eq(q.field("status"), args.status))
+    }
+
+    const tickets = await query.collect()
+    
+    console.log(`📊 Trovati ${tickets.length} ticket creati dall'utente ${user.email}`)
+    
+    // Sort by creation time (most recent first)  
+    tickets.sort((a, b) => b._creationTime - a._creationTime)
+
+    const limit = args.limit || 20
+    return tickets.slice(0, limit)
+  },
+})
+
+// Query per ottenere ticket delle mie cliniche (UTENTE può vedere anche ticket di altri nelle sue cliniche)
+export const getMyClinicTicketsWithAuth = query({
+  args: {
+    status: v.optional(v.union(v.literal("open"), v.literal("in_progress"), v.literal("closed"))),
+    limit: v.optional(v.number()),
+    userEmail: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    console.log('🏥 getMyClinicTicketsWithAuth chiamata con:', args)
+    
+    const user = await ctx.db
+      .query("users")
+      .filter((q) => q.eq(q.field("email"), args.userEmail || "s.petretto@primogroup.it"))
+      .first()
+    
+    if (!user) return []
+
+    // Ottieni tutte le cliniche dell'utente dalla nuova tabella userClinics
+    const userClinics = await ctx.db
+      .query("userClinics")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .filter((q) => q.eq(q.field("isActive"), true))
+      .collect()
+
+    if (userClinics.length === 0) {
+      // Fallback: usa la clinica principale per backward compatibility
+      const clinicIds = [user.clinicId]
+      console.log(`🔄 Fallback: usando clinica principale ${user.clinicId}`)
+    } else {
+      const clinicIds = userClinics.map(uc => uc.clinicId)
+      console.log(`🏥 Utente ha accesso a ${clinicIds.length} cliniche:`, clinicIds)
+    }
+
+    const clinicIds = userClinics.length > 0 
+      ? userClinics.map(uc => uc.clinicId)
+      : [user.clinicId] // Fallback
+
+    // Ottieni tutti i ticket delle cliniche dell'utente
+    const allTickets = await ctx.db.query("tickets").collect()
+    let relevantTickets = allTickets.filter(ticket => 
+      clinicIds.includes(ticket.clinicId)
+    )
+
+    // Filtra per status se specificato
+    if (args.status) {
+      relevantTickets = relevantTickets.filter(ticket => ticket.status === args.status)
+    }
+
+    console.log(`📊 Trovati ${relevantTickets.length} ticket nelle cliniche dell'utente`)
+
+    // Sort by creation time (most recent first)
+    relevantTickets.sort((a, b) => b._creationTime - a._creationTime)
+
+    const limit = args.limit || 20
+    const limitedTickets = relevantTickets.slice(0, limit)
+
+    // Popola i dati correlati
+    const ticketsWithDetails = await Promise.all(
+      limitedTickets.map(async (ticket) => {
+        const [category, clinic, creator, assignee] = await Promise.all([
+          ctx.db.get(ticket.categoryId),
+          ctx.db.get(ticket.clinicId),
+          ctx.db.get(ticket.creatorId),
+          ticket.assigneeId ? ctx.db.get(ticket.assigneeId) : null,
+        ])
+
+        return {
+          ...ticket,
+          category,
+          clinic,
+          creator,
+          assignee,
+        }
+      })
+    )
+
+    return ticketsWithDetails
+  },
+})
+
+// Query per ottenere ticket assegnati a me (AGENTE)
+export const getMyAssignedTicketsWithAuth = query({
+  args: {
+    status: v.optional(v.union(v.literal("open"), v.literal("in_progress"), v.literal("closed"))),
+    limit: v.optional(v.number()),
+    userEmail: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    console.log('🎯 getMyAssignedTicketsWithAuth chiamata con:', args)
+    
+    const user = await ctx.db
+      .query("users")
+      .filter((q) => q.eq(q.field("email"), args.userEmail || "s.petretto@primogroup.it"))
+      .first()
+    
+    if (!user) return []
+
+    // AGENTE: vede tutti i ticket assegnati a lui di TUTTE le cliniche
+    let query = ctx.db
+      .query("tickets")
+      .withIndex("by_assignee", (q) => q.eq("assigneeId", user._id))
+
+    if (args.status) {
+      query = query.filter((q) => q.eq(q.field("status"), args.status))
+    }
+
+    const tickets = await query.collect()
+    
+    console.log(`🎯 Trovati ${tickets.length} ticket assegnati all'agente ${user.email}`)
+
+    // Sort by creation time (most recent first)
+    tickets.sort((a, b) => b._creationTime - a._creationTime)
+
+    const limit = args.limit || 20
+    const limitedTickets = tickets.slice(0, limit)
+
+    // Popola i dati correlati
+    const ticketsWithDetails = await Promise.all(
+      limitedTickets.map(async (ticket) => {
+        const [category, clinic, creator, assignee] = await Promise.all([
+          ctx.db.get(ticket.categoryId),
+          ctx.db.get(ticket.clinicId),
+          ctx.db.get(ticket.creatorId),
+          ticket.assigneeId ? ctx.db.get(ticket.assigneeId) : null,
+        ])
+
+        return {
+          ...ticket,
+          category,
+          clinic,
+          creator,
+          assignee,
+        }
+      })
+    )
+
+    return ticketsWithDetails
+  },
+})
+
+// Funzione update duplicata rimossa - viene usata quella sopra con userEmail
+
+// Query to get all tickets for the "all tickets" page
+export const list = query({
+  args: {
+    status: v.optional(v.union(v.literal("open"), v.literal("in_progress"), v.literal("closed"))),
+    clinicId: v.optional(v.id("clinics")),
+  },
+  handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity()
     if (!identity) {
       throw new ConvexError("Not authenticated")
@@ -327,75 +692,49 @@ export const update = mutation({
       throw new ConvexError("User not found")
     }
 
-    const ticket = await ctx.db.get(ticketId)
-    if (!ticket || ticket.clinicId !== user.clinicId) {
-      throw new ConvexError("Ticket not found or access denied")
+    // Start with clinic-based query
+    let query = ctx.db
+      .query("tickets")
+      .withIndex("by_clinic", (q) => q.eq("clinicId", args.clinicId || user.clinicId))
+
+    // Apply status filter if provided
+    if (args.status) {
+      query = query.filter((q) => q.eq(q.field("status"), args.status))
     }
 
-    // Check permissions for different operations
-    const canEditBasicInfo = ticket.creatorId === user._id || ticket.status !== 'closed'
-    const canManageTicket = ticket.assigneeId === user._id // TODO: Add role-based check for agents/admins
+    const tickets = await query.collect()
 
-    if ((updates.title || updates.description) && !canEditBasicInfo) {
-      throw new ConvexError("Cannot edit closed tickets or tickets you don't own")
-    }
+    // Apply visibility rules
+    const visibleTickets = tickets.filter(ticket => 
+      ticket.visibility === 'public' ||
+      ticket.creatorId === user._id ||
+      ticket.assigneeId === user._id
+    )
 
-    if ((updates.status || updates.assigneeId) && !canManageTicket) {
-      throw new ConvexError("Insufficient permissions to manage this ticket")
-    }
+    // Sort by last activity (most recent first)
+    visibleTickets.sort((a, b) => b.lastActivityAt - a.lastActivityAt)
 
-    // Validate assignee if provided
-    if (updates.assigneeId) {
-      const assignee = await ctx.db.get(updates.assigneeId)
-      if (!assignee || assignee.clinicId !== user.clinicId) {
-        throw new ConvexError("Invalid assignee")
-      }
-      // TODO: Add role validation for assignee (must be agent or admin)
-    }
+    // Enrich with related data
+    const enrichedTickets = await Promise.all(
+      visibleTickets.map(async (ticket) => {
+        const [category, assignee, creator, department] = await Promise.all([
+          ticket.categoryId ? ctx.db.get(ticket.categoryId) : null,
+          ticket.assigneeId ? ctx.db.get(ticket.assigneeId) : null,
+          ctx.db.get(ticket.creatorId),
+          ticket.departmentId ? ctx.db.get(ticket.departmentId) : null,
+        ])
 
-    // Prepare update data
-    const updateData: any = {
-      ...updates,
-      lastActivityAt: Date.now(),
-    }
-
-    // Clean up string fields
-    if (updateData.title) {
-      updateData.title = updateData.title.trim()
-    }
-    if (updateData.description) {
-      updateData.description = updateData.description.trim()
-    }
-
-    // Update the ticket
-    await ctx.db.patch(ticketId, updateData)
-
-    // Update attributes if provided
-    if (updates.attributes) {
-      // Note: setTicketAttributes is not exported as internal, so we'll handle attributes differently
-      // For now, we'll skip updating attributes in the update mutation
-      console.log("Attributes provided but not yet implemented for internal mutations")
-    }
-
-    // Log the changes
-    const changes: any = {}
-    Object.keys(updates).forEach(key => {
-      if ((updates as any)[key] !== undefined) {
-        changes[key] = {
-          from: (ticket as any)[key],
-          to: (updates as any)[key],
+        return {
+          ...ticket,
+          category,
+          assignee,
+          creator,
+          department,
         }
-      }
-    })
+      })
+    )
 
-    await ctx.runMutation(internal.auditLogs.log, {
-      entityType: "ticket",
-      entityId: ticketId,
-      action: "updated",
-      changes,
-    })
-
-    return ticketId
+    return enrichedTickets
   },
 })
 
@@ -1174,5 +1513,172 @@ export const searchTicketsOptimized = query({
       total: matchedTickets.length,
       hasMore: offset + limit < matchedTickets.length,
     }
+  },
+})
+
+// Query per trovare un ticket tramite numero incrementale
+export const getByTicketNumber = query({
+  args: {
+    ticketNumber: v.number(),
+    clinicId: v.optional(v.id("clinics")), // Se non specificato, usa clinica dell'utente
+  },
+  handler: async (ctx, { ticketNumber, clinicId }) => {
+    // TEMPORARY: Per ora prendo l'utente con la tua email, poi metteremo l'autenticazione
+    const user = await ctx.db
+      .query("users")
+      .filter((q) => q.eq(q.field("email"), "s.petretto@primogroup.it"))
+      .first()
+    
+    if (!user) {
+      throw new ConvexError("Utente s.petretto@primogroup.it non trovato nel sistema")
+    }
+
+    const targetClinicId = clinicId || user.clinicId
+    
+    console.log(`🔍 Cercando ticket #${ticketNumber} nella clinica ${targetClinicId}`)
+
+    const ticket = await ctx.db
+      .query("tickets")
+      .withIndex("by_clinic_ticket_number", (q) => 
+        q.eq("clinicId", targetClinicId).eq("ticketNumber", ticketNumber)
+      )
+      .first()
+
+    if (!ticket) {
+      return null
+    }
+
+    // Arricchisci con categoria e assegnatario
+    const [category, assignee] = await Promise.all([
+      ctx.db.get(ticket.categoryId),
+      ticket.assigneeId ? ctx.db.get(ticket.assigneeId) : null,
+    ])
+
+    console.log(`✅ Ticket #${ticketNumber} trovato:`, { id: ticket._id, title: ticket.title })
+
+    return {
+      ...ticket,
+      category,
+      assignee,
+    }
+  },
+})
+
+// Migration: Aggiunta ticketNumber GLOBALI ai ticket esistenti
+export const addTicketNumbersToExistingTickets = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    console.log('🔧 Inizio migration: aggiunta ticketNumber GLOBALI ai ticket esistenti...')
+    
+    // Trova tutti i ticket senza ticketNumber
+    const allTickets = await ctx.db.query("tickets").collect()
+    const ticketsWithoutNumber = allTickets.filter(ticket => !ticket.ticketNumber)
+    
+    console.log(`📊 Trovati ${ticketsWithoutNumber.length} ticket da aggiornare`)
+    
+    if (ticketsWithoutNumber.length === 0) {
+      return { message: "Nessun ticket da aggiornare", updated: 0 }
+    }
+    
+    // Ordina TUTTI i ticket per data di creazione per numerazione GLOBALE cronologica
+    const sortedTickets = ticketsWithoutNumber.sort((a, b) => a._creationTime - b._creationTime)
+    
+    let globalTicketNumber = 1
+    let totalUpdated = 0
+    
+    // Assegna numeri sequenziali GLOBALI a tutti i ticket
+    for (const ticket of sortedTickets) {
+      // Aggiorna il ticket con il numero globale
+      await ctx.db.patch(ticket._id, {
+        ticketNumber: globalTicketNumber
+      })
+      
+      console.log(`✅ Ticket ${ticket._id} aggiornato con numero GLOBALE #${globalTicketNumber}`)
+      globalTicketNumber++
+      totalUpdated++
+    }
+    
+    // Rimuovi tutti i contatori per-clinica vecchi
+    const oldCounters = await ctx.db
+      .query("counters")
+      .filter((q) => q.eq(q.field("name"), "tickets") && q.neq(q.field("clinicId"), undefined))
+      .collect()
+    
+    for (const oldCounter of oldCounters) {
+      await ctx.db.delete(oldCounter._id)
+      console.log(`🗑️ Rimosso contatore per-clinica obsoleto: ${oldCounter.clinicId}`)
+    }
+    
+    // Crea/aggiorna il contatore GLOBALE unico
+    let globalCounter = await ctx.db
+      .query("counters")
+      .filter((q) => q.eq(q.field("name"), "tickets") && q.eq(q.field("clinicId"), undefined))
+      .first()
+    
+    if (!globalCounter) {
+      await ctx.db.insert("counters", {
+        name: "tickets",
+        clinicId: undefined as any, // Contatore globale
+        currentValue: globalTicketNumber - 1, // L'ultimo numero usato
+      })
+      console.log(`📝 Contatore GLOBALE creato con valore: ${globalTicketNumber - 1}`)
+    } else {
+      await ctx.db.patch(globalCounter._id, {
+        currentValue: globalTicketNumber - 1,
+      })
+      console.log(`🔄 Contatore GLOBALE aggiornato a: ${globalTicketNumber - 1}`)
+    }
+    
+    console.log(`✅ Migration GLOBALE completata! ${totalUpdated} ticket con numeri globali`)
+    
+    return { 
+      message: `Migration GLOBALE completata! ${totalUpdated} ticket con numeri globali unici`, 
+      updated: totalUpdated 
+    }
+  },
+})
+
+// Funzione per resettare e rifare la migration GLOBALE
+export const resetAndMigrateToGlobalNumbers: any = mutation({
+  args: {},
+  handler: async (ctx): Promise<any> => {
+    console.log('🔄 RESET e migration verso numeri GLOBALI...')
+    
+    // STEP 1: Rimuovi ticketNumber da tutti i ticket
+    const allTickets = await ctx.db.query("tickets").collect()
+    for (const ticket of allTickets) {
+      if (ticket.ticketNumber) {
+        await ctx.db.patch(ticket._id, {
+          ticketNumber: undefined as any
+        })
+      }
+    }
+    console.log(`🗑️ Rimossi ticketNumber da ${allTickets.length} ticket`)
+    
+    // STEP 2: Rimuovi tutti i contatori esistenti
+    const allCounters = await ctx.db.query("counters").collect()
+    for (const counter of allCounters) {
+      await ctx.db.delete(counter._id)
+    }
+    console.log(`🗑️ Rimossi ${allCounters.length} contatori esistenti`)
+    
+    // STEP 3: Esegui la migration globale
+    const result: any = await ctx.runMutation(internal.tickets.addTicketNumbersToExistingTickets, {})
+    
+    console.log('✅ Reset e migration GLOBALE completata!')
+    return result
+  },
+})
+
+// Funzione pubblica per eseguire la migration (solo per admin)
+export const runTicketNumberMigration: any = mutation({
+  args: {},
+  handler: async (ctx): Promise<any> => {
+    // Per ora nessun controllo admin, poi aggiungeremo
+    console.log('🚀 Avvio migration ticket numbers via API...')
+    
+    const result: any = await ctx.runMutation(internal.tickets.addTicketNumbersToExistingTickets, {})
+    
+    return result
   },
 })

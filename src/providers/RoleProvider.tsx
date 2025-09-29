@@ -14,6 +14,7 @@ interface RoleContextType {
     clinic: string;
     roleName?: string;
   } | null;
+  isLoading: boolean;
 }
 
 const RoleContext = createContext<RoleContextType | undefined>(undefined);
@@ -24,11 +25,11 @@ interface RoleProviderProps {
 
 export function RoleProvider({ children }: RoleProviderProps) {
   // Ottieni i dati reali dall'hook useAuth
-  const { user: authUser } = useAuth();
+  const { user: authUser, isLoading } = useAuth();
   
   // Mappa i dati dell'utente Auth0/Convex al formato atteso dal RoleProvider
   const user = authUser ? {
-    name: authUser.nome + ' ' + authUser.cognome || 'Utente',
+    name: authUser.nome || authUser.email?.split('@')[0] || 'Utente',
     email: authUser.email || 'example@email.com',
     clinic: authUser.clinic?.name || 'Clinica Esempio',
     roleName: authUser.role?.name || 'Utente'
@@ -46,7 +47,8 @@ export function RoleProvider({ children }: RoleProviderProps) {
   const value = {
     role,
     setRole,
-    user
+    user,
+    isLoading
   };
 
   return (

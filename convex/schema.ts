@@ -6,7 +6,7 @@ export default defineSchema({
   users: defineTable({
     email: v.string(),
     name: v.string(),
-    clinicId: v.id("clinics"),
+    clinicId: v.id("clinics"), // Clinica principale (backward compatibility)
     roleId: v.id("roles"),
     auth0Id: v.string(),
     isActive: v.boolean(),
@@ -27,6 +27,19 @@ export default defineSchema({
     .index("by_email", ["email"])
     .index("by_role", ["roleId"]),
 
+  // User-Clinic relationships (many-to-many) - NUOVA TABELLA
+  userClinics: defineTable({
+    userId: v.id("users"),
+    clinicId: v.id("clinics"),
+    role: v.union(v.literal("user"), v.literal("agent"), v.literal("admin")), // Ruolo specifico per questa clinica
+    isActive: v.boolean(),
+    joinedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_clinic", ["clinicId"])
+    .index("by_user_clinic", ["userId", "clinicId"])
+    .index("by_clinic_role", ["clinicId", "role"]),
+
   // Clinics table
   clinics: defineTable({
     name: v.string(),
@@ -34,6 +47,8 @@ export default defineSchema({
     address: v.string(),
     phone: v.string(),
     email: v.string(),
+    externalClinicId: v.optional(v.string()), // ID della clinica dal sistema esterno
+    lastSyncAt: v.optional(v.number()), // Timestamp ultima sincronizzazione
     settings: v.object({
       allowPublicTickets: v.boolean(),
       requireApprovalForCategories: v.boolean(),
@@ -42,7 +57,8 @@ export default defineSchema({
     isActive: v.boolean(),
   })
     .index("by_code", ["code"])
-    .index("by_active", ["isActive"]),
+    .index("by_active", ["isActive"])
+    .index("by_external_id", ["externalClinicId"]),
 
   // Roles table
   roles: defineTable({
@@ -145,11 +161,18 @@ export default defineSchema({
       v.literal("in_progress"), 
       v.literal("closed")
     ),
+    ticketNumber: v.optional(v.number()), // Numero incrementale tipo #1234 - opzionale per compatibilità
     categoryId: v.id("categories"),
     clinicId: v.id("clinics"),
+    departmentId: v.optional(v.id("departments")),
     creatorId: v.id("users"),
     assigneeId: v.optional(v.id("users")),
     visibility: v.union(v.literal("public"), v.literal("private")),
+    
+    // Sistema solleciti
+    nudgeCount: v.optional(v.number()), // Quante volte è stato sollecitato
+    lastNudgeAt: v.optional(v.number()), // Quando è stato sollecitato l'ultima volta
+    lastNudgeBy: v.optional(v.id("users")), // Chi ha fatto l'ultimo sollecito
     
     // Performance metadata
     lastActivityAt: v.number(),
@@ -171,9 +194,22 @@ export default defineSchema({
     .index("by_assignee", ["assigneeId"])
     .index("by_status", ["status"])
     .index("by_category", ["categoryId"])
+    .index("by_ticket_number", ["ticketNumber"]) // Per ricerca rapida per numero
+    .index("by_clinic_ticket_number", ["clinicId", "ticketNumber"]) // Per ricerca in clinica specifica
     .index("by_clinic_status", ["clinicId", "status"])
+    .index("by_last_nudge", ["lastNudgeAt"]) // Per trovare ticket sollecitati recentemente
     .index("by_assignee_status", ["assigneeId", "status"])
+    .index("by_department", ["departmentId"])
     .index("by_activity", ["lastActivityAt"]),
+
+  // Counters - Per gestire numeri incrementali (ticket numbers, etc.)
+  counters: defineTable({
+    name: v.string(), // "tickets", "invoices", ecc.
+    clinicId: v.optional(v.id("clinics")), // undefined = contatore globale, altrimenti per clinica specifica
+    currentValue: v.number(), // Numero corrente (ultimo usato)
+  })
+    .index("by_clinic_name", ["clinicId", "name"]) // Per trovare rapidamente il contatore
+    .index("by_name", ["name"]), // Per contatori globali
 
   // Category Attributes - Dynamic attributes configuration for categories
   categoryAttributes: defineTable({
@@ -316,4 +352,67 @@ export default defineSchema({
     .index("by_user_ticket", ["userId", "ticketId"])
     .index("by_active", ["isActive"])
     .index("by_last_seen", ["lastSeen"]),
+
+  // Agent threads table - Conversazioni con l'agent AI
+  agentThreads: defineTable({
+    userId: v.id("users"),
+    clinicId: v.id("clinics"),
+    title: v.optional(v.string()), // titolo generato automaticamente
+    isActive: v.boolean(),
+    lastMessageAt: v.number(),
+    messageCount: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_clinic", ["clinicId"])
+    .index("by_user_active", ["userId", "isActive"])
+    .index("by_last_message", ["lastMessageAt"]),
+
+  // Agent messages table - Messaggi nelle conversazioni
+  agentMessages: defineTable({
+    threadId: v.id("agentThreads"),
+    role: v.union(v.literal("user"), v.literal("assistant")), 
+    content: v.string(),
+    metadata: v.optional(v.object({
+      toolCalls: v.optional(v.array(v.any())),
+      searchResults: v.optional(v.array(v.any())),
+      suggestedCategory: v.optional(v.id("categories")),
+      suggestedTicket: v.optional(v.any()),
+    })),
+  })
+    .index("by_thread", ["threadId"]),
+
+  // Agent configuration table - Configurazioni dell'agent per clinica
+  agentConfig: defineTable({
+    clinicId: v.id("clinics"),
+    isEnabled: v.boolean(),
+    settings: v.object({
+      canSearchTickets: v.boolean(),
+      canSuggestCategories: v.boolean(),
+      canCreateTickets: v.boolean(),
+      canAccessUserData: v.boolean(),
+      canAccessClinicsData: v.boolean(),
+      temperature: v.number(), // per l'AI
+      maxTokens: v.number(),
+      systemPrompt: v.string(),
+    }),
+    lastUpdatedBy: v.id("users"),
+  })
+    .index("by_clinic", ["clinicId"])
+    .index("by_enabled", ["isEnabled"]),
+
+  // Comments on tickets (sistema chat)
+  ticketComments: defineTable({
+    ticketId: v.id("tickets"),
+    authorId: v.id("users"),
+    content: v.string(),
+    isInternal: v.optional(v.boolean()), // true = solo per agenti/admin
+    attachments: v.optional(v.array(v.object({
+      name: v.string(),
+      url: v.string(),
+      type: v.string(),
+      size: v.number(),
+    }))),
+  })
+    .index("by_ticket", ["ticketId"]) // _creationTime viene aggiunto automaticamente
+    .index("by_author", ["authorId"]),
 })

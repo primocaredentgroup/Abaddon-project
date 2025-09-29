@@ -35,6 +35,47 @@ export const getDepartmentsByClinic = query({
   }
 })
 
+// Query per ottenere tutti i dipartimenti
+export const list = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity()
+    if (!identity) {
+      throw new ConvexError("Not authenticated")
+    }
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_auth0", (q) => q.eq("auth0Id", identity.subject))
+      .first()
+
+    if (!user) {
+      throw new ConvexError("User not found")
+    }
+
+    // Get all departments for the user's clinic
+    const departments = await ctx.db
+      .query("departments")
+      .withIndex("by_clinic", (q) => q.eq("clinicId", user.clinicId))
+      .collect()
+
+    // Filter only active departments
+    const activeDepartments = departments.filter(dept => dept.isActive)
+
+    // Enrich with manager data
+    const departmentsWithManagers = await Promise.all(
+      activeDepartments.map(async (department) => {
+        const manager = department.managerId 
+          ? await ctx.db.get(department.managerId)
+          : null
+        return { ...department, manager }
+      })
+    )
+
+    return departmentsWithManagers
+  }
+})
+
 // Query per ottenere un dipartimento per ID
 export const getDepartmentById = query({
   args: { departmentId: v.id("departments") },

@@ -1,6 +1,8 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import { useQuery } from 'convex/react'
+import { api } from '@/convex/_generated/api'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { useRole } from '@/providers/RoleProvider'
 import { useAuth } from '@/hooks/useAuth'
@@ -8,6 +10,7 @@ import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
+import { ChangeUserRoleFixed } from '@/components/admin/ChangeUserRoleFixed'
 import { 
   Plus, 
   Ticket, 
@@ -24,74 +27,6 @@ import {
   Activity
 } from 'lucide-react'
 import Link from 'next/link'
-
-const mockTickets = [
-  {
-    id: '#1234',
-    title: 'Problema sistema prenotazioni',
-    status: 'open',
-    priority: 'high',
-    assignee: 'Marco Bianchi',
-    created: '2 ore fa',
-    sla: 'warning',
-    slaTime: '2h rimanenti',
-    category: 'Software',
-    description: 'Il sistema di prenotazioni non risponde correttamente...',
-    comments: 3
-  },
-  {
-    id: '#1235',
-    title: 'Richiesta nuovo utente',
-    status: 'in_progress',
-    priority: 'medium',
-    assignee: 'Te',
-    created: '1 giorno fa',
-    sla: 'on_time',
-    slaTime: '1 giorno rimanente',
-    category: 'Account',
-    description: 'Creazione nuovo account per dottoressa Rossi...',
-    comments: 1
-  },
-  {
-    id: '#1236',
-    title: 'Aggiornamento software',
-    status: 'resolved',
-    priority: 'low',
-    assignee: 'Anna Verdi',
-    created: '3 giorni fa',
-    sla: 'on_time',
-    slaTime: 'Completato',
-    category: 'Manutenzione',
-    description: 'Aggiornamento del software gestionale completato',
-    comments: 5
-  },
-  {
-    id: '#1237',
-    title: 'Stampante non funziona',
-    status: 'new',
-    priority: 'urgent',
-    assignee: 'Non assegnato',
-    created: '30 minuti fa',
-    sla: 'overdue',
-    slaTime: 'SCADUTO da 15min',
-    category: 'Hardware',
-    description: 'La stampante del reparto cardiologia non stampa',
-    comments: 0
-  },
-  {
-    id: '#1238',
-    title: 'Richiesta accesso database',
-    status: 'open',
-    priority: 'medium',
-    assignee: 'Te',
-    created: '4 ore fa',
-    sla: 'on_time',
-    slaTime: '4h rimanenti',
-    category: 'Sicurezza',
-    description: 'Il Dr. Bianchi necessita accesso al database pazienti',
-    comments: 2
-  }
-]
 
 const statusLabels = {
   new: 'Nuovo',
@@ -114,6 +49,9 @@ export default function DashboardPage() {
   const router = useRouter()
   const [selectedFilter, setSelectedFilter] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
+
+  // Fetch dei ticket reali da Convex
+  const myTicketsData = useQuery(api.tickets.getMyCreatedWithAuth, { userEmail: user?.email })
 
   // Controllo autenticazione: reindirizza al login se non autenticato
   useEffect(() => {
@@ -148,35 +86,69 @@ export default function DashboardPage() {
     return null
   }
 
-  // No loading state needed
+  // Elabora i dati reali (NO MOCK!)
+  const myTickets = (myTicketsData || []).map((ticket: any) => ({
+    id: `#${ticket.ticketNumber || 'N/A'}`,
+    title: ticket.title,
+    status: ticket.status,
+    priority: 'medium', // Default
+    assignee: ticket.assignee?.name || 'Non assegnato',
+    created: new Date(ticket._creationTime).toLocaleDateString(),
+    category: ticket.category?.name || 'N/A',
+    description: ticket.description,
+    _id: ticket._id
+  }))
 
-  const myTickets = mockTickets.filter(ticket =>
-    ticket.assignee === 'Te' || ticket.assignee === user?.name
-  )
-  
-  const clinicTickets = mockTickets.filter(ticket => 
-    ticket.status !== 'resolved' && ticket.status !== 'closed'
-  )
+  const stats = {
+    total: myTickets.length,
+    open: myTickets.filter(t => t.status === 'open').length,
+    inProgress: myTickets.filter(t => t.status === 'in_progress').length,
+    resolved: myTickets.filter(t => t.status === 'resolved' || t.status === 'closed').length
+  }
 
-  const urgentTickets = mockTickets.filter(ticket => 
-    ticket.sla === 'overdue' || ticket.priority === 'urgent'
-  )
+  const recentTickets = myTickets
+    .sort((a, b) => new Date(b.created).getTime() - new Date(a.created).getTime())
+    .slice(0, 5)
 
-  const getSLAColor = (sla: string) => {
-    switch (sla) {
-      case 'overdue': return 'text-red-600 bg-red-50 border-red-200'
-      case 'warning': return 'text-yellow-600 bg-yellow-50 border-yellow-200'
-      case 'on_time': return 'text-green-600 bg-green-50 border-green-200'
-      default: return 'text-gray-600 bg-gray-50 border-gray-200'
+  const filteredTickets = myTickets.filter(ticket => {
+    const matchesSearch = searchTerm === '' ||
+      ticket.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      ticket.id.toLowerCase().includes(searchTerm.toLowerCase())
+    
+    const matchesFilter = selectedFilter === 'all' || ticket.status === selectedFilter
+    
+    return matchesSearch && matchesFilter
+  })
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'new':
+        return <AlertCircle className="h-4 w-4 text-blue-600" />
+      case 'open':
+        return <Clock className="h-4 w-4 text-orange-600" />
+      case 'in_progress':
+        return <AlertTriangle className="h-4 w-4 text-yellow-600" />
+      case 'resolved':
+      case 'closed':
+        return <CheckCircle className="h-4 w-4 text-green-600" />
+      default:
+        return <Clock className="h-4 w-4 text-gray-600" />
     }
   }
 
-  const getSLAIcon = (sla: string) => {
-    switch (sla) {
-      case 'overdue': return <AlertCircle className="h-4 w-4" />
-      case 'warning': return <AlertTriangle className="h-4 w-4" />
-      case 'on_time': return <CheckCircle className="h-4 w-4" />
-      default: return <Clock className="h-4 w-4" />
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'new':
+        return 'bg-blue-100 text-blue-800'
+      case 'open':
+        return 'bg-orange-100 text-orange-800'
+      case 'in_progress':
+        return 'bg-yellow-100 text-yellow-800'
+      case 'resolved':
+      case 'closed':
+        return 'bg-green-100 text-green-800'
+      default:
+        return 'bg-gray-100 text-gray-800'
     }
   }
 
@@ -184,221 +156,183 @@ export default function DashboardPage() {
     <AppLayout>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex justify-between items-start">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
-            <p className="text-gray-600">
-              Benvenuto, {user?.name || 'Utente'} • {user?.clinic || 'Clinica'}
+            <p className="text-gray-600 mt-1">
+              Benvenuto, {user?.name || 'Utente'}
             </p>
           </div>
           <div className="flex gap-3">
-            <Link href="/kb">
-              <Button variant="outline">
-                <Search className="w-4 h-4 mr-2" />
-                Knowledge Base
-              </Button>
-            </Link>
             <Link href="/tickets/new">
               <Button>
-                <Plus className="w-4 h-4 mr-2" />
+                <Plus className="h-4 w-4 mr-2" />
                 Nuovo Ticket
               </Button>
             </Link>
           </div>
         </div>
 
-
-        {/* Urgent Tickets Alert */}
-        {urgentTickets.length > 0 && (
-          <Card className="border-red-200 bg-red-50">
-            <CardHeader>
-              <CardTitle className="text-red-800 flex items-center">
-                <AlertCircle className="h-5 w-5 mr-2" />
-                Ticket Urgenti - Attenzione Richiesta
-              </CardTitle>
+        {/* Statistiche principali */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Ticket Totali</CardTitle>
+              <Ticket className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="space-y-2">
-                {urgentTickets.map((ticket) => (
-                  <div key={ticket.id} className="flex items-center justify-between p-3 bg-white rounded-lg border border-red-200">
-                    <div className="flex items-center space-x-3">
-                      <Badge variant="danger">{ticket.id}</Badge>
-                      <span className="font-medium text-gray-900">{ticket.title}</span>
-                      <Badge variant={ticket.priority === 'urgent' ? 'danger' : 'warning'}>
-                        {priorityLabels[ticket.priority as keyof typeof priorityLabels]}
-                      </Badge>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <span className={`text-xs px-2 py-1 rounded-full border ${getSLAColor(ticket.sla)}`}>
-                        {getSLAIcon(ticket.sla)}
-                        <span className="ml-1">{ticket.slaTime}</span>
-                      </span>
-                      <Button size="sm">Visualizza</Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <div className="text-2xl font-bold">{stats.total}</div>
+              <p className="text-xs text-muted-foreground">
+                I tuoi ticket
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Aperti</CardTitle>
+              <Clock className="h-4 w-4 text-orange-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-orange-600">{stats.open}</div>
+              <p className="text-xs text-muted-foreground">
+                Da completare
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">In Lavorazione</CardTitle>
+              <AlertTriangle className="h-4 w-4 text-yellow-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-yellow-600">{stats.inProgress}</div>
+              <p className="text-xs text-muted-foreground">
+                In corso
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Risolti</CardTitle>
+              <CheckCircle className="h-4 w-4 text-green-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-green-600">{stats.resolved}</div>
+              <p className="text-xs text-muted-foreground">
+                Completati
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Admin Tools - Solo per amministratori */}
+        {role === 'admin' && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <Users className="h-5 w-5 mr-2" />
+                Strumenti Amministrazione
+              </CardTitle>
+              <CardDescription>
+                Gestione utenti e configurazione sistema
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ChangeUserRoleFixed />
             </CardContent>
           </Card>
         )}
 
-        {/* Ticket Lists */}
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-          {/* I miei ticket */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Ticket Recenti */}
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="flex items-center">
-                    <Users className="h-5 w-5 mr-2 text-blue-600" />
-                    I miei ticket
-                  </CardTitle>
-                  <CardDescription>
-                    Ticket assegnati a te ({myTickets.length})
-                  </CardDescription>
-                </div>
-                <div className="flex space-x-2">
-                  <Button variant="outline" size="sm">
-                    <Filter className="h-4 w-4" />
+              <CardTitle className="flex items-center justify-between">
+                <span className="flex items-center">
+                  <Activity className="h-5 w-5 mr-2" />
+                  Ticket Recenti
+                </span>
+                <Link href="/tickets/my">
+                  <Button variant="ghost" size="sm">
+                    Vedi tutti
                   </Button>
-                  <Button variant="outline" size="sm">
-                    <Eye className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
+                </Link>
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3">
-                {myTickets.slice(0, 4).map((ticket) => (
-                  <div key={ticket.id} className="border rounded-lg p-4 hover:bg-gray-50 cursor-pointer transition-colors">
-                    <div className="flex items-start justify-between mb-2">
+              {recentTickets.length === 0 ? (
+                <div className="text-center py-8">
+                  <Ticket className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+                  <p className="text-sm text-gray-600">Nessun ticket recente</p>
+                  <Link href="/tickets/new" className="mt-2 inline-block">
+                    <Button size="sm" variant="outline">
+                      Crea il tuo primo ticket
+                    </Button>
+                  </Link>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {recentTickets.map((ticket) => (
+                    <div key={ticket.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <div className="flex items-center space-x-3">
+                        {getStatusIcon(ticket.status)}
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">{ticket.title}</p>
+                          <p className="text-xs text-gray-500">{ticket.id} • {ticket.category}</p>
+                        </div>
+                      </div>
                       <div className="flex items-center space-x-2">
-                        <Badge variant="default" size="sm">{ticket.id}</Badge>
                         <Badge 
-                          variant={
-                            ticket.status === 'open' ? 'info' : 
-                            ticket.status === 'in_progress' ? 'warning' :
-                            ticket.status === 'resolved' ? 'success' : 'default'
-                          }
-                          size="sm"
+                          className={`text-xs ${getStatusColor(ticket.status)}`}
                         >
                           {statusLabels[ticket.status as keyof typeof statusLabels]}
                         </Badge>
-                        <Badge 
-                          variant={
-                            ticket.priority === 'urgent' ? 'danger' : 
-                            ticket.priority === 'high' ? 'warning' : 'default'
-                          }
-                          size="sm"
-                        >
-                          {priorityLabels[ticket.priority as keyof typeof priorityLabels]}
-                        </Badge>
+                        <Link href={`/tickets/${ticket._id}`}>
+                          <Button size="sm" variant="ghost" className="h-6 w-6 p-0">
+                            <Eye className="h-3 w-3" />
+                          </Button>
+                        </Link>
                       </div>
-                      <span className={`text-xs px-2 py-1 rounded-full border flex items-center ${getSLAColor(ticket.sla)}`}>
-                        {getSLAIcon(ticket.sla)}
-                        <span className="ml-1">{ticket.slaTime}</span>
-                      </span>
                     </div>
-                    <h4 className="font-medium text-gray-900 mb-1">{ticket.title}</h4>
-                    <p className="text-sm text-gray-600 mb-2 line-clamp-1">{ticket.description}</p>
-                    <div className="flex items-center justify-between text-xs text-gray-500">
-                      <div className="flex items-center space-x-3">
-                        <span>{ticket.category}</span>
-                        <span className="flex items-center">
-                          <MessageSquare className="h-3 w-3 mr-1" />
-                          {ticket.comments}
-                        </span>
-                      </div>
-                      <span className="flex items-center">
-                        <Calendar className="h-3 w-3 mr-1" />
-                        {ticket.created}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-                {myTickets.length === 0 && (
-                  <div className="text-center py-8 text-gray-500">
-                    <Ticket className="h-12 w-12 mx-auto mb-3 text-gray-300" />
-                    <p>Nessun ticket assegnato</p>
-                  </div>
-                )}
-              </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
 
-          {/* Ticket della clinica */}
+          {/* Attività Recente */}
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="flex items-center">
-                    <Activity className="h-5 w-5 mr-2 text-green-600" />
-                    Ticket della clinica
-                  </CardTitle>
-                  <CardDescription>
-                    Ticket pubblici attivi ({clinicTickets.length})
-                  </CardDescription>
-                </div>
-                <div className="flex space-x-2">
-                  <Button variant="outline" size="sm">
-                    <Filter className="h-4 w-4" />
-                  </Button>
-                  <Button variant="outline" size="sm">
-                    <Eye className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
+              <CardTitle className="flex items-center">
+                <Calendar className="h-5 w-5 mr-2" />
+                Attività Recente
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3">
-                {clinicTickets.slice(0, 4).map((ticket) => (
-                  <div key={ticket.id} className="border rounded-lg p-4 hover:bg-gray-50 cursor-pointer transition-colors">
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="flex items-center space-x-2">
-                        <Badge variant="default" size="sm">{ticket.id}</Badge>
-                        <Badge 
-                          variant={
-                            ticket.status === 'open' ? 'info' : 
-                            ticket.status === 'in_progress' ? 'warning' :
-                            ticket.status === 'new' ? 'default' : 'success'
-                          }
-                          size="sm"
-                        >
-                          {statusLabels[ticket.status as keyof typeof statusLabels]}
-                        </Badge>
-                        <Badge 
-                          variant={
-                            ticket.priority === 'urgent' ? 'danger' : 
-                            ticket.priority === 'high' ? 'warning' : 'default'
-                          }
-                          size="sm"
-                        >
-                          {priorityLabels[ticket.priority as keyof typeof priorityLabels]}
-                        </Badge>
-                      </div>
-                      <span className={`text-xs px-2 py-1 rounded-full border flex items-center ${getSLAColor(ticket.sla)}`}>
-                        {getSLAIcon(ticket.sla)}
-                        <span className="ml-1">{ticket.slaTime}</span>
-                      </span>
-                    </div>
-                    <h4 className="font-medium text-gray-900 mb-1">{ticket.title}</h4>
-                    <p className="text-sm text-gray-600 mb-2 line-clamp-1">{ticket.description}</p>
-                    <div className="flex items-center justify-between text-xs text-gray-500">
-                      <div className="flex items-center space-x-3">
-                        <span>{ticket.category}</span>
-                        <span>Assegnato a: {ticket.assignee}</span>
-                        <span className="flex items-center">
-                          <MessageSquare className="h-3 w-3 mr-1" />
-                          {ticket.comments}
-                        </span>
-                      </div>
-                      <span className="flex items-center">
-                        <Calendar className="h-3 w-3 mr-1" />
-                        {ticket.created}
-                      </span>
-                    </div>
+              <div className="space-y-4">
+                {myTickets.length === 0 ? (
+                  <div className="text-center py-8">
+                    <Activity className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+                    <p className="text-sm text-gray-600">Nessuna attività recente</p>
                   </div>
-                ))}
+                ) : (
+                  <div className="space-y-3">
+                    {myTickets.slice(0, 5).map((ticket) => (
+                      <div key={ticket.id} className="flex items-start space-x-3">
+                        <div className="w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
+                        <div className="flex-1">
+                          <p className="text-sm text-gray-900">
+                            Hai creato il ticket <strong>{ticket.id}</strong>
+                          </p>
+                          <p className="text-xs text-gray-500">{ticket.created}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>

@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { Header } from './Header';
 import { Sidebar } from './Sidebar';
 import { NotificationCenter } from './NotificationCenter';
+import { AgentWidget } from '@/components/agent/AgentWidget';
 import { useRole } from '@/providers/RoleProvider';
 
 interface AppLayoutProps {
@@ -51,6 +52,9 @@ export function AppLayout({ children }: AppLayoutProps) {
 
       {/* Notification Center */}
       <NotificationCenter />
+
+      {/* Agent Widget - Fixed position */}
+      <AgentWidget />
     </div>
   );
 }

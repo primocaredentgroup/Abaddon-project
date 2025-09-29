@@ -16,7 +16,45 @@ interface UseOptimizedQueryOptions {
 
 // Generate cache key from function and args
 function generateCacheKey(func: any, args: any): string {
-  return `${func._name || 'unknown'}_${JSON.stringify(args)}`
+  try {
+    // Safely get function name - handle different types of Convex functions
+    let funcName = 'unknown'
+    
+    if (typeof func === 'function') {
+      funcName = func._name || func.name || 'function'
+    } else if (func && typeof func === 'object') {
+      // Handle Convex function objects
+      if (func._name) {
+        funcName = func._name
+      } else if (func.name) {
+        funcName = func.name
+      } else if (func.toString) {
+        try {
+          funcName = func.toString().substring(0, 50) // Truncate to avoid huge strings
+        } catch {
+          funcName = 'object'
+        }
+      } else {
+        funcName = 'convex_function'
+      }
+    } else {
+      funcName = typeof func
+    }
+    
+    // Safely serialize args
+    let argsStr = 'undefined'
+    try {
+      argsStr = args !== undefined ? JSON.stringify(args) : 'undefined'
+    } catch {
+      argsStr = 'unserializable'
+    }
+    
+    return String(funcName) + "_" + String(argsStr)
+  } catch (error) {
+    // Fallback if anything fails
+    console.warn('Error generating cache key:', error)
+    return `fallback_${Date.now()}_${Math.random()}`
+  }
 }
 
 // Check if cached data is still valid

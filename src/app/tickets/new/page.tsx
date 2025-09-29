@@ -1,8 +1,12 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useQuery, useMutation } from 'convex/react';
+import { useRouter } from 'next/navigation';
+import { api } from '@/convex/_generated/api';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useRole } from '@/providers/RoleProvider';
+import { useAuth } from '@/hooks/useAuth';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -12,28 +16,36 @@ import { Badge } from '@/components/ui/Badge';
 import { ArrowLeft, Upload, User, Tag } from 'lucide-react';
 import Link from 'next/link';
 
-const categories = [
-  { value: 'tech-support', label: 'Supporto Tecnico' },
-  { value: 'maintenance', label: 'Manutenzione' },
-  { value: 'software', label: 'Software' },
-  { value: 'hardware', label: 'Hardware' },
-  { value: 'network', label: 'Rete' },
-];
-
-const priorities = [
-  { value: 'low', label: 'Bassa' },
-  { value: 'medium', label: 'Media' },
-  { value: 'high', label: 'Alta' },
-  { value: 'urgent', label: 'Urgente' },
-];
 
 export default function NewTicketPage() {
   const { user } = useRole();
+  const { user: authUser } = useAuth();
+  const router = useRouter();
+  
+  // Mutation per creare il ticket con autenticazione
+  const createTicket = useMutation(api.tickets.createWithAuth);
+  
+  // Query per ottenere le categorie pubbliche da Convex
+  const categoriesData = useQuery(
+    api.categories.getPublicCategories,
+    authUser?.clinic?._id ? { clinicId: authUser.clinic._id } : "skip"
+  );
+  
+  // Trasforma le categorie nel formato atteso dal Select
+  const categories = categoriesData 
+    ? categoriesData.map(cat => ({ 
+        value: cat._id, 
+        label: cat.name 
+      }))
+    : [];
+  
+  // Stato di caricamento
+  const isLoadingCategories = categoriesData === undefined;
+  
   const [formData, setFormData] = useState({
     title: '',
     description: '',
     category: '',
-    priority: 'medium',
     visibility: 'public',
     tags: '',
   });
@@ -44,11 +56,51 @@ export default function NewTicketPage() {
     e.preventDefault();
     setIsSubmitting(true);
     
-    // Simula invio
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    alert('Ticket creato con successo! #1237');
-    setIsSubmitting(false);
+    try {
+      // Validazioni
+      if (!formData.title.trim()) {
+        alert('Il titolo è obbligatorio');
+        return;
+      }
+      
+      if (!formData.description.trim()) {
+        alert('La descrizione è obbligatoria');
+        return;
+      }
+      
+      if (!formData.category) {
+        alert('Seleziona una categoria');
+        return;
+      }
+      
+      console.log('🎫 Creando ticket con dati:', {
+        title: formData.title,
+        description: formData.description,
+        categoryId: formData.category,
+      });
+      
+      // Crea il ticket su Convex con autenticazione
+      const result = await createTicket({
+        title: formData.title.trim(),
+        description: formData.description.trim(),
+        categoryId: formData.category as any, // Cast necessario per TypeScript
+        visibility: 'private', // Default a privato
+      });
+      
+      console.log('✅ Ticket creato:', result);
+      
+      // Mostra messaggio di successo con numero ticket
+      alert(`Ticket #${result.ticketNumber} creato con successo!`);
+      
+      // Reindirizza alla pagina dei miei ticket
+      router.push('/tickets/my');
+      
+    } catch (error) {
+      console.error('❌ Errore creazione ticket:', error);
+      alert('Errore durante la creazione del ticket: ' + (error instanceof Error ? error.message : 'Errore sconosciuto'));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -94,22 +146,20 @@ export default function NewTicketPage() {
                     required
                   />
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <Select
-                      label="Categoria *"
-                      options={[{ value: '', label: 'Seleziona categoria...' }, ...categories]}
-                      value={formData.category}
-                      onChange={(e) => setFormData({...formData, category: e.target.value})}
-                      required
-                    />
-                    
-                    <Select
-                      label="Priorità"
-                      options={priorities}
-                      value={formData.priority}
-                      onChange={(e) => setFormData({...formData, priority: e.target.value})}
-                    />
-                  </div>
+                  <Select
+                    label="Categoria *"
+                    options={[
+                      { 
+                        value: '', 
+                        label: isLoadingCategories ? 'Caricamento categorie...' : 'Seleziona categoria...' 
+                      }, 
+                      ...categories
+                    ]}
+                    value={formData.category}
+                    onChange={(e) => setFormData({...formData, category: e.target.value})}
+                    required
+                    disabled={isLoadingCategories}
+                  />
 
                   <Input
                     label="Tag"
@@ -151,8 +201,8 @@ export default function NewTicketPage() {
                   <div className="flex items-center space-x-2">
                     <User className="h-4 w-4 text-gray-500" />
                     <div>
-                      <p className="text-sm font-medium">{user.name}</p>
-                      <p className="text-xs text-gray-500">{user.clinic}</p>
+                      <p className="text-sm font-medium">{user?.name || 'Caricamento...'}</p>
+                      <p className="text-xs text-gray-500">{user?.clinic?.name || 'Caricamento...'}</p>
                     </div>
                   </div>
                   
@@ -186,8 +236,8 @@ export default function NewTicketPage() {
                 </CardContent>
               </Card>
 
-              {/* Preview Priority */}
-              {formData.priority && (
+              {/* Preview */}
+              {formData.visibility && (
                 <Card>
                   <CardHeader>
                     <CardTitle>Anteprima</CardTitle>
@@ -195,24 +245,10 @@ export default function NewTicketPage() {
                   <CardContent>
                     <div className="space-y-2">
                       <div className="flex items-center space-x-2">
-                        <Tag className="h-4 w-4 text-gray-500" />
-                        <Badge 
-                          variant={
-                            formData.priority === 'urgent' ? 'danger' : 
-                            formData.priority === 'high' ? 'warning' : 
-                            formData.priority === 'medium' ? 'info' : 'default'
-                          }
-                        >
-                          {priorities.find(p => p.value === formData.priority)?.label}
+                        <Badge variant={formData.visibility === 'public' ? 'success' : 'default'}>
+                          {formData.visibility === 'public' ? 'Pubblico' : 'Privato'}
                         </Badge>
                       </div>
-                      {formData.visibility && (
-                        <div className="flex items-center space-x-2">
-                          <Badge variant={formData.visibility === 'public' ? 'success' : 'default'}>
-                            {formData.visibility === 'public' ? 'Pubblico' : 'Privato'}
-                          </Badge>
-                        </div>
-                      )}
                     </div>
                   </CardContent>
                 </Card>

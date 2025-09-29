@@ -57,9 +57,9 @@ export const AuditExport: React.FC<AuditExportProps> = ({
       ]
 
       if (exportConfig.format === 'csv') {
-        downloadCSV(mockData)
+        downloadCSV(auditData)
       } else {
-        downloadJSON(mockData)
+        downloadJSON(auditData)
       }
     } catch (error) {
       console.error('Export error:', error)

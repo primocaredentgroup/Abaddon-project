@@ -418,28 +418,59 @@ export const updateUserRoleByEmail = mutation({
       .query("users")
       .withIndex("by_email", (q) => q.eq("email", email))
       .unique()
-    
+
     if (!user) {
       throw new ConvexError(`Utente con email ${email} non trovato`)
     }
-    
+
     // Trova il ruolo per nome
     const role = await ctx.db
       .query("roles")
       .filter((q) => q.eq(q.field("name"), newRoleName))
       .unique()
-    
+
     if (!role) {
       throw new ConvexError(`Ruolo ${newRoleName} non trovato`)
     }
-    
+
     // Aggiorna il ruolo dell'utente
     await ctx.db.patch(user._id, { roleId: role._id })
-    
+
     return {
       userId: user._id,
       oldRoleId: user.roleId,
       newRoleId: role._id,
+      newRoleName: role.name
+    }
+  }
+})
+
+// Mutation semplificata per aggiornare ruolo utente per ID (per sviluppo)
+export const updateUserRoleById = mutation({
+  args: {
+    userId: v.id("users"),
+    newRoleId: v.id("roles")
+  },
+  handler: async (ctx, { userId, newRoleId }) => {
+    // Trova l'utente
+    const user = await ctx.db.get(userId)
+    if (!user) {
+      throw new ConvexError("Utente non trovato")
+    }
+
+    // Trova il ruolo
+    const role = await ctx.db.get(newRoleId)
+    if (!role) {
+      throw new ConvexError("Ruolo non trovato")
+    }
+
+    // Aggiorna il ruolo dell'utente
+    await ctx.db.patch(userId, { roleId: newRoleId })
+
+    return {
+      userId,
+      oldRoleId: user.roleId,
+      newRoleId,
       newRoleName: role.name
     }
   }
