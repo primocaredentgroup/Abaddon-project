@@ -7,71 +7,66 @@ import { useQuery } from 'convex/react'
 import { api } from '../../../convex/_generated/api'
 import { useAuth } from '@/hooks/useAuth'
 
-interface CategorySelectProps {
+interface ClinicSelectProps {
   value?: string
-  onChange: (categoryId: string) => Promise<void>
+  onChange: (clinicId: string) => Promise<void>
   disabled?: boolean
   className?: string
-  clinicId?: string
 }
 
-export const CategorySelect: React.FC<CategorySelectProps> = ({
+export const ClinicSelect: React.FC<ClinicSelectProps> = ({
   value,
   onChange,
   disabled = false,
   className = '',
-  clinicId,
 }) => {
   const [isChanging, setIsChanging] = useState(false)
   const [error, setError] = useState('')
 
   const { user } = useAuth()
   
-  // Get categories for the clinic
-  const categories = useQuery(
-    api.categories.getPublicCategories,
-    clinicId ? { clinicId } : "skip"
-  )
+  // Get all clinics (for now, later we can filter by user permissions)
+  const clinics = useQuery(api.clinics.list, {})
 
-  const categoryOptions = useMemo(() => {
-    if (!categories) return []
+  const clinicOptions = useMemo(() => {
+    if (!clinics) return []
     
-    return categories.map(category => ({
-      value: category._id,
-      label: category.name
+    return clinics.map(clinic => ({
+      value: clinic._id,
+      label: clinic.name
     }))
-  }, [categories])
+  }, [clinics])
 
-  const currentCategory = categories?.find(cat => cat._id === value)
+  const currentClinic = clinics?.find(clinic => clinic._id === value)
 
-  const handleCategoryChange = async (categoryId: string) => {
-    if (categoryId === value) return
+  const handleClinicChange = async (clinicId: string) => {
+    if (clinicId === value) return
 
     setIsChanging(true)
     setError('')
 
     try {
-      await onChange(categoryId)
+      await onChange(clinicId)
     } catch (error) {
-      console.error('Error changing category:', error)
-      setError('Errore durante il cambio categoria')
+      console.error('Error changing clinic:', error)
+      setError('Errore durante il cambio clinica')
     } finally {
       setIsChanging(false)
     }
   }
 
-  if (!categories) {
+  if (!clinics) {
     return (
       <div className={`text-sm text-gray-500 ${className}`}>
-        Caricamento categorie...
+        Caricamento cliniche...
       </div>
     )
   }
 
-  if (categories.length === 0) {
+  if (clinics.length === 0) {
     return (
       <div className={`text-sm text-gray-500 ${className}`}>
-        Nessuna categoria disponibile
+        Nessuna clinica disponibile
       </div>
     )
   }
@@ -80,36 +75,33 @@ export const CategorySelect: React.FC<CategorySelectProps> = ({
     <div className={`space-y-3 ${className}`}>
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
-          Categoria
+          Clinica
         </label>
         
-        {/* Current category display */}
-        {currentCategory && (
-          <div className="flex items-center justify-between p-2 bg-blue-50 border border-blue-200 rounded-md mb-2">
+        {/* Current clinic display */}
+        {currentClinic && (
+          <div className="flex items-center justify-between p-2 bg-green-50 border border-green-200 rounded-md mb-2">
             <div className="flex items-center space-x-2">
-              <div 
-                className="w-4 h-4 rounded-full"
-                style={{ backgroundColor: currentCategory.color || '#6B7280' }}
-              />
+              <div className="w-4 h-4 bg-green-500 rounded-full" />
               <div>
                 <div className="text-sm font-medium text-gray-900">
-                  {currentCategory.name}
+                  {currentClinic.name}
                 </div>
                 <div className="text-xs text-gray-500">
-                  {currentCategory.description || 'Nessuna descrizione'}
+                  {currentClinic.address || 'Nessun indirizzo'}
                 </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* Category selection */}
+        {/* Clinic selection */}
         <Select
           value={value || ''}
-          onChange={handleCategoryChange}
+          onChange={handleClinicChange}
           disabled={disabled || isChanging}
-          placeholder="Seleziona categoria"
-          options={categoryOptions}
+          placeholder="Seleziona clinica"
+          options={clinicOptions}
         />
       </div>
 

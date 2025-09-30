@@ -4,61 +4,61 @@ import React, { useState, useMemo } from 'react'
 import { Select } from '@/components/ui/Select'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
-import { useQuery } from 'convex/react'
+import { useQuery, useMutation } from 'convex/react'
 import { api } from '../../../convex/_generated/api'
+import { useAuth } from '@/hooks/useAuth'
 
 interface AssigneeSelectProps {
+  ticketId: string
   value?: string
-  onChange: (assigneeId?: string) => Promise<void>
   disabled?: boolean
   showSearch?: boolean
   showUnassign?: boolean
   className?: string
+  onAssigneeChanged?: () => void // Callback quando l'assegnazione cambia
 }
 
 export const AssigneeSelect: React.FC<AssigneeSelectProps> = ({
+  ticketId,
   value,
-  onChange,
   disabled = false,
   showSearch = true,
   showUnassign = true,
   className = '',
+  onAssigneeChanged,
 }) => {
   const [isChanging, setIsChanging] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [error, setError] = useState('')
 
   // Get current user
-  const currentUser = useQuery(api.users?.getCurrentUser, {})
+  const { user } = useAuth()
   
-  // Get clinic users (agents and admins who can be assigned tickets)
-  // TODO: Filter by roles when role system is implemented
-  const clinicUsers = useQuery(
-    api.users?.getByClinic,
-    currentUser ? { clinicId: currentUser.clinicId } : "skip"
+  // Get available agents for assignment using the new Convex function
+  const availableAgents = useQuery(
+    api.users.getAvailableAgents, 
+    { 
+      clinicId: user?.clinic?._id,
+      userEmail: user?.email 
+    }
   )
 
-  // Filter users who can be assigned (exclude current user if they're not an agent/admin)
-  const assignableUsers = useMemo(() => {
-    if (!clinicUsers) return []
-    
-    // TODO: Add proper role filtering
-    // For now, allow all active users to be assigned
-    return clinicUsers.filter(user => user.isActive)
-  }, [clinicUsers])
+  // Mutation per cambiare l'assegnatario
+  const changeAssignee = useMutation(api.tickets.changeAssignee)
 
-  // Filter users based on search term
-  const filteredUsers = useMemo(() => {
-    if (!searchTerm) return assignableUsers
+  // Filter agents based on search term
+  const filteredAgents = useMemo(() => {
+    if (!availableAgents) return []
+    if (!searchTerm) return availableAgents
     
     const term = searchTerm.toLowerCase()
-    return assignableUsers.filter(user =>
-      user.name.toLowerCase().includes(term) ||
-      user.email.toLowerCase().includes(term)
+    return availableAgents.filter(agent =>
+      agent.name.toLowerCase().includes(term) ||
+      agent.email.toLowerCase().includes(term)
     )
-  }, [assignableUsers, searchTerm])
+  }, [availableAgents, searchTerm])
 
-  const currentAssignee = assignableUsers.find(user => user._id === value)
+  const currentAssignee = availableAgents?.find(agent => agent._id === value)
 
   const handleAssigneeChange = async (assigneeId: string) => {
     if (assigneeId === value) return
@@ -67,7 +67,14 @@ export const AssigneeSelect: React.FC<AssigneeSelectProps> = ({
     setError('')
 
     try {
-      await onChange(assigneeId || undefined)
+      await changeAssignee({
+        ticketId,
+        newAssigneeId: assigneeId,
+        userEmail: user?.email
+      })
+      
+      // Chiama il callback se fornito
+      onAssigneeChanged?.()
     } catch (error) {
       console.error('Error changing assignee:', error)
       setError('Errore durante l\'assegnazione')
@@ -83,7 +90,14 @@ export const AssigneeSelect: React.FC<AssigneeSelectProps> = ({
     setError('')
 
     try {
-      await onChange(undefined)
+      await changeAssignee({
+        ticketId,
+        newAssigneeId: undefined, // Rimuovi assegnazione
+        userEmail: user?.email
+      })
+      
+      // Chiama il callback se fornito
+      onAssigneeChanged?.()
     } catch (error) {
       console.error('Error unassigning:', error)
       setError('Errore durante la rimozione assegnazione')
@@ -92,18 +106,18 @@ export const AssigneeSelect: React.FC<AssigneeSelectProps> = ({
     }
   }
 
-  if (!clinicUsers) {
+  if (!availableAgents) {
     return (
       <div className={`text-sm text-gray-500 ${className}`}>
-        Caricamento utenti...
+        Caricamento agenti...
       </div>
     )
   }
 
-  if (assignableUsers.length === 0) {
+  if (availableAgents.length === 0) {
     return (
       <div className={`text-sm text-gray-500 ${className}`}>
-        Nessun utente disponibile per l'assegnazione
+        Nessun agente disponibile per l'assegnazione
       </div>
     )
   }
@@ -160,37 +174,42 @@ export const AssigneeSelect: React.FC<AssigneeSelectProps> = ({
           />
         )}
 
-        {/* User selection */}
+        {/* Agent selection */}
         <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-md">
-          {filteredUsers.length === 0 ? (
+          {filteredAgents.length === 0 ? (
             <div className="p-3 text-sm text-gray-500 text-center">
-              {searchTerm ? 'Nessun utente trovato' : 'Nessun utente disponibile'}
+              {searchTerm ? 'Nessun agente trovato' : 'Nessun agente disponibile'}
             </div>
           ) : (
-            filteredUsers.map((user) => (
+            filteredAgents.map((agent) => (
               <button
-                key={user._id}
-                onClick={() => handleAssigneeChange(user._id)}
-                disabled={disabled || isChanging || user._id === value}
+                key={agent._id}
+                onClick={() => handleAssigneeChange(agent._id)}
+                disabled={disabled || isChanging || agent._id === value}
                 className={`w-full flex items-center space-x-3 p-3 text-left hover:bg-gray-50 transition-colors ${
-                  user._id === value ? 'bg-blue-50 cursor-not-allowed' : ''
+                  agent._id === value ? 'bg-blue-50 cursor-not-allowed' : ''
                 } ${disabled || isChanging ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-medium ${
-                  user._id === value ? 'bg-blue-500' : 'bg-gray-400'
+                  agent._id === value ? 'bg-blue-500' : 'bg-gray-400'
                 }`}>
-                  {user.name.charAt(0).toUpperCase()}
+                  {agent.name.charAt(0).toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium text-gray-900 truncate">
-                    {user.name}
-                    {user._id === value && <span className="text-blue-600 ml-2">(Attuale)</span>}
+                    {agent.name}
+                    {agent._id === value && <span className="text-blue-600 ml-2">(Attuale)</span>}
                   </div>
                   <div className="text-xs text-gray-500 truncate">
-                    {user.email}
+                    {agent.email} • {agent.role?.name}
                   </div>
+                  {agent.clinic && (
+                    <div className="text-xs text-gray-400 truncate">
+                      {agent.clinic.name}
+                    </div>
+                  )}
                 </div>
-                {user._id === currentUser?._id && (
+                {agent._id === user?.id && (
                   <div className="text-xs text-blue-600 font-medium">
                     Tu
                   </div>
@@ -206,12 +225,12 @@ export const AssigneeSelect: React.FC<AssigneeSelectProps> = ({
       )}
 
       {/* Quick actions */}
-      {currentUser && !value && (
+      {user && !value && (
         <div className="pt-2 border-t border-gray-200">
           <Button
             size="sm"
             variant="outline"
-            onClick={() => handleAssigneeChange(currentUser._id)}
+            onClick={() => handleAssigneeChange(user.id)}
             disabled={disabled || isChanging}
             className="w-full"
           >

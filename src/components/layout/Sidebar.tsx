@@ -17,7 +17,8 @@ import {
   X,
   Tags,
   Bot,
-  Bell
+  Bell,
+  UserCheck // Icon for assigned tickets
 
 } from 'lucide-react'
 import Link from 'next/link'
@@ -45,6 +46,7 @@ const navigation: NavItem[] = [
 ]
 
 const agentNavigation: NavItem[] = [
+  { name: 'Ticket Assegnati', href: '/tickets/assigned', icon: UserCheck, roles: ['agent', 'admin'] },
   { name: 'Utenti', href: '/users', icon: Users, roles: ['agent', 'admin'] },
   { name: 'Categorie', href: '/categories', icon: Filter, roles: ['agent', 'admin'] },
   { name: 'Solleciti', href: '/dashboard/nudges', icon: Bell, roles: ['agent', 'admin'] },

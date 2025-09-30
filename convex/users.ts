@@ -396,6 +396,80 @@ export const getUserByEmail = query({
   },
 });
 
+// Query per ottenere tutti gli agenti disponibili per assegnazione ticket
+export const getAvailableAgents = query({
+  args: { 
+    clinicId: v.optional(v.id("clinics")),
+    userEmail: v.optional(v.string()) // Per test temporaneo
+  },
+  handler: async (ctx, { clinicId, userEmail }) => {
+    console.log(`👥 getAvailableAgents chiamata per clinica ${clinicId}`)
+    
+    // TEMPORARY: Per ora prendo l'utente con la tua email per controlli permessi
+    const currentUser = await ctx.db
+      .query("users")
+      .filter((q) => q.eq(q.field("email"), userEmail || "s.petretto@primogroup.it"))
+      .first()
+
+    if (!currentUser) {
+      throw new ConvexError("Utente non trovato")
+    }
+
+    // Solo agenti e admin possono vedere la lista degli agenti
+    const currentUserRole = await ctx.db.get(currentUser.roleId)
+    if (!currentUserRole || (currentUserRole.name !== 'Agente' && currentUserRole.name !== 'Amministratore')) {
+      throw new ConvexError("Solo agenti e admin possono vedere la lista degli agenti")
+    }
+
+    // Ottieni tutti i ruoli di tipo agent e admin
+    const agentRoles = await ctx.db
+      .query("roles")
+      .filter((q) => 
+        q.or(
+          q.eq(q.field("name"), "Agente"),
+          q.eq(q.field("name"), "Amministratore")
+        )
+      )
+      .collect()
+
+    const agentRoleIds = agentRoles.map(role => role._id)
+
+    // Ottieni tutti gli utenti con ruolo agent/admin
+    let agents = await ctx.db
+      .query("users")
+      .filter((q) => q.eq(q.field("isActive"), true))
+      .collect()
+
+    // Filtra solo agenti e admin
+    agents = agents.filter(user => agentRoleIds.includes(user.roleId))
+
+    // Se specificata una clinica, filtra per quella clinica
+    if (clinicId) {
+      agents = agents.filter(user => user.clinicId === clinicId)
+    }
+
+    // Popola i dettagli del ruolo e della clinica
+    const agentsWithDetails = await Promise.all(
+      agents.map(async (agent) => {
+        const [role, clinic] = await Promise.all([
+          ctx.db.get(agent.roleId),
+          ctx.db.get(agent.clinicId)
+        ])
+        return {
+          _id: agent._id,
+          name: agent.name,
+          email: agent.email,
+          role: role ? { _id: role._id, name: role.name } : null,
+          clinic: clinic ? { _id: clinic._id, name: clinic.name } : null,
+        }
+      })
+    )
+
+    console.log(`✅ Trovati ${agentsWithDetails.length} agenti disponibili`)
+    return agentsWithDetails
+  },
+});
+
 // Mutation per aggiornare ultimo accesso (richiesta dalla guida Auth0)
 export const updateLastAccess = mutation({
   args: { userId: v.id("users") },

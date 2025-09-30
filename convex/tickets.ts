@@ -197,6 +197,8 @@ export const update: any = mutation({
     description: v.optional(v.string()),
     status: v.optional(v.union(v.literal("open"), v.literal("in_progress"), v.literal("closed"))),
     assigneeId: v.optional(v.id("users")),
+    categoryId: v.optional(v.id("categories")),
+    clinicId: v.optional(v.id("clinics")),
     userEmail: v.optional(v.string()) // Per test temporaneo
   },
   handler: async (ctx, args): Promise<any> => {
@@ -237,13 +239,82 @@ export const update: any = mutation({
     if (args.title) updateData.title = args.title
     if (args.description) updateData.description = args.description
     if (args.status) updateData.status = args.status
-    if (args.assigneeId) updateData.assigneeId = args.assigneeId
+    if (args.assigneeId !== undefined) updateData.assigneeId = args.assigneeId
+    if (args.categoryId) updateData.categoryId = args.categoryId
+    if (args.clinicId) updateData.clinicId = args.clinicId
 
     // Aggiorna il ticket
     await ctx.db.patch(args.id, updateData)
 
     console.log(`✅ Ticket ${args.id} aggiornato`)
     return { success: true }
+  },
+})
+
+// Mutation specifica per cambiare l'assegnatario di un ticket (solo per agenti/admin)
+export const changeAssignee: any = mutation({
+  args: {
+    ticketId: v.id("tickets"),
+    newAssigneeId: v.optional(v.id("users")), // null per rimuovere assegnazione
+    userEmail: v.optional(v.string()) // Per test temporaneo
+  },
+  handler: async (ctx, args): Promise<any> => {
+    console.log(`👤 changeAssignee chiamata per ticket ${args.ticketId}, nuovo assegnatario: ${args.newAssigneeId}`)
+    
+    // TEMPORARY: Per ora prendo l'utente con la tua email
+    const currentUser = await ctx.db
+      .query("users")
+      .filter((q) => q.eq(q.field("email"), args.userEmail || "s.petretto@primogroup.it"))
+      .first()
+
+    if (!currentUser) {
+      throw new ConvexError("Utente non trovato")
+    }
+
+    // Verifica che l'utente corrente sia un agente o admin
+    const currentUserRole = await ctx.db.get(currentUser.roleId)
+    if (!currentUserRole || (currentUserRole.name !== 'Agente' && currentUserRole.name !== 'Amministratore')) {
+      throw new ConvexError("Solo agenti e admin possono cambiare l'assegnatario dei ticket")
+    }
+
+    // Verifica che il ticket esista
+    const ticket = await ctx.db.get(args.ticketId)
+    if (!ticket) {
+      throw new ConvexError("Ticket non trovato")
+    }
+
+    // Se viene specificato un nuovo assegnatario, verifica che esista e sia un agente/admin
+    if (args.newAssigneeId) {
+      const newAssignee = await ctx.db.get(args.newAssigneeId)
+      if (!newAssignee) {
+        throw new ConvexError("Nuovo assegnatario non trovato")
+      }
+
+      const newAssigneeRole = await ctx.db.get(newAssignee.roleId)
+      if (!newAssigneeRole || (newAssigneeRole.name !== 'Agente' && newAssigneeRole.name !== 'Amministratore')) {
+        throw new ConvexError("Il nuovo assegnatario deve essere un agente o admin")
+      }
+
+      // Verifica che il nuovo assegnatario sia attivo
+      if (!newAssignee.isActive) {
+        throw new ConvexError("Il nuovo assegnatario deve essere un utente attivo")
+      }
+    }
+
+    // Aggiorna l'assegnatario del ticket
+    await ctx.db.patch(args.ticketId, {
+      assigneeId: args.newAssigneeId,
+      lastActivityAt: Date.now(), // Aggiorna anche l'attività
+    })
+
+    const actionText = args.newAssigneeId ? "assegnato" : "rimossa assegnazione"
+    console.log(`✅ Ticket ${args.ticketId} ${actionText}`)
+    
+    return { 
+      success: true, 
+      ticketId: args.ticketId,
+      newAssigneeId: args.newAssigneeId 
+    }
   },
 })
 

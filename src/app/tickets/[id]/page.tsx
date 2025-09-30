@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { TicketActions } from '@/components/tickets/TicketActions';
 import { useRole } from '@/providers/RoleProvider';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -11,7 +12,7 @@ import { Input } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/Textarea';
 import { Select } from '@/components/ui/Select';
 import { Badge } from '@/components/ui/Badge';
-import { toast } from '@/components/ui/use-toast';
+// import { useToast } from '@/components/ui/Toast';
 import {
   ArrowLeft,
   Clock,
@@ -44,6 +45,7 @@ export default function TicketDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { user } = useRole();
+  // const { addToast } = useToast();
   const ticketId = params.id as string;
 
   // Stati per editing
@@ -157,8 +159,64 @@ export default function TicketDetailPage() {
     }
   };
 
-  const canEdit = ticket.creatorId === user?.id || user?.roleName === 'agent' || user?.roleName === 'admin';
+  // Handlers per modifiche ticket
+  const handleStatusChange = async (newStatus: any) => {
+    try {
+      await updateTicket({
+        id: ticketId as any,
+        status: newStatus,
+        userEmail: user?.email || "s.petretto@primogroup.it"
+      });
+      console.log("✅ Stato aggiornato:", newStatus);
+    } catch (error: any) {
+      console.error("❌ Errore:", error.message);
+    }
+  };
+
+  const handleAssigneeChange = async (newAssigneeId?: string) => {
+    try {
+      await updateTicket({
+        id: ticketId as any,
+        assigneeId: newAssigneeId as any,
+        userEmail: user?.email || "s.petretto@primogroup.it"
+      });
+      console.log("✅ Assegnatario aggiornato:", newAssigneeId);
+    } catch (error: any) {
+      console.error("❌ Errore:", error.message);
+    }
+  };
+
+  const handleCategoryChange = async (newCategoryId: string) => {
+    try {
+      await updateTicket({
+        id: ticketId as any,
+        categoryId: newCategoryId as any,
+        userEmail: user?.email || "s.petretto@primogroup.it"
+      });
+      console.log("✅ Categoria aggiornata");
+    } catch (error: any) {
+      console.error("❌ Errore:", error.message);
+    }
+  };
+
+  const handleClinicChange = async (newClinicId: string) => {
+    try {
+      await updateTicket({
+        id: ticketId as any,
+        clinicId: newClinicId as any,
+        userEmail: user?.email || "s.petretto@primogroup.it"
+      });
+      console.log("✅ Clinica aggiornata");
+    } catch (error: any) {
+      console.error("❌ Errore:", error.message);
+    }
+  };
+
+  const canEdit = ticket.creatorId === user?.id || user?.roleName === 'Agente' || user?.roleName === 'Amministratore';
   const canNudge = ticket.creatorId === user?.id && ticket.status !== 'closed';
+  const canManage = user?.roleName === 'Agente' || user?.roleName === 'Amministratore';
+  const isCreator = ticket.creatorId === user?.id;
+  const isAssignee = ticket.assigneeId === user?.id;
 
   return (
     <AppLayout>
@@ -452,36 +510,23 @@ export default function TicketDetailPage() {
               </CardContent>
             </Card>
 
-            {/* Azioni rapide */}
-            {(user?.roleName === 'agent' || user?.roleName === 'admin') && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Azioni Agente</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <Button 
-                    className="w-full" 
-                    variant="outline"
-                    onClick={() => {
-                      // TODO: Implementare assegnazione
-                      Toast.info('Funzione in sviluppo');
-                    }}
-                  >
-                    <UserCheck className="h-4 w-4 mr-2" />
-                    Assegna a me
-                  </Button>
-                  
-                  <Select
-                    label="Cambia stato"
-                    value={ticket.status}
-                    onChange={(e) => {
-                      // TODO: Implementare cambio stato
-                      Toast.info('Cambio stato in sviluppo');
-                    }}
-                    options={statusOptions}
-                  />
-                </CardContent>
-              </Card>
+            {/* Azioni ticket */}
+            {canManage && (
+              <TicketActions
+                ticketId={ticketId}
+                currentStatus={ticket.status}
+                currentAssigneeId={ticket.assigneeId}
+                currentCategoryId={ticket.categoryId}
+                currentClinicId={ticket.clinicId}
+                creatorId={ticket.creatorId}
+                currentUserId={user?.id || ''}
+                onStatusChange={handleStatusChange}
+                onAssigneeChange={handleAssigneeChange}
+                onCategoryChange={handleCategoryChange}
+                onClinicChange={handleClinicChange}
+                canManage={canManage}
+                canEdit={canEdit}
+              />
             )}
           </div>
         </div>

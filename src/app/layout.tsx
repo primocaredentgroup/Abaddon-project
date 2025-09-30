@@ -4,6 +4,7 @@ import "./globals.css";
 import { ConvexClientProvider } from "@/providers/ConvexProvider";
 import { AuthProvider } from "@/providers/AuthProvider";
 import { RoleProvider } from "@/providers/RoleProvider";
+import { ToastProvider } from "@/components/ui/Toast";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -26,7 +27,9 @@ export default function RootLayout({
         <ConvexClientProvider>
           <AuthProvider>
             <RoleProvider>
-              {children}
+              <ToastProvider>
+                {children}
+              </ToastProvider>
             </RoleProvider>
           </AuthProvider>
         </ConvexClientProvider>
