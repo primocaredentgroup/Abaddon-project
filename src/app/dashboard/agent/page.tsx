@@ -26,9 +26,18 @@ export default function AgentDashboardPage() {
   const { user } = useRole()
   
   // Fetch dei dati reali da Convex
-  const myCreatedTickets = useQuery(api.tickets.getMyCreatedWithAuth, { userEmail: user?.email }) || []
-  const myAssignedTickets = useQuery(api.tickets.getMyAssignedTicketsWithAuth, { userEmail: user?.email }) || []
-  const myClinicTickets = useQuery(api.tickets.getMyClinicTicketsWithAuth, { userEmail: user?.email }) || []
+  const myCreatedTickets = useQuery(
+    api.tickets.getMyCreatedWithAuth, 
+    user?.email ? { userEmail: user.email } : "skip"
+  ) || []
+  const myAssignedTickets = useQuery(
+    api.tickets.getMyAssignedTicketsWithAuth, 
+    user?.email ? { userEmail: user.email } : "skip"
+  ) || []
+  const myClinicTickets = useQuery(
+    api.tickets.getMyClinicTicketsWithAuth, 
+    user?.email ? { userEmail: user.email } : "skip"
+  ) || []
 
   // Calcola statistiche reali
   const stats = {

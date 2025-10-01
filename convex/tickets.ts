@@ -101,7 +101,7 @@ export const getById = query({
     // TEMPORARY: Per ora prendo l'utente con la tua email
     const user = await ctx.db
       .query("users")
-      .filter((q) => q.eq(q.field("email"), userEmail || "s.petretto@primogroup.it"))
+      .filter((q) => q.eq(q.field("email"), userEmail))
       .first()
     
     if (!user) {
@@ -144,7 +144,7 @@ export const getNudgedTickets = query({
     // TEMPORARY: Per ora prendo l'utente con la tua email
     const user = await ctx.db
       .query("users")
-      .filter((q) => q.eq(q.field("email"), userEmail || "s.petretto@primogroup.it"))
+      .filter((q) => q.eq(q.field("email"), userEmail))
       .first()
     
     if (!user) {
@@ -207,7 +207,7 @@ export const update: any = mutation({
     // TEMPORARY: Per ora prendo l'utente con la tua email
     const user = await ctx.db
       .query("users")
-      .filter((q) => q.eq(q.field("email"), args.userEmail || "s.petretto@primogroup.it"))
+      .filter((q) => q.eq(q.field("email"), args.userEmail))
       .first()
     
     if (!user) {
@@ -264,7 +264,7 @@ export const changeAssignee: any = mutation({
     // TEMPORARY: Per ora prendo l'utente con la tua email
     const currentUser = await ctx.db
       .query("users")
-      .filter((q) => q.eq(q.field("email"), args.userEmail || "s.petretto@primogroup.it"))
+      .filter((q) => q.eq(q.field("email"), args.userEmail))
       .first()
 
     if (!currentUser) {
@@ -494,18 +494,18 @@ export const createWithAuth: any = mutation({
     categoryId: v.id("categories"),
     attributes: v.optional(v.any()),
     visibility: v.optional(v.union(v.literal("public"), v.literal("private"))),
+    userEmail: v.string(),
   },
   handler: async (ctx, args): Promise<{ ticketId: any, ticketNumber: number }> => {
     console.log('🎫 createWithAuth chiamata con:', args)
     
-    // TEMPORARY: Per ora prendo l'utente con la tua email, poi metteremo l'autenticazione
     const user = await ctx.db
       .query("users")
-      .filter((q) => q.eq(q.field("email"), "s.petretto@primogroup.it"))
+      .filter((q) => q.eq(q.field("email"), args.userEmail))
       .first()
     
     if (!user) {
-      throw new ConvexError("Utente s.petretto@primogroup.it non trovato nel sistema")
+      throw new ConvexError("Utente non trovato nel sistema")
     }
     
     console.log('👤 Utente trovato:', { id: user._id, email: user.email, clinic: user.clinicId })
@@ -562,19 +562,18 @@ export const getMyCreatedWithAuth = query({
   args: {
     status: v.optional(v.union(v.literal("open"), v.literal("in_progress"), v.literal("closed"))),
     limit: v.optional(v.number()),
-    userEmail: v.optional(v.string()), // Per test temporaneo
+    userEmail: v.string(),
   },
   handler: async (ctx, args) => {
     console.log('📋 getMyCreatedWithAuth chiamata con:', args)
     
-    // TEMPORARY: Per ora prendo l'utente con la tua email, poi metteremo l'autenticazione
     const user = await ctx.db
       .query("users")
-      .filter((q) => q.eq(q.field("email"), "s.petretto@primogroup.it"))
+      .filter((q) => q.eq(q.field("email"), args.userEmail))
       .first()
     
     if (!user) {
-      throw new ConvexError("Utente s.petretto@primogroup.it non trovato nel sistema")
+      throw new ConvexError("Utente non trovato nel sistema")
     }
     
     console.log('👤 Utente trovato per query ticket:', { id: user._id, email: user.email })
@@ -612,7 +611,7 @@ export const getMyClinicTicketsWithAuth = query({
     
     const user = await ctx.db
       .query("users")
-      .filter((q) => q.eq(q.field("email"), args.userEmail || "s.petretto@primogroup.it"))
+      .filter((q) => q.eq(q.field("email"), args.userEmail))
       .first()
     
     if (!user) return []
@@ -692,7 +691,7 @@ export const getMyAssignedTicketsWithAuth = query({
     
     const user = await ctx.db
       .query("users")
-      .filter((q) => q.eq(q.field("email"), args.userEmail || "s.petretto@primogroup.it"))
+      .filter((q) => q.eq(q.field("email"), args.userEmail))
       .first()
     
     if (!user) return []
@@ -1592,16 +1591,16 @@ export const getByTicketNumber = query({
   args: {
     ticketNumber: v.number(),
     clinicId: v.optional(v.id("clinics")), // Se non specificato, usa clinica dell'utente
+    userEmail: v.string(),
   },
-  handler: async (ctx, { ticketNumber, clinicId }) => {
-    // TEMPORARY: Per ora prendo l'utente con la tua email, poi metteremo l'autenticazione
+  handler: async (ctx, { ticketNumber, clinicId, userEmail }) => {
     const user = await ctx.db
       .query("users")
-      .filter((q) => q.eq(q.field("email"), "s.petretto@primogroup.it"))
+      .filter((q) => q.eq(q.field("email"), userEmail))
       .first()
     
     if (!user) {
-      throw new ConvexError("Utente s.petretto@primogroup.it non trovato nel sistema")
+      throw new ConvexError("Utente non trovato nel sistema")
     }
 
     const targetClinicId = clinicId || user.clinicId

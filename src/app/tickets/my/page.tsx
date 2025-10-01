@@ -67,8 +67,14 @@ export default function MyTicketsPage() {
   const { user } = useRole();
   
   // Fetch dei ticket reali da Convex in base al ruolo
-  const myCreatedTickets = useQuery(api.tickets.getMyCreatedWithAuth, { userEmail: user?.email });  // I miei ticket creati
-  const myAssignedTickets = useQuery(api.tickets.getMyAssignedTicketsWithAuth, { userEmail: user?.email }); // Ticket assegnati a me (per agenti)
+  const myCreatedTickets = useQuery(
+    api.tickets.getMyCreatedWithAuth, 
+    user?.email ? { userEmail: user.email } : "skip"
+  );  // I miei ticket creati
+  const myAssignedTickets = useQuery(
+    api.tickets.getMyAssignedTicketsWithAuth, 
+    user?.email ? { userEmail: user.email } : "skip"
+  ); // Ticket assegnati a me (per agenti)
   
   // Combina i ticket in base al ruolo
   const ticketsData = useMemo(() => {

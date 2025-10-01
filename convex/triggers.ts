@@ -183,6 +183,7 @@ export const createTriggerSimple = mutation({
     conditions: v.any(),
     actions: v.any(),
     requiresApproval: v.optional(v.boolean()),
+    userEmail: v.string(),
   },
   handler: async (ctx, args) => {
     // Verifica che la clinica esista
@@ -191,14 +192,13 @@ export const createTriggerSimple = mutation({
       throw new ConvexError("Clinic not found")
     }
     
-    // Usa un creatore fittizio per lo sviluppo
     const defaultUser = await ctx.db
       .query("users")
-      .filter((q) => q.eq(q.field("email"), "s.petretto@primogroup.it"))
+      .filter((q) => q.eq(q.field("email"), args.userEmail))
       .first()
     
     if (!defaultUser) {
-      throw new ConvexError("Default user not found")
+      throw new ConvexError("User not found")
     }
     
     // Crea il trigger

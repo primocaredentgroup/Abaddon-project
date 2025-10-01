@@ -18,7 +18,7 @@ export const getUserClinics = query({
     } else {
       user = await ctx.db
         .query("users")
-        .filter((q) => q.eq(q.field("email"), userEmail || "s.petretto@primogroup.it"))
+        .filter((q) => q.eq(q.field("email"), userEmail))
         .first()
     }
     

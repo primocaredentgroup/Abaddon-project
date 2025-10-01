@@ -24,9 +24,10 @@ export default function NudgedTicketsPage() {
   const { user } = useRole();
   
   // Fetch dei ticket sollecitati
-  const nudgedTickets = useQuery(api.tickets.getNudgedTickets, { 
-    userEmail: user?.email || "s.petretto@primogroup.it" // TEMPORARY
-  }) || [];
+  const nudgedTickets = useQuery(
+    api.tickets.getNudgedTickets, 
+    user?.email ? { userEmail: user.email } : "skip"
+  ) || [];
 
   // Solo agenti e admin possono vedere questa pagina
   if (user?.roleName !== 'agent' && user?.roleName !== 'admin') {

@@ -67,7 +67,10 @@ export default function ClinicTicketsPage() {
   const { user } = useRole();
   
   // Fetch dei ticket della clinica da Convex
-  const ticketsData = useQuery(api.tickets.getMyClinicTicketsWithAuth, { userEmail: user?.email }) || [];
+  const ticketsData = useQuery(
+    api.tickets.getMyClinicTicketsWithAuth, 
+    user?.email ? { userEmail: user.email } : "skip"
+  ) || [];
   
   // Trasforma i dati di Convex nel formato aspettato dal componente
   const convexTickets = useMemo(() => {

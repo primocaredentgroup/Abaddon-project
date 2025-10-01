@@ -51,7 +51,10 @@ export default function DashboardPage() {
   const [searchTerm, setSearchTerm] = useState('')
 
   // Fetch dei ticket reali da Convex
-  const myTicketsData = useQuery(api.tickets.getMyCreatedWithAuth, { userEmail: user?.email })
+  const myTicketsData = useQuery(
+    api.tickets.getMyCreatedWithAuth, 
+    user?.email ? { userEmail: user.email } : "skip"
+  )
 
   // Controllo autenticazione: reindirizza al login se non autenticato
   useEffect(() => {

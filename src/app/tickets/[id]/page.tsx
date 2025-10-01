@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/Textarea';
 import { Select } from '@/components/ui/Select';
 import { Badge } from '@/components/ui/Badge';
-// import { useToast } from '@/components/ui/Toast';
+import { useToast } from '@/components/ui/use-toast';
 import {
   ArrowLeft,
   Clock,
@@ -45,7 +45,7 @@ export default function TicketDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { user } = useRole();
-  // const { addToast } = useToast();
+  const { toast } = useToast();
   const ticketId = params.id as string;
 
   // Stati per editing
@@ -56,11 +56,15 @@ export default function TicketDetailPage() {
   const [newComment, setNewComment] = useState('');
 
   // Fetch dati reali da Convex
-  const ticket = useQuery(api.tickets.getById, { id: ticketId, userEmail: user?.email });
-  const comments = useQuery(api.ticketComments.getByTicketId, { 
-    ticketId: ticketId as any,
-    userEmail: user?.email || "s.petretto@primogroup.it" // TEMPORARY
-  });
+  // Non fare la query finché non abbiamo l'email dell'utente
+  const ticket = useQuery(
+    api.tickets.getById, 
+    user?.email ? { id: ticketId, userEmail: user.email } : "skip"
+  );
+  const comments = useQuery(
+    api.ticketComments.getByTicketId, 
+    user?.email ? { ticketId: ticketId as any, userEmail: user.email } : "skip"
+  );
 
   // Mutations
   const addComment = useMutation(api.ticketComments.add);
@@ -108,12 +112,12 @@ export default function TicketDetailPage() {
       await updateTicket({
         id: ticketId as any,
         title: editTitle,
-        userEmail: "s.petretto@primogroup.it"
+        userEmail: user?.email || ""
       });
       setIsEditingTitle(false);
-      Toast.success('Titolo aggiornato!');
+      toast({ title: 'Titolo aggiornato!', variant: 'default' });
     } catch (error: any) {
-      Toast.error('Errore aggiornamento: ' + error.message);
+      toast({ title: 'Errore aggiornamento', description: error.message, variant: 'destructive' });
     }
   };
 
@@ -122,12 +126,12 @@ export default function TicketDetailPage() {
       await updateTicket({
         id: ticketId as any,
         description: editDescription,
-        userEmail: "s.petretto@primogroup.it"
+        userEmail: user?.email || ""
       });
       setIsEditingDescription(false);
-      Toast.success('Descrizione aggiornata!');
+      toast({ title: 'Descrizione aggiornata!', variant: 'default' });
     } catch (error: any) {
-      Toast.error('Errore aggiornamento: ' + error.message);
+      toast({ title: 'Errore aggiornamento', description: error.message, variant: 'destructive' });
     }
   };
 
@@ -138,12 +142,12 @@ export default function TicketDetailPage() {
       await addComment({
         ticketId: ticketId as any,
         content: newComment,
-        userEmail: "s.petretto@primogroup.it"
+        userEmail: user?.email || ""
       });
       setNewComment('');
-      Toast.success('Commento aggiunto!');
+      toast({ title: 'Commento aggiunto!', variant: 'default' });
     } catch (error: any) {
-      Toast.error('Errore: ' + error.message);
+      toast({ title: 'Errore', description: error.message, variant: 'destructive' });
     }
   };
 
@@ -151,11 +155,11 @@ export default function TicketDetailPage() {
     try {
       await nudgeTicket({
         ticketId: ticketId as any,
-        userEmail: "s.petretto@primogroup.it"
+        userEmail: user?.email || ""
       });
-      Toast.success('Ticket sollecitato! L\'agente riceverà una notifica.');
+      toast({ title: 'Ticket sollecitato!', description: 'L\'agente riceverà una notifica.', variant: 'default' });
     } catch (error: any) {
-      Toast.error('Errore: ' + error.message);
+      toast({ title: 'Errore', description: error.message, variant: 'destructive' });
     }
   };
 
@@ -165,7 +169,7 @@ export default function TicketDetailPage() {
       await updateTicket({
         id: ticketId as any,
         status: newStatus,
-        userEmail: user?.email || "s.petretto@primogroup.it"
+        userEmail: user?.email || ""
       });
       console.log("✅ Stato aggiornato:", newStatus);
     } catch (error: any) {
@@ -178,7 +182,7 @@ export default function TicketDetailPage() {
       await updateTicket({
         id: ticketId as any,
         assigneeId: newAssigneeId as any,
-        userEmail: user?.email || "s.petretto@primogroup.it"
+        userEmail: user?.email || ""
       });
       console.log("✅ Assegnatario aggiornato:", newAssigneeId);
     } catch (error: any) {
@@ -191,7 +195,7 @@ export default function TicketDetailPage() {
       await updateTicket({
         id: ticketId as any,
         categoryId: newCategoryId as any,
-        userEmail: user?.email || "s.petretto@primogroup.it"
+        userEmail: user?.email || ""
       });
       console.log("✅ Categoria aggiornata");
     } catch (error: any) {
@@ -204,7 +208,7 @@ export default function TicketDetailPage() {
       await updateTicket({
         id: ticketId as any,
         clinicId: newClinicId as any,
-        userEmail: user?.email || "s.petretto@primogroup.it"
+        userEmail: user?.email || ""
       });
       console.log("✅ Clinica aggiornata");
     } catch (error: any) {

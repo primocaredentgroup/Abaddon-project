@@ -7,21 +7,28 @@ import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { User, UserCog, CheckCircle, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
+import { useRole } from '@/providers/RoleProvider'
 
 export function ChangeUserRoleFixed() {
   const [isUpdating, setIsUpdating] = useState(false)
   const [success, setSuccess] = useState(false)
+  const { user } = useRole()
 
   // Usa la mutation semplificata che non richiede autenticazione
   const updateUserRole = useMutation("users:updateUserRoleByEmail")
 
   const handleChangeToAdmin = async () => {
+    if (!user?.email) {
+      toast.error("Utente non loggato")
+      return
+    }
+    
     setIsUpdating(true)
     setSuccess(false)
     
     try {
       const result = await updateUserRole({
-        email: "s.petretto@primogroup.it",
+        email: user.email,
         newRoleName: "Amministratore"
       })
       
@@ -60,7 +67,7 @@ export function ChangeUserRoleFixed() {
         <p className="text-gray-600 mb-4">
           {success 
             ? "Il tuo ruolo è stato cambiato ad Amministratore. La pagina si ricaricherà automaticamente."
-            : "Clicca per cambiare il ruolo di s.petretto@primogroup.it ad Amministratore"
+            : `Clicca per cambiare il tuo ruolo (${user?.email}) ad Amministratore`
           }
         </p>
         

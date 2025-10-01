@@ -15,7 +15,7 @@ export const getByTicketId = query({
     // TEMPORARY: Per ora prendo l'utente con la tua email
     const user = await ctx.db
       .query("users")
-      .filter((q) => q.eq(q.field("email"), userEmail || "s.petretto@primogroup.it"))
+      .filter((q) => q.eq(q.field("email"), userEmail))
       .first()
     
     if (!user) {
@@ -81,7 +81,7 @@ export const add = mutation({
     // TEMPORARY: Per ora prendo l'utente con la tua email
     const user = await ctx.db
       .query("users")
-      .filter((q) => q.eq(q.field("email"), userEmail || "s.petretto@primogroup.it"))
+      .filter((q) => q.eq(q.field("email"), userEmail))
       .first()
     
     if (!user) {
@@ -134,7 +134,7 @@ export const nudge = mutation({
     // TEMPORARY: Per ora prendo l'utente con la tua email
     const user = await ctx.db
       .query("users")
-      .filter((q) => q.eq(q.field("email"), userEmail || "s.petretto@primogroup.it"))
+      .filter((q) => q.eq(q.field("email"), userEmail))
       .first()
     
     if (!user) {
@@ -193,7 +193,7 @@ export const getNudgedTickets = query({
     // TEMPORARY: Per ora prendo l'utente con la tua email
     const user = await ctx.db
       .query("users")
-      .filter((q) => q.eq(q.field("email"), userEmail || "s.petretto@primogroup.it"))
+      .filter((q) => q.eq(q.field("email"), userEmail))
       .first()
     
     if (!user) {

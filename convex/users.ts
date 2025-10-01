@@ -408,7 +408,7 @@ export const getAvailableAgents = query({
     // TEMPORARY: Per ora prendo l'utente con la tua email per controlli permessi
     const currentUser = await ctx.db
       .query("users")
-      .filter((q) => q.eq(q.field("email"), userEmail || "s.petretto@primogroup.it"))
+      .filter((q) => q.eq(q.field("email"), userEmail))
       .first()
 
     if (!currentUser) {
