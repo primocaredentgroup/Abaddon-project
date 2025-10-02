@@ -528,7 +528,7 @@ export const create = mutation({
 })
 
 // Mutation to create a ticket with authentication
-export const createWithAuth: any = mutation({
+export const createWithAuth = mutation({
   args: {
     title: v.string(),
     description: v.string(),

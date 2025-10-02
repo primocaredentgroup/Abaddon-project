@@ -2,7 +2,6 @@
 
 import React from 'react'
 import { AttributeCondition } from '@/types'
-import { Select } from '@/components/ui/Select'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
@@ -74,7 +73,7 @@ export const ConditionBuilder: React.FC<ConditionBuilderProps> = ({
         return (
           <Input
             value={condition.value || ''}
-            onChange={handleValueChange}
+            onChange={(e) => handleValueChange(e.target.value)}
             placeholder="Inserisci valore..."
           />
         )
@@ -84,7 +83,7 @@ export const ConditionBuilder: React.FC<ConditionBuilderProps> = ({
           <Input
             type="number"
             value={condition.value || ''}
-            onChange={(val) => handleValueChange(val ? Number(val) : '')}
+            onChange={(e) => handleValueChange(e.target.value ? Number(e.target.value) : '')}
             placeholder="Inserisci numero..."
           />
         )
@@ -94,20 +93,21 @@ export const ConditionBuilder: React.FC<ConditionBuilderProps> = ({
           <Input
             type="date"
             value={condition.value ? new Date(condition.value).toISOString().split('T')[0] : ''}
-            onChange={(val) => handleValueChange(val ? new Date(val).toISOString() : '')}
+            onChange={(e) => handleValueChange(e.target.value ? new Date(e.target.value).toISOString() : '')}
           />
         )
 
       case 'boolean':
         return (
-          <Select
+          <select
             value={condition.value?.toString() || ''}
-            onValueChange={(val) => handleValueChange(val === 'true')}
+            onChange={(e) => handleValueChange(e.target.value === 'true')}
+            className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="">Seleziona...</option>
             <option value="true">Vero</option>
             <option value="false">Falso</option>
-          </Select>
+          </select>
         )
 
       case 'select':
@@ -115,7 +115,7 @@ export const ConditionBuilder: React.FC<ConditionBuilderProps> = ({
         return (
           <Input
             value={condition.value || ''}
-            onChange={handleValueChange}
+            onChange={(e) => handleValueChange(e.target.value)}
             placeholder="Inserisci valore..."
           />
         )
@@ -124,7 +124,7 @@ export const ConditionBuilder: React.FC<ConditionBuilderProps> = ({
         return (
           <Input
             value={condition.value || ''}
-            onChange={handleValueChange}
+            onChange={(e) => handleValueChange(e.target.value)}
             placeholder="Inserisci valore..."
           />
         )
@@ -160,9 +160,10 @@ export const ConditionBuilder: React.FC<ConditionBuilderProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <label className="block text-sm font-medium mb-2">Campo</label>
-            <Select
+            <select
               value={condition?.field || ''}
-              onValueChange={handleFieldChange}
+              onChange={(e) => handleFieldChange(e.target.value)}
+              className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="">Nessuna condizione</option>
               {availableFields.map((field) => (
@@ -170,23 +171,24 @@ export const ConditionBuilder: React.FC<ConditionBuilderProps> = ({
                   {field.name}
                 </option>
               ))}
-            </Select>
+            </select>
           </div>
 
           {condition && (
             <>
               <div>
                 <label className="block text-sm font-medium mb-2">Operatore</label>
-                <Select
+                <select
                   value={condition.operator}
-                  onValueChange={handleOperatorChange}
+                  onChange={(e) => handleOperatorChange(e.target.value)}
+                  className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   {availableOperators.map((op) => (
                     <option key={op.value} value={op.value}>
                       {op.label}
                     </option>
                   ))}
-                </Select>
+                </select>
               </div>
 
               <div>

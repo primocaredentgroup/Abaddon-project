@@ -130,7 +130,16 @@ export const AttributeBuilder: React.FC<AttributeBuilderProps> = ({
   const handleSaveAll = async () => {
     setIsSaving(true)
     try {
-      await onSave(attributes)
+      // 🔧 Mappa gli attributi nel formato corretto per il salvataggio
+      const attributesToSave = attributes.map(attr => ({
+        ...attr,
+        _id: attr.id.startsWith('new-') ? undefined : attr.id, // Se è un ID temporaneo, rimuovilo
+        isNew: attr.isNew || attr.id.startsWith('new-'), // Marca come nuovo se è un ID temporaneo
+      }))
+      
+      console.log('💾 Salvataggio attributi:', attributesToSave)
+      await onSave(attributesToSave)
+      console.log('✅ Attributi salvati con successo!')
     } catch (error) {
       console.error('Error saving attributes:', error)
       alert('Errore nel salvataggio degli attributi')
@@ -376,7 +385,7 @@ const AttributeEditModal: React.FC<AttributeEditModalProps> = ({
               </label>
               <Input
                 value={formData.name || ''}
-                onChange={(value) => handleFieldChange('name', value)}
+                onChange={(e) => handleFieldChange('name', e.target.value)}
                 placeholder="Nome dell'attributo"
                 className={errors.name ? 'border-red-500' : ''}
               />
@@ -391,7 +400,7 @@ const AttributeEditModal: React.FC<AttributeEditModalProps> = ({
               </label>
               <Input
                 value={formData.slug || ''}
-                onChange={(value) => handleFieldChange('slug', value)}
+                onChange={(e) => handleFieldChange('slug', e.target.value)}
                 placeholder="slug_attributo"
                 className={errors.slug ? 'border-red-500' : ''}
               />

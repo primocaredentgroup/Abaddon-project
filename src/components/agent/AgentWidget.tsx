@@ -71,6 +71,7 @@ export function AgentWidget({ className }: AgentWidgetProps) {
         threadId,
         userMessage: message,
         userId: user.id as any,
+        userEmail: user.email, // 🆕 Aggiungo email per creazione ticket
         clinicId: user.clinicId as any
       })
       

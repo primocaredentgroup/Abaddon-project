@@ -320,7 +320,7 @@ Formato di risposta JSON:
       // Ottieni attributi obbligatori per la categoria suggerita
       let requiredAttributes: any[] = [];
       if (recommendedCategory) {
-        requiredAttributes = await ctx.runQuery(api.categoryAttributes.getByCategory, {
+        requiredAttributes = await ctx.runQuery(api.categoryAttributes.getByCategorySimple, {
           categoryId: recommendedCategory._id,
           showInCreation: true,
         }).then((attrs: any[]) => attrs.filter(attr => attr.required));
@@ -343,7 +343,7 @@ Formato di risposta JSON:
       let requiredAttributes: any[] = [];
       if (mostUsedCategory) {
         try {
-          requiredAttributes = await ctx.runQuery(api.categoryAttributes.getByCategory, {
+          requiredAttributes = await ctx.runQuery(api.categoryAttributes.getByCategorySimple, {
             categoryId: mostUsedCategory._id,
             showInCreation: true,
           }).then((attrs: any[]) => attrs.filter(attr => attr.required));
@@ -370,31 +370,68 @@ export const createTicketWithSuggestion = action({
     description: v.string(),
     categoryId: v.id("categories"),
     clinicId: v.id("clinics"),
-    userId: v.id("users"),
+    userEmail: v.string(), // 🆕 Passo direttamente l'email invece dell'ID
+    attributes: v.optional(v.any()), // 🆕 Attributi raccolti {slug: value}
   },
-  handler: async (ctx, { title, description, categoryId, clinicId, userId }): Promise<{
+  handler: async (ctx, { title, description, categoryId, clinicId, userEmail, attributes }): Promise<{
     ticketId: string;
+    ticketNumber: number; // 🆕 Aggiungo ticketNumber
     success: boolean;
     url: string;
   }> => {
+    console.log("🎫 [createTicketWithSuggestion] Creating ticket with attributes:", attributes);
+    
     // Ottieni config agent
     const config = await ctx.runQuery(api.agent.getAgentConfig, { clinicId });
     if (!config.settings.canCreateTickets) {
       throw new ConvexError("Creazione ticket non abilitata");
     }
 
-    // Crea il ticket usando la mutation esistente
-    const ticketId = await ctx.runMutation(api.tickets.create, {
+    // Crea il ticket usando createWithAuth (senza Auth0)
+    const result = await ctx.runMutation(api.tickets.createWithAuth, {
       title,
       description,
       categoryId,
-      visibility: "public", // default
+      userEmail,
+      visibility: "private", // default
     });
 
+    console.log("✅ [createTicketWithSuggestion] Ticket created:", result.ticketId);
+
+    // 🆕 Se ci sono attributi, salvali nella tabella ticketAttributes
+    if (attributes && Object.keys(attributes).length > 0) {
+      console.log("💾 [createTicketWithSuggestion] Saving attributes to database...");
+      
+      // Ottieni gli attributi della categoria per recuperare gli ID
+      const categoryAttributes = await ctx.runQuery(api.categoryAttributes.getByCategorySimple, {
+        categoryId,
+      });
+      
+      console.log("📋 [createTicketWithSuggestion] Category attributes:", categoryAttributes);
+      
+      // Per ogni attributo raccolto, salvalo
+      for (const [slug, value] of Object.entries(attributes)) {
+        const attr = categoryAttributes?.find((a: any) => a.slug === slug);
+        if (attr) {
+          await ctx.runMutation(api.ticketAttributes.create, {
+            ticketId: result.ticketId as any,
+            attributeId: attr._id,
+            value,
+          });
+          console.log(`✅ Saved attribute ${slug}: ${value}`);
+        } else {
+          console.log(`⚠️ Attribute ${slug} not found in category`);
+        }
+      }
+      
+      console.log("✅ [createTicketWithSuggestion] All attributes saved!");
+    }
+
     return {
-      ticketId,
+      ticketId: result.ticketId,
+      ticketNumber: result.ticketNumber, // 🆕 Ritorno anche il ticketNumber
       success: true,
-      url: `/tickets/${ticketId}`,
+      url: `/tickets/${result.ticketId}`,
     };
   },
 });
@@ -405,9 +442,10 @@ export const chatWithAgent = action({
     threadId: v.id("agentThreads"),
     userMessage: v.string(),
     userId: v.id("users"),
+    userEmail: v.string(), // 🆕 Aggiungo email per creazione ticket
     clinicId: v.id("clinics"),
   },
-  handler: async (ctx, { threadId, userMessage, userId, clinicId }): Promise<{
+  handler: async (ctx, { threadId, userMessage, userId, userEmail, clinicId }): Promise<{
     response: string;
     metadata: any;
     success: boolean;
@@ -432,8 +470,26 @@ export const chatWithAgent = action({
     // Ottieni cronologia conversazione
     const messages = await ctx.runQuery(api.agent.getThreadMessages, { threadId });
     
-    // Analizza l'intento dell'utente
-    const intent = await analyzeUserIntent(userMessage);
+    // 🆕 CONTROLLA SE STIAMO ASPETTANDO ATTRIBUTI
+    const lastAssistantMessage = messages
+      .filter(m => m.role === "assistant")
+      .sort((a, b) => b._creationTime - a._creationTime)[0];
+    
+    console.log("🔍 [chatWithAgent] Last assistant metadata:", lastAssistantMessage?.metadata);
+    
+    let intent: any;
+    
+    // Se stiamo aspettando attributi, NON analizzare l'intento con AI
+    if (lastAssistantMessage?.metadata?.awaitingAttributes === true) {
+      console.log("📝 [chatWithAgent] DETECTED awaiting attributes! Parsing user message as attribute values...");
+      intent = {
+        type: "provide_attributes" as const,
+        attributeValues: userMessage, // Il messaggio dell'utente contiene i valori
+      };
+    } else {
+      // Analizza l'intento normalmente
+      intent = await analyzeUserIntent(userMessage);
+    }
     
     let responseContent = "";
     let metadata: any = {};
@@ -458,23 +514,101 @@ export const chatWithAgent = action({
             clinicId,
           });
           
+          console.log("📝 [suggest_category] Attributi obbligatori ricevuti:", suggestion.requiredAttributes);
+          
           responseContent = formatCategorySuggestion(suggestion);
           metadata.suggestedCategory = suggestion.recommendedCategory?._id;
           metadata.suggestedTicket = { title: intent.title, description: intent.description };
           metadata.requiredAttributes = suggestion.requiredAttributes || []; // 🆕 SALVA ATTRIBUTI OBBLIGATORI
           metadata.collectedAttributes = {}; // 🆕 INIT oggetto per valori
+          
+          // 🆕 SE CI SONO ATTRIBUTI OBBLIGATORI, SETTA IL FLAG!
+          if (suggestion.requiredAttributes && suggestion.requiredAttributes.length > 0) {
+            metadata.awaitingAttributes = true;
+            console.log("📝 [suggest_category] ✅ SET awaitingAttributes = true");
+          }
+          
+          console.log("📝 [suggest_category] Metadata salvato:", {
+            category: metadata.suggestedCategory,
+            requiredAttrsCount: metadata.requiredAttributes.length,
+            awaitingAttributes: metadata.awaitingAttributes
+          });
+          break;
+
+        case "provide_attributes":
+          // 🆕 L'utente sta fornendo i valori degli attributi obbligatori
+          console.log("📥 [provide_attributes] User provided attribute values:", intent.attributeValues);
+          
+          const attrMetadata = lastAssistantMessage?.metadata;
+          const requiredAttrs = attrMetadata?.requiredAttributes || [];
+          const attrCategoryId = attrMetadata?.suggestedCategory;
+          const attrTicket = attrMetadata?.suggestedTicket;
+          
+          console.log("📥 [provide_attributes] Required attributes:", requiredAttrs);
+          console.log("📥 [provide_attributes] Category:", attrCategoryId);
+          console.log("📥 [provide_attributes] Ticket info:", attrTicket);
+          
+          if (!attrCategoryId || !attrTicket || requiredAttrs.length === 0) {
+            responseContent = "😅 Mi dispiace, qualcosa è andato storto. Non riesco a recuperare le informazioni necessarie. Ricominciamo?";
+            break;
+          }
+          
+          // 🔧 PARSING SEMPLICE: splitta il messaggio e assegna i valori in ordine
+          const userValues = intent.attributeValues.trim().split(/\s+/); // Split per spazi
+          const collectedAttrs: any = {};
+          
+          requiredAttrs.forEach((attr: any, index: number) => {
+            if (index === 0 && userValues.length >= 2) {
+              // Primo attributo: prendi i primi due token se ci sono (es: "mario rossi")
+              collectedAttrs[attr.slug] = `${userValues[0]} ${userValues[1]}`;
+            } else if (index === 1 && userValues.length >= 3) {
+              // Secondo attributo: prendi il terzo token (es: "12343532")
+              collectedAttrs[attr.slug] = userValues[2];
+            }
+          });
+          
+          console.log("📥 [provide_attributes] Collected attributes:", collectedAttrs);
+          
+          // Crea il ticket con gli attributi
+          const attrTicketResult = await ctx.runAction(api.agent.createTicketWithSuggestion, {
+            title: attrTicket.title,
+            description: attrTicket.description,
+            categoryId: attrCategoryId as any,
+            clinicId,
+            userEmail,
+            attributes: collectedAttrs, // 🆕 Passo gli attributi raccolti!
+          });
+          
+          responseContent = `✅ Perfetto! Ho creato il ticket per te! 🎉\n\n🎫 **Ticket #${attrTicketResult.ticketNumber}**\n📋 **Oggetto**: ${attrTicket.title}\n\n📝 **Informazioni raccolte:**\n`;
+          
+          requiredAttrs.forEach((attr: any) => {
+            if (collectedAttrs[attr.slug]) {
+              responseContent += `• **${attr.name}**: ${collectedAttrs[attr.slug]}\n`;
+            }
+          });
+          
+          responseContent += `\nPuoi seguire lo stato del ticket dalla sezione "I miei ticket". Ti terremo aggiornato! 😊`;
+          metadata.createdTicketId = attrTicketResult.ticketId;
+          metadata.collectedAttributes = collectedAttrs;
           break;
 
         case "create_ticket":
           // Recupera i metadati dal messaggio precedente (categoria suggerita)
-          const lastAssistantMessage = messages
+          const lastAssistantMessageForTicket = messages
             .filter(m => m.role === "assistant")
             .sort((a, b) => b._creationTime - a._creationTime)[0];
           
-          const categoryId = intent.categoryId || lastAssistantMessage?.metadata?.suggestedCategory;
-          const title = intent.title || lastAssistantMessage?.metadata?.suggestedTicket?.title;
-          const description = intent.description || lastAssistantMessage?.metadata?.suggestedTicket?.description;
-          const requiredAttributes = (lastAssistantMessage?.metadata as any)?.requiredAttributes || [];
+          console.log("🎫 [create_ticket] Last assistant message metadata:", lastAssistantMessageForTicket?.metadata);
+          
+          const categoryId = intent.categoryId || lastAssistantMessageForTicket?.metadata?.suggestedCategory;
+          const title = intent.title || lastAssistantMessageForTicket?.metadata?.suggestedTicket?.title;
+          const description = intent.description || lastAssistantMessageForTicket?.metadata?.suggestedTicket?.description;
+          const requiredAttributes = (lastAssistantMessageForTicket?.metadata as any)?.requiredAttributes || [];
+          
+          console.log("🎫 [create_ticket] Attributi obbligatori recuperati:", {
+            count: requiredAttributes.length,
+            attributes: requiredAttributes
+          });
           
           // 🆕 Se ci sono attributi obbligatori, chiediamoli
           if (requiredAttributes.length > 0 && categoryId && title && description) {
@@ -504,10 +638,10 @@ export const chatWithAgent = action({
               description,
               categoryId: categoryId as any,
               clinicId,
-              userId,
+              userEmail, // 🆕 Passo l'email invece dell'userId
             });
             
-            responseContent = `✅ Perfetto! Ho creato il ticket per te! 🎉\n\n📋 **Numero ticket**: ${ticketResult.ticketId}\n🎫 **Oggetto**: ${title}\n\nPuoi seguire lo stato del ticket dalla sezione "I miei ticket". Ti terremo aggiornato! 😊`;
+            responseContent = `✅ Perfetto! Ho creato il ticket per te! 🎉\n\n🎫 **Ticket #${ticketResult.ticketNumber}**\n📋 **Oggetto**: ${title}\n\nPuoi seguire lo stato del ticket dalla sezione "I miei ticket". Ti terremo aggiornato! 😊`;
             metadata.createdTicketId = ticketResult.ticketId;
           } else {
             responseContent = "😅 Ops! Mi mancano ancora alcune informazioni per aprire il ticket.\n\nPer aiutarti al meglio, ho bisogno di:\n• Una breve descrizione del problema\n• La categoria giusta\n\nProva a spiegarmi meglio cosa non funziona! 🙏";

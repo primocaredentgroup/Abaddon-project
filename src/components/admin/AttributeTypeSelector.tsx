@@ -2,7 +2,6 @@
 
 import React, { useState } from 'react'
 import { AttributeType, AttributeConfig } from '@/types'
-import { Select } from '@/components/ui/Select'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
@@ -76,7 +75,7 @@ export const AttributeTypeSelector: React.FC<AttributeTypeSelectorProps> = ({
               <label className="block text-sm font-medium mb-2">Placeholder</label>
               <Input
                 value={config.placeholder || ''}
-                onChange={(value) => handleConfigChange('placeholder', value)}
+                onChange={(e) => handleConfigChange('placeholder', e.target.value)}
                 placeholder="Testo di esempio..."
               />
             </div>
@@ -86,7 +85,7 @@ export const AttributeTypeSelector: React.FC<AttributeTypeSelectorProps> = ({
                 <Input
                   type="number"
                   value={config.min || ''}
-                  onChange={(value) => handleConfigChange('min', value ? Number(value) : undefined)}
+                  onChange={(e) => handleConfigChange('min', e.target.value ? Number(e.target.value) : undefined)}
                   min={0}
                 />
               </div>
@@ -95,7 +94,7 @@ export const AttributeTypeSelector: React.FC<AttributeTypeSelectorProps> = ({
                 <Input
                   type="number"
                   value={config.max || ''}
-                  onChange={(value) => handleConfigChange('max', value ? Number(value) : undefined)}
+                  onChange={(e) => handleConfigChange('max', e.target.value ? Number(e.target.value) : undefined)}
                   min={1}
                 />
               </div>
@@ -110,7 +109,7 @@ export const AttributeTypeSelector: React.FC<AttributeTypeSelectorProps> = ({
               <label className="block text-sm font-medium mb-2">Placeholder</label>
               <Input
                 value={config.placeholder || ''}
-                onChange={(value) => handleConfigChange('placeholder', value)}
+                onChange={(e) => handleConfigChange('placeholder', e.target.value)}
                 placeholder="Inserisci un numero..."
               />
             </div>
@@ -120,7 +119,7 @@ export const AttributeTypeSelector: React.FC<AttributeTypeSelectorProps> = ({
                 <Input
                   type="number"
                   value={config.min || ''}
-                  onChange={(value) => handleConfigChange('min', value ? Number(value) : undefined)}
+                  onChange={(e) => handleConfigChange('min', e.target.value ? Number(e.target.value) : undefined)}
                 />
               </div>
               <div>
@@ -128,14 +127,14 @@ export const AttributeTypeSelector: React.FC<AttributeTypeSelectorProps> = ({
                 <Input
                   type="number"
                   value={config.max || ''}
-                  onChange={(value) => handleConfigChange('max', value ? Number(value) : undefined)}
+                  onChange={(e) => handleConfigChange('max', e.target.value ? Number(e.target.value) : undefined)}
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-2">Unità di misura</label>
                 <Input
                   value={config.unit || ''}
-                  onChange={(value) => handleConfigChange('unit', value)}
+                  onChange={(e) => handleConfigChange('unit', e.target.value)}
                   placeholder="es. kg, cm, €"
                 />
               </div>
@@ -152,7 +151,7 @@ export const AttributeTypeSelector: React.FC<AttributeTypeSelectorProps> = ({
                 <Input
                   type="date"
                   value={config.minDate || ''}
-                  onChange={(value) => handleConfigChange('minDate', value)}
+                  onChange={(e) => handleConfigChange('minDate', e.target.value)}
                 />
               </div>
               <div>
@@ -160,7 +159,7 @@ export const AttributeTypeSelector: React.FC<AttributeTypeSelectorProps> = ({
                 <Input
                   type="date"
                   value={config.maxDate || ''}
-                  onChange={(value) => handleConfigChange('maxDate', value)}
+                  onChange={(e) => handleConfigChange('maxDate', e.target.value)}
                 />
               </div>
             </div>
@@ -178,9 +177,9 @@ export const AttributeTypeSelector: React.FC<AttributeTypeSelectorProps> = ({
                   <div key={index} className="flex items-center space-x-2">
                     <Input
                       value={option}
-                      onChange={(value) => {
+                      onChange={(e) => {
                         const updatedOptions = [...options]
-                        updatedOptions[index] = value
+                        updatedOptions[index] = e.target.value
                         setOptions(updatedOptions)
                         handleConfigChange('options', updatedOptions)
                       }}
@@ -198,7 +197,7 @@ export const AttributeTypeSelector: React.FC<AttributeTypeSelectorProps> = ({
                 <div className="flex items-center space-x-2">
                   <Input
                     value={newOption}
-                    onChange={setNewOption}
+                    onChange={(e) => setNewOption(e.target.value)}
                     placeholder="Nuova opzione..."
                     className="flex-1"
                     onKeyPress={(e) => e.key === 'Enter' && handleAddOption()}
@@ -214,7 +213,7 @@ export const AttributeTypeSelector: React.FC<AttributeTypeSelectorProps> = ({
                   <Input
                     type="number"
                     value={config.minSelections || ''}
-                    onChange={(value) => handleConfigChange('minSelections', value ? Number(value) : undefined)}
+                    onChange={(e) => handleConfigChange('minSelections', e.target.value ? Number(e.target.value) : undefined)}
                     min={0}
                   />
                 </div>
@@ -223,7 +222,7 @@ export const AttributeTypeSelector: React.FC<AttributeTypeSelectorProps> = ({
                   <Input
                     type="number"
                     value={config.maxSelections || ''}
-                    onChange={(value) => handleConfigChange('maxSelections', value ? Number(value) : undefined)}
+                    onChange={(e) => handleConfigChange('maxSelections', e.target.value ? Number(e.target.value) : undefined)}
                     min={1}
                   />
                 </div>
@@ -240,14 +239,14 @@ export const AttributeTypeSelector: React.FC<AttributeTypeSelectorProps> = ({
                 <label className="block text-sm font-medium mb-2">Etichetta per "Vero"</label>
                 <Input
                   value={config.trueLabel || 'Sì'}
-                  onChange={(value) => handleConfigChange('trueLabel', value)}
+                  onChange={(e) => handleConfigChange('trueLabel', e.target.value)}
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-2">Etichetta per "Falso"</label>
                 <Input
                   value={config.falseLabel || 'No'}
-                  onChange={(value) => handleConfigChange('falseLabel', value)}
+                  onChange={(e) => handleConfigChange('falseLabel', e.target.value)}
                 />
               </div>
             </div>
@@ -295,14 +294,18 @@ export const AttributeTypeSelector: React.FC<AttributeTypeSelectorProps> = ({
     <div className="space-y-6">
       <div>
         <label className="block text-sm font-medium mb-2">Tipo di Campo</label>
-        <Select value={selectedType} onValueChange={handleTypeChange}>
+        <select 
+          value={selectedType} 
+          onChange={(e) => handleTypeChange(e.target.value as AttributeType)}
+          className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
           <option value="">Seleziona tipo...</option>
           {ATTRIBUTE_TYPES.map((type) => (
             <option key={type.value} value={type.value}>
               {type.label}
             </option>
           ))}
-        </Select>
+        </select>
         {selectedType && (
           <div className="mt-2 text-sm text-gray-600">
             {ATTRIBUTE_TYPES.find(t => t.value === selectedType)?.description}

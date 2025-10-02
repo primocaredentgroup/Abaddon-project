@@ -67,6 +67,12 @@ export default function TicketDetailPage() {
     user?.email ? { ticketId: ticketId as any, userEmail: user.email } : "skip"
   );
   
+  // 🆕 Fetch ticket attributes
+  const ticketAttributes = useQuery(
+    api.ticketAttributes.getByTicket,
+    ticketId ? { ticketId: ticketId as any } : "skip"
+  );
+  
   // Usa clinicId dall'utente (ora disponibile in useRole)
   const clinicId = user?.clinicId;
   
@@ -567,6 +573,32 @@ export default function TicketDetailPage() {
                 )}
               </CardContent>
             </Card>
+
+            {/* 🆕 Attributi Ticket */}
+            {ticketAttributes && ticketAttributes.length > 0 && (
+              <Card className="border-blue-200 bg-blue-50">
+                <CardHeader>
+                  <CardTitle className="text-blue-900">📝 Informazioni Aggiuntive</CardTitle>
+                  <CardDescription className="text-blue-700">
+                    Dettagli raccolti per questo ticket
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {ticketAttributes.map((attr) => (
+                    <div key={attr._id} className="flex items-start justify-between p-3 bg-white rounded-lg border border-blue-200">
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-gray-700">
+                          {attr.attribute?.name || 'N/A'}
+                        </p>
+                        <p className="text-base text-gray-900 mt-1">
+                          {typeof attr.value === 'object' ? JSON.stringify(attr.value) : attr.value}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
 
             {/* Macro Rapide - Solo per agenti/admin */}
             {canManage && macros && macros.length > 0 && (

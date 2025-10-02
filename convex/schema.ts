@@ -413,6 +413,10 @@ export default defineSchema({
       searchResults: v.optional(v.array(v.any())),
       suggestedCategory: v.optional(v.id("categories")),
       suggestedTicket: v.optional(v.any()),
+      requiredAttributes: v.optional(v.array(v.any())), // 🆕 Attributi obbligatori per la categoria
+      collectedAttributes: v.optional(v.any()), // 🆕 Attributi raccolti dall'utente
+      createdTicketId: v.optional(v.string()), // 🆕 ID del ticket creato (Convex ID)
+      awaitingAttributes: v.optional(v.boolean()), // 🆕 Se stiamo aspettando attributi dall'utente
     })),
   })
     .index("by_thread", ["threadId"]),

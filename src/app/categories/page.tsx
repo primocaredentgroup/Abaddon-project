@@ -60,7 +60,7 @@ export default function AdminCategoriesPage() {
     clinicId ? { clinicId } : "skip"
   )
   const categoryAttributes = useQuery(
-    api.categoryAttributes.getByCategory,
+    api.categoryAttributes.getByCategorySimple, // 🔓 Uso versione Simple per sviluppo
     managingAttributesCategory ? { categoryId: managingAttributesCategory._id } : "skip"
   )
   
@@ -71,10 +71,10 @@ export default function AdminCategoriesPage() {
   const restoreCategory = useMutation(api.categories.restoreCategorySimple)
   const hardDeleteCategory = useMutation(api.categories.hardDeleteCategorySimple)
   
-  // 🆕 Mutations per attributi
-  const createAttribute = useMutation(api.categoryAttributes.create)
-  const updateAttribute = useMutation(api.categoryAttributes.update)
-  const deleteAttribute = useMutation(api.categoryAttributes.remove)
+  // 🆕 Mutations per attributi (usando versioni Simple senza autenticazione)
+  const createAttribute = useMutation(api.categoryAttributes.createSimple)
+  const updateAttribute = useMutation(api.categoryAttributes.updateSimple)
+  const deleteAttribute = useMutation(api.categoryAttributes.removeSimple)
 
   // Filter categories based on search
   const filteredCategories = categories?.filter(cat =>
