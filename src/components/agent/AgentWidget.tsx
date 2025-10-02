@@ -30,7 +30,7 @@ export function AgentWidget({ className }: AgentWidgetProps) {
   // Crea/ottieni thread quando aperto
   useEffect(() => {
     if (isOpen && user && !threadId) {
-      createOrGetThread({ userId: user._id, clinicId: user.clinicId })
+      createOrGetThread({ userId: user.id as any, clinicId: user.clinicId as any })
         .then(setThreadId)
         .catch(err => console.error("Errore creazione thread:", err))
     }
@@ -70,8 +70,8 @@ export function AgentWidget({ className }: AgentWidgetProps) {
       const result = await chatWithAgent({
         threadId,
         userMessage: message,
-        userId: user._id,
-        clinicId: user.clinicId
+        userId: user.id as any,
+        clinicId: user.clinicId as any
       })
       
       // Aggiungi risposta bot

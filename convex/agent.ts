@@ -3,7 +3,7 @@ import { mutation, query, action } from "./_generated/server"
 import { ConvexError } from "convex/values"
 import { getCurrentUser } from "./lib/utils"
 import { GoogleGenerativeAI } from "@google/generative-ai"
-import { api } from "./_generated/api"
+import { api, internal } from "./_generated/api"
 
 // Initialize Google Gemini
 const gemini = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY!);
@@ -257,6 +257,7 @@ export const suggestCategory = action({
     confidence: number;
     explanation: string;
     alternativeCategory: any;
+    requiredAttributes?: any[]; // 🆕 Attributi obbligatori
   }> => {
     // Ottieni config agent
     const config = await ctx.runQuery(api.agent.getAgentConfig, { clinicId });
@@ -267,9 +268,12 @@ export const suggestCategory = action({
     // Ottieni categorie della clinica
     const categories = await ctx.runQuery(api.categories.getCategoriesByClinic, { clinicId });
     
-    // Ottieni esempi di ticket precedenti per apprendimento
-    const recentTicketsResult = await ctx.runQuery(api.tickets.getByClinic, {});
-    const ticketExamples = recentTicketsResult.tickets.slice(0, 20).map((t: any) => ({
+    // Ottieni esempi di ticket precedenti per apprendimento (usando query interna)
+    const recentTickets = await ctx.runQuery(internal.tickets.getByClinicInternal, {
+      clinicId,
+      limit: 20,
+    });
+    const ticketExamples = recentTickets.map((t: any) => ({
       title: t.title,
       description: t.description.substring(0, 200),
       categoryId: t.categoryId,
@@ -306,16 +310,28 @@ Formato di risposta JSON:
 
     try {
       const aiResponse = await call_llm(prompt);
-      const parsed = JSON.parse(aiResponse);
+      // Rimuovi backtick markdown se presenti
+      const cleanedResponse = aiResponse.replace(/```json\n?|\n?```/g, '').trim();
+      const parsed = JSON.parse(cleanedResponse);
       
       // Valida che la categoria esista
       const recommendedCategory = categories.find((c: any) => c._id === parsed.recommendedCategoryId);
+      
+      // Ottieni attributi obbligatori per la categoria suggerita
+      let requiredAttributes: any[] = [];
+      if (recommendedCategory) {
+        requiredAttributes = await ctx.runQuery(api.categoryAttributes.getByCategory, {
+          categoryId: recommendedCategory._id,
+          showInCreation: true,
+        }).then((attrs: any[]) => attrs.filter(attr => attr.required));
+      }
       
       return {
         recommendedCategory: recommendedCategory || null,
         confidence: parsed.confidence || 0,
         explanation: parsed.explanation || "Categoria suggerita basata sul contenuto",
         alternativeCategory: categories.find((c: any) => c._id === parsed.alternativeCategory) || null,
+        requiredAttributes, // 🆕 AGGIUNGO ATTRIBUTI OBBLIGATORI
       };
     } catch (error) {
       console.error("Errore AI suggerimento categoria:", error);
@@ -323,11 +339,25 @@ Formato di risposta JSON:
       // Fallback: suggerisci categoria più comune
       const mostUsedCategory = categories.find((c: any) => c.name.toLowerCase().includes('generale')) || categories[0];
       
+      // Ottieni attributi obbligatori anche per fallback
+      let requiredAttributes: any[] = [];
+      if (mostUsedCategory) {
+        try {
+          requiredAttributes = await ctx.runQuery(api.categoryAttributes.getByCategory, {
+            categoryId: mostUsedCategory._id,
+            showInCreation: true,
+          }).then((attrs: any[]) => attrs.filter(attr => attr.required));
+        } catch (e) {
+          console.error("Errore recupero attributi fallback:", e);
+        }
+      }
+      
       return {
         recommendedCategory: mostUsedCategory || null,
         confidence: 20,
         explanation: "Suggerimento automatico: categoria generale",
         alternativeCategory: null,
+        requiredAttributes, // 🆕 AGGIUNGO ATTRIBUTI OBBLIGATORI
       };
     }
   },
@@ -431,21 +461,56 @@ export const chatWithAgent = action({
           responseContent = formatCategorySuggestion(suggestion);
           metadata.suggestedCategory = suggestion.recommendedCategory?._id;
           metadata.suggestedTicket = { title: intent.title, description: intent.description };
+          metadata.requiredAttributes = suggestion.requiredAttributes || []; // 🆕 SALVA ATTRIBUTI OBBLIGATORI
+          metadata.collectedAttributes = {}; // 🆕 INIT oggetto per valori
           break;
 
         case "create_ticket":
-          if (intent.categoryId && intent.title && intent.description) {
+          // Recupera i metadati dal messaggio precedente (categoria suggerita)
+          const lastAssistantMessage = messages
+            .filter(m => m.role === "assistant")
+            .sort((a, b) => b._creationTime - a._creationTime)[0];
+          
+          const categoryId = intent.categoryId || lastAssistantMessage?.metadata?.suggestedCategory;
+          const title = intent.title || lastAssistantMessage?.metadata?.suggestedTicket?.title;
+          const description = intent.description || lastAssistantMessage?.metadata?.suggestedTicket?.description;
+          const requiredAttributes = (lastAssistantMessage?.metadata as any)?.requiredAttributes || [];
+          
+          // 🆕 Se ci sono attributi obbligatori, chiediamoli
+          if (requiredAttributes.length > 0 && categoryId && title && description) {
+            responseContent = `📝 Perfetto! Prima di creare il ticket, ho bisogno di queste informazioni:\n\n`;
+            requiredAttributes.forEach((attr: any, index: number) => {
+              responseContent += `${index + 1}. **${attr.name}**`;
+              if (attr.config.placeholder) {
+                responseContent += ` (${attr.config.placeholder})`;
+              }
+              if (attr.type === 'select' && attr.config.options) {
+                responseContent += `\n   📌 Opzioni: ${attr.config.options.join(', ')}`;
+              }
+              responseContent += `\n\n`;
+            });
+            responseContent += `Puoi fornirmele tutte insieme o una alla volta! 😊`;
+            
+            // Salva lo stato nei metadati per il prossimo messaggio
+            metadata.awaitingAttributes = true;
+            metadata.suggestedCategory = categoryId;
+            metadata.suggestedTicket = { title, description };
+            metadata.requiredAttributes = requiredAttributes;
+            metadata.collectedAttributes = {};
+          } else if (categoryId && title && description) {
+            // Nessun attributo obbligatorio, crea direttamente il ticket
             const ticketResult = await ctx.runAction(api.agent.createTicketWithSuggestion, {
-              title: intent.title,
-              description: intent.description,
-              categoryId: intent.categoryId as any,
+              title,
+              description,
+              categoryId: categoryId as any,
               clinicId,
               userId,
             });
             
-            responseContent = `✅ **Ticket creato con successo!**\n\nID: ${ticketResult.ticketId}\n\n[Visualizza ticket](${ticketResult.url})`;
+            responseContent = `✅ Perfetto! Ho creato il ticket per te! 🎉\n\n📋 **Numero ticket**: ${ticketResult.ticketId}\n🎫 **Oggetto**: ${title}\n\nPuoi seguire lo stato del ticket dalla sezione "I miei ticket". Ti terremo aggiornato! 😊`;
+            metadata.createdTicketId = ticketResult.ticketId;
           } else {
-            responseContent = "❌ Informazioni mancanti per creare il ticket. Fornisci titolo, descrizione e categoria.";
+            responseContent = "😅 Ops! Mi mancano ancora alcune informazioni per aprire il ticket.\n\nPer aiutarti al meglio, ho bisogno di:\n• Una breve descrizione del problema\n• La categoria giusta\n\nProva a spiegarmi meglio cosa non funziona! 🙏";
           }
           break;
 
@@ -472,7 +537,7 @@ export const chatWithAgent = action({
     } catch (error) {
       console.error("Errore chat agent:", error);
       
-      const errorResponse = "❌ Mi dispiace, ho riscontrato un errore. Riprova o contatta il supporto.";
+      const errorResponse = "😔 Ops! Qualcosa è andato storto da parte mia.\n\nPuoi riprovare tra un attimo? Se il problema persiste, contatta il supporto tecnico. Mi dispiace per l'inconveniente! 🙏";
       
       await ctx.runMutation(api.agent.addMessage, {
         threadId,
@@ -513,9 +578,18 @@ async function analyzeUserIntent(message: string): Promise<{
     };
   }
 
-  // Conferma creazione ticket
-  if (messageLower.includes("sì") || messageLower.includes("si") || messageLower.includes("conferma") || messageLower.includes("crea il ticket")) {
+  // Conferma creazione ticket - cerca parole intere, non substring
+  const confirmWords = /\b(sì|si|conferma|ok|vai|procedi)\b/i;
+  const createTicketPhrase = /crea\s+(il\s+)?ticket/i;
+  
+  if (confirmWords.test(messageLower) && messageLower.length < 15) {
+    // Solo se il messaggio è breve (conferma secca)
     console.log("✅ [analyzeUserIntent] Matched: create_ticket (keyword)");
+    return { type: "create_ticket" };
+  }
+  
+  if (createTicketPhrase.test(messageLower)) {
+    console.log("✅ [analyzeUserIntent] Matched: create_ticket (explicit phrase)");
     return { type: "create_ticket" };
   }
 
@@ -583,35 +657,62 @@ RISPONDI SOLO con un JSON in questo formato:
 
 function formatSearchResults(results: any): string {
   if (results.totalFound === 0) {
-    return `🔍 **Nessun ticket trovato** per "${results.query}"\n\nProva con termini diversi o controlla l'ID del ticket.`;
+    return `🔍 Hmm, non ho trovato ticket per "${results.query}"...\n\n Prova con altri termini o controlla l'ID del ticket. Se hai bisogno di aiuto, chiedimi pure! 😊`;
   }
 
-  let response = `🔍 **Trovati ${results.totalFound} ticket** per "${results.query}":\n\n`;
+  let response = `🔍 Ecco cosa ho trovato per "${results.query}":\n\n`;
   
   results.results.forEach((ticket: any, index: number) => {
     response += `**${index + 1}. ${ticket.title}**\n`;
-    response += `Status: ${ticket.status} • ID: ${ticket.id}\n`;
+    response += `📌 ${ticket.status} • ID: ${ticket.id}\n`;
     response += `${ticket.description}\n`;
-    response += `[Apri ticket](${ticket.url})\n\n`;
+    response += `[👉 Apri ticket](${ticket.url})\n\n`;
   });
+
+  response += `\nTi serve altro? Sono qui! 💪`;
 
   return response;
 }
 
 function formatCategorySuggestion(suggestion: any): string {
   if (!suggestion.recommendedCategory) {
-    return "❌ Non sono riuscito a suggerire una categoria appropriata. Contatta un amministratore.";
+    return "😅 Mi dispiace, non sono riuscito a trovare la categoria giusta per questo problema. Puoi essere più specifico o contattare direttamente il supporto?";
   }
 
-  let response = `🎯 **Categoria suggerita**: ${suggestion.recommendedCategory.name}\n\n`;
-  response += `📊 **Confidenza**: ${suggestion.confidence}%\n`;
-  response += `💡 **Motivazione**: ${suggestion.explanation}\n\n`;
+  let response = `Ciao! 👋 Ho capito il tuo problema.\n\n`;
+  response += `📋 Penso che rientri nella categoria **${suggestion.recommendedCategory.name}**`;
   
-  if (suggestion.alternativeCategory) {
-    response += `🔄 **Alternativa**: ${suggestion.alternativeCategory.name}\n\n`;
+  if (suggestion.confidence >= 80) {
+    response += ` (sono abbastanza sicuro! ✅)`;
+  } else if (suggestion.confidence >= 60) {
+    response += ` (dovrebbe essere questa 🤔)`;
+  } else {
+    response += ` (non sono sicurissimo, ma ci proviamo 💭)`;
   }
   
-  response += `Vuoi che crei il ticket in questa categoria? Rispondi "Sì" per confermare.`;
+  response += `\n\n💡 ${suggestion.explanation}\n\n`;
+  
+  if (suggestion.alternativeCategory) {
+    response += `🔄 Oppure potrebbe essere: **${suggestion.alternativeCategory.name}**\n\n`;
+  }
+  
+  // 🆕 SE CI SONO ATTRIBUTI OBBLIGATORI, CHIEDIGLI
+  if (suggestion.requiredAttributes && suggestion.requiredAttributes.length > 0) {
+    response += `📝 Per completare il ticket, ho bisogno di qualche informazione in più:\n\n`;
+    suggestion.requiredAttributes.forEach((attr: any, index: number) => {
+      response += `${index + 1}. **${attr.name}**`;
+      if (attr.config.placeholder) {
+        response += ` (${attr.config.placeholder})`;
+      }
+      if (attr.type === 'select' && attr.config.options) {
+        response += `\n   Opzioni: ${attr.config.options.join(', ')}`;
+      }
+      response += `\n`;
+    });
+    response += `\nPuoi fornirmi queste informazioni? 😊`;
+  } else {
+    response += `Vuoi che crei il ticket in questa categoria? Rispondi **"Sì"** per confermare. 😊`;
+  }
   
   return response;
 }

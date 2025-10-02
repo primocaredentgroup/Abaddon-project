@@ -1,5 +1,5 @@
 import { v } from "convex/values"
-import { mutation, query, internalMutation } from "./_generated/server"
+import { mutation, query, internalMutation, internalQuery } from "./_generated/server"
 import { ConvexError } from "convex/values"
 // import { getCurrentUser } from "./lib/utils" // Non usato al momento
 import { internal } from "./_generated/api"
@@ -80,6 +80,23 @@ export const getByClinic = query({
       total: tickets.length,
       hasMore: tickets.length > offset + limit,
     }
+  },
+})
+
+// 🔓 Query INTERNA per agent - NON richiede autenticazione
+export const getByClinicInternal = internalQuery({
+  args: {
+    clinicId: v.id("clinics"),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, { clinicId, limit = 20 }) => {
+    const tickets = await ctx.db
+      .query("tickets")
+      .withIndex("by_clinic", (q) => q.eq("clinicId", clinicId))
+      .order("desc")
+      .take(limit)
+    
+    return tickets
   },
 })
 

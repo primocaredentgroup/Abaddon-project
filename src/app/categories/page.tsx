@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/Textarea'
 import { useQuery, useMutation } from 'convex/react'
 import { api } from '../../../convex/_generated/api'
 import { useAuth } from '@/hooks/useAuth'
+import { AttributeBuilder } from '@/components/admin/AttributeBuilder'
 import { 
   Tags,
   Plus,
@@ -27,7 +28,9 @@ import {
   TrendingUp,
   RotateCcw,
   Archive,
-  AlertTriangle
+  AlertTriangle,
+  Settings2,
+  X
 } from 'lucide-react'
 
 export default function AdminCategoriesPage() {
@@ -36,6 +39,7 @@ export default function AdminCategoriesPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [editingCategory, setEditingCategory] = useState<any>(null)
+  const [managingAttributesCategory, setManagingAttributesCategory] = useState<any>(null) // 🆕 Modal attributi
   
   // Form states
   const [formData, setFormData] = useState({
@@ -55,6 +59,10 @@ export default function AdminCategoriesPage() {
   const deletedCategories = useQuery(api.categories.getDeletedCategories, 
     clinicId ? { clinicId } : "skip"
   )
+  const categoryAttributes = useQuery(
+    api.categoryAttributes.getByCategory,
+    managingAttributesCategory ? { categoryId: managingAttributesCategory._id } : "skip"
+  )
   
   // Mutations (usando versioni semplici senza autenticazione)
   const createCategory = useMutation(api.categories.createCategorySimple)
@@ -62,6 +70,11 @@ export default function AdminCategoriesPage() {
   const softDeleteCategory = useMutation(api.categories.softDeleteCategorySimple)
   const restoreCategory = useMutation(api.categories.restoreCategorySimple)
   const hardDeleteCategory = useMutation(api.categories.hardDeleteCategorySimple)
+  
+  // 🆕 Mutations per attributi
+  const createAttribute = useMutation(api.categoryAttributes.create)
+  const updateAttribute = useMutation(api.categoryAttributes.update)
+  const deleteAttribute = useMutation(api.categoryAttributes.remove)
 
   // Filter categories based on search
   const filteredCategories = categories?.filter(cat =>
@@ -181,6 +194,51 @@ export default function AdminCategoriesPage() {
         </div>
       </AppLayout>
     )
+  }
+
+  // 🆕 Handler per salvare gli attributi
+  const handleSaveAttributes = async (attributes: any[]) => {
+    if (!managingAttributesCategory) return
+    
+    try {
+      for (const attr of attributes) {
+        if (attr.isNew) {
+          // Crea nuovo attributo
+          await createAttribute({
+            categoryId: managingAttributesCategory._id,
+            name: attr.name,
+            slug: attr.slug,
+            type: attr.type,
+            required: attr.required || false,
+            showInCreation: attr.showInCreation !== false,
+            showInList: attr.showInList || false,
+            order: attr.order || 0,
+            config: attr.config || {},
+            conditions: attr.conditions,
+          })
+        } else if (attr._id) {
+          // Aggiorna attributo esistente
+          await updateAttribute({
+            attributeId: attr._id,
+            name: attr.name,
+            slug: attr.slug,
+            type: attr.type,
+            required: attr.required,
+            showInCreation: attr.showInCreation,
+            showInList: attr.showInList,
+            order: attr.order,
+            config: attr.config,
+            conditions: attr.conditions,
+          })
+        }
+      }
+      
+      alert('✅ Attributi salvati con successo!')
+      setManagingAttributesCategory(null)
+    } catch (error) {
+      console.error('Errore salvataggio attributi:', error)
+      alert('❌ Errore durante il salvataggio degli attributi')
+    }
   }
 
   // Se non c'è clinicId, mostra messaggio di errore
@@ -342,6 +400,14 @@ export default function AdminCategoriesPage() {
                         </CardDescription>
                       </div>
                       <div className="flex space-x-1">
+                        <Button 
+                          size="sm" 
+                          variant="ghost"
+                          onClick={() => setManagingAttributesCategory(category)}
+                          title="Gestisci attributi obbligatori"
+                        >
+                          <Settings2 className="h-4 w-4 text-blue-500" />
+                        </Button>
                         <Button 
                           size="sm" 
                           variant="ghost"
@@ -598,6 +664,46 @@ export default function AdminCategoriesPage() {
                 </form>
               </CardContent>
             </Card>
+          </div>
+        )}
+
+        {/* 🆕 MODAL GESTIONE ATTRIBUTI */}
+        {managingAttributesCategory && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] overflow-auto">
+              <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900">
+                    ⚙️ Attributi di "{managingAttributesCategory.name}"
+                  </h2>
+                  <p className="text-sm text-gray-600 mt-1">
+                    Configura le informazioni obbligatorie e opzionali che Ermes AI chiederà quando suggerisce questa categoria
+                  </p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setManagingAttributesCategory(null)}
+                >
+                  <X className="h-5 w-5" />
+                </Button>
+              </div>
+              
+              <div className="p-6">
+                {categoryAttributes === undefined ? (
+                  <div className="text-center py-12 text-gray-500">
+                    Caricamento attributi...
+                  </div>
+                ) : (
+                  <AttributeBuilder
+                    categoryId={managingAttributesCategory._id}
+                    categoryName={managingAttributesCategory.name}
+                    initialAttributes={categoryAttributes || []}
+                    onSave={handleSaveAttributes}
+                  />
+                )}
+              </div>
+            </div>
           </div>
         )}
       </div>
