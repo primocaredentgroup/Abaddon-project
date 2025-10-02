@@ -27,6 +27,7 @@ import type * as kbArticles from "../kbArticles.js";
 import type * as kbComments from "../kbComments.js";
 import type * as lib_utils from "../lib/utils.js";
 import type * as macros from "../macros.js";
+import type * as makeAdmin from "../makeAdmin.js";
 import type * as notifications from "../notifications.js";
 import type * as presence from "../presence.js";
 import type * as roles from "../roles.js";
@@ -64,6 +65,7 @@ declare const fullApi: ApiFromModules<{
   kbComments: typeof kbComments;
   "lib/utils": typeof lib_utils;
   macros: typeof macros;
+  makeAdmin: typeof makeAdmin;
   notifications: typeof notifications;
   presence: typeof presence;
   roles: typeof roles;

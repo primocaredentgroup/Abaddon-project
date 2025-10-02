@@ -383,6 +383,8 @@ export const chatWithAgent = action({
     success: boolean;
     error?: string;
   }> => {
+    console.log("🚀 [chatWithAgent] START - userMessage:", userMessage);
+    
     // Ottieni configurazione
     const config = await ctx.runQuery(api.agent.getAgentConfig, { clinicId });
     
@@ -497,10 +499,13 @@ async function analyzeUserIntent(message: string): Promise<{
   description?: string;
   categoryId?: string;
 }> {
+  console.log("🔍 [analyzeUserIntent] START - Message:", message);
   const messageLower = message.toLowerCase();
 
   // Keyword semplici per azioni esplicite (veloci, senza AI)
   if (messageLower.includes("cerca ticket") || messageLower.includes("trova ticket")) {
+    console.log("✅ [analyzeUserIntent] Matched: search_ticket (keyword)");
+
     const queryMatch = message.match(/cerca|trova\s+ticket\s+(.+)/i);
     return {
       type: "search_ticket",
@@ -510,10 +515,12 @@ async function analyzeUserIntent(message: string): Promise<{
 
   // Conferma creazione ticket
   if (messageLower.includes("sì") || messageLower.includes("si") || messageLower.includes("conferma") || messageLower.includes("crea il ticket")) {
+    console.log("✅ [analyzeUserIntent] Matched: create_ticket (keyword)");
     return { type: "create_ticket" };
   }
 
   // Per tutto il resto, usa l'AI per capire l'intento
+  console.log("🤖 [analyzeUserIntent] Using AI to analyze intent...");
   try {
     const intentPrompt = `Analizza questo messaggio di un utente di una clinica dentistica e determina l'intento.
 
@@ -565,11 +572,12 @@ RISPONDI SOLO con un JSON in questo formato:
     console.log("ℹ️ Intent is general, using general conversation");
 
   } catch (error) {
-    console.error("❌ Errore analisi intento AI:", error);
-    console.error("❌ Error details:", (error as Error).message);
+    console.error("❌ [analyzeUserIntent] Errore analisi intento AI:", error);
+    console.error("❌ [analyzeUserIntent] Error details:", (error as Error).message);
   }
 
   // Fallback: conversazione generale
+  console.log("ℹ️ [analyzeUserIntent] Returning GENERAL (fallback)");
   return { type: "general" };
 }
 

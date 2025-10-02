@@ -4,6 +4,9 @@ import React, { useState, useRef, useEffect } from 'react'
 import { MessageCircle, X, Send, Bot, User, Minimize2, Maximize2 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
+import { useAction, useMutation, useQuery } from 'convex/react'
+import { api } from '@/../../convex/_generated/api'
+import { useAuth } from '@/hooks/useAuth'
 
 interface AgentWidgetProps {
   className?: string
@@ -15,8 +18,23 @@ export function AgentWidget({ className }: AgentWidgetProps) {
   const [inputMessage, setInputMessage] = useState('')
   const [messages, setMessages] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  const [threadId, setThreadId] = useState<any>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+
+  // Hooks
+  const { user } = useAuth()
+  const chatWithAgent = useAction(api.agent.chatWithAgent)
+  const createOrGetThread = useMutation(api.agent.createOrGetThread)
+
+  // Crea/ottieni thread quando aperto
+  useEffect(() => {
+    if (isOpen && user && !threadId) {
+      createOrGetThread({ userId: user._id, clinicId: user.clinicId })
+        .then(setThreadId)
+        .catch(err => console.error("Errore creazione thread:", err))
+    }
+  }, [isOpen, user, threadId, createOrGetThread])
 
   // Auto-scroll ai nuovi messaggi
   useEffect(() => {
@@ -31,7 +49,7 @@ export function AgentWidget({ className }: AgentWidgetProps) {
   }, [isOpen, isMinimized])
 
   const handleSendMessage = async () => {
-    if (!inputMessage.trim() || isLoading) return
+    if (!inputMessage.trim() || isLoading || !threadId || !user) return
 
     const message = inputMessage.trim()
     setInputMessage('')
@@ -47,28 +65,40 @@ export function AgentWidget({ className }: AgentWidgetProps) {
     
     setMessages(prev => [...prev, userMessage])
 
-    // Simula risposta di Ermes
-    setTimeout(() => {
+    try {
+      // Chiama la vera action Convex
+      const result = await chatWithAgent({
+        threadId,
+        userMessage: message,
+        userId: user._id,
+        clinicId: user.clinicId
+      })
+      
+      // Aggiungi risposta bot
       const botMessage = {
         id: `bot_${Date.now()}`,
         role: 'assistant',
-        content: `Ciao! Sono Ermes 🤖 
-        
-Il tuo messaggio è stato: "${message}"
-
-Al momento sto ancora imparando, ma presto potrò aiutarti con:
-• 🔍 Ricerca ticket per ID, titolo o descrizione
-• 💡 Suggerire categorie per nuovi ticket  
-• ➕ Creare ticket automaticamente
-• 🧭 Navigare nell'applicazione
-
-Continua a testare le mie funzionalità! ✨`,
-        timestamp: Date.now()
+        content: result.response,
+        timestamp: Date.now(),
+        metadata: result.metadata
       }
       
       setMessages(prev => [...prev, botMessage])
+    } catch (error) {
+      console.error("Errore chat agent:", error)
+      
+      // Messaggio di errore
+      const errorMessage = {
+        id: `error_${Date.now()}`,
+        role: 'assistant',
+        content: '❌ Ops! Si è verificato un errore. Riprova tra poco.',
+        timestamp: Date.now()
+      }
+      
+      setMessages(prev => [...prev, errorMessage])
+    } finally {
       setIsLoading(false)
-    }, 1500)
+    }
   }
 
   const handleKeyPress = (e: React.KeyboardEvent) => {

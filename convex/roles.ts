@@ -254,3 +254,48 @@ export const deleteRole = mutation({
     return roleId
   }
 })
+
+// 🔧 MUTATION TEMPORANEA per fixare ruoli vecchi senza isActive
+export const fixOldRolesSchema = mutation({
+  handler: async (ctx) => {
+    console.log("🔧 Fixing old roles without isActive field...");
+    
+    const allRoles = await ctx.db.query("roles").collect();
+    
+    let fixed = 0;
+    let alreadyOk = 0;
+    
+    for (const role of allRoles) {
+      // @ts-ignore - Ignoriamo il tipo perché stiamo fixando vecchi dati
+      if (role.isActive === undefined) {
+        await ctx.db.patch(role._id, {
+          isActive: true,
+        });
+        console.log(`✅ Fixed role: ${role.name}`);
+        fixed++;
+      } else {
+        alreadyOk++;
+      }
+      
+      // Fix anche permissions se sono ancora ID invece di stringhe
+      // @ts-ignore
+      if (role.permissions && role.permissions.length > 0 && typeof role.permissions[0] !== 'string') {
+        console.log(`⚠️ Role "${role.name}" has old permission format (IDs). Converting...`);
+        await ctx.db.patch(role._id, {
+          permissions: role.name === "Amministratore" 
+            ? ["full_access"]
+            : role.name === "Agente"
+            ? ["view_all_tickets", "create_tickets", "edit_tickets", "assign_tickets"]
+            : ["view_own_tickets", "create_tickets", "comment_tickets"]
+        });
+      }
+    }
+    
+    return {
+      total: allRoles.length,
+      fixed,
+      alreadyOk,
+      message: `✅ Fixed ${fixed} roles, ${alreadyOk} were already ok`
+    };
+  },
+});
