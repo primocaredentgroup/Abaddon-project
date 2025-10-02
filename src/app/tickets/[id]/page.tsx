@@ -29,7 +29,8 @@ import {
   Calendar,
   Tag,
   Building,
-  UserCheck
+  UserCheck,
+  Zap
 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
@@ -65,11 +66,48 @@ export default function TicketDetailPage() {
     api.ticketComments.getByTicketId, 
     user?.email ? { ticketId: ticketId as any, userEmail: user.email } : "skip"
   );
+  
+  // Usa clinicId dall'utente (ora disponibile in useRole)
+  const clinicId = user?.clinicId;
+  
+  // Fetch macro disponibili per la categoria del ticket
+  const macros = useQuery(
+    api.macros.getMacrosByCategory,
+    ticket?.category && clinicId ? {
+      clinicId: clinicId,
+      categorySlug: ticket.category.slug
+    } : "skip"
+  );
+
+  // Debug log
+  React.useEffect(() => {
+    console.log('🔍 DEBUG MACRO - ticket:', ticket);
+    console.log('🔍 DEBUG MACRO - user:', user);
+    console.log('🔍 DEBUG MACRO - clinicId:', clinicId);
+    console.log('🔍 DEBUG MACRO - canManage:', user?.roleName === 'Agente' || user?.roleName === 'Amministratore');
+    
+    if (ticket?.category && clinicId) {
+      console.log('✅ Ricerca macro per:', {
+        clinicId,
+        categorySlug: ticket.category.slug,
+        categoryName: ticket.category.name
+      });
+    } else {
+      console.log('❌ Non cerco macro perché:', {
+        hasTicketCategory: !!ticket?.category,
+        hasClinicId: !!clinicId
+      });
+    }
+    if (macros !== undefined) {
+      console.log('📋 Macro trovate:', macros?.length || 0, macros);
+    }
+  }, [ticket, clinicId, macros, user]);
 
   // Mutations
   const addComment = useMutation(api.ticketComments.add);
   const nudgeTicket = useMutation(api.ticketComments.nudge);
   const updateTicket = useMutation(api.tickets.update);
+  const executeMacro = useMutation(api.macros.executeMacro);
 
   // Imposta i valori di editing quando il ticket viene caricato
   useEffect(() => {
@@ -163,6 +201,21 @@ export default function TicketDetailPage() {
     }
   };
 
+  const handleExecuteMacro = async (macroId: any, macroName: string) => {
+    if (!confirm(`Vuoi eseguire la macro "${macroName}"?`)) return;
+    
+    try {
+      await executeMacro({
+        macroId,
+        ticketId: ticketId as any,
+        userEmail: user?.email || ""
+      });
+      toast({ title: '🎬 Macro eseguita!', description: `"${macroName}" completata con successo`, variant: 'default' });
+    } catch (error: any) {
+      toast({ title: 'Errore', description: error.message, variant: 'destructive' });
+    }
+  };
+
   // Handlers per modifiche ticket
   const handleStatusChange = async (newStatus: any) => {
     try {
@@ -181,7 +234,8 @@ export default function TicketDetailPage() {
     try {
       await updateTicket({
         id: ticketId as any,
-        assigneeId: newAssigneeId as any,
+        // Converti stringhe vuote in undefined per Convex
+        assigneeId: (newAssigneeId && newAssigneeId.trim() !== "") ? newAssigneeId as any : undefined,
         userEmail: user?.email || ""
       });
       console.log("✅ Assegnatario aggiornato:", newAssigneeId);
@@ -513,6 +567,45 @@ export default function TicketDetailPage() {
                 )}
               </CardContent>
             </Card>
+
+            {/* Macro Rapide - Solo per agenti/admin */}
+            {canManage && macros && macros.length > 0 && (
+              <Card className="border-purple-200 bg-purple-50">
+                <CardHeader>
+                  <CardTitle className="flex items-center text-purple-900">
+                    <Zap className="h-5 w-5 mr-2 text-purple-600" />
+                    Macro Rapide
+                  </CardTitle>
+                  <CardDescription className="text-purple-700">
+                    {macros.length} macro disponibili per questa categoria
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {macros.map((macro) => (
+                    <div key={macro._id} className="flex items-center justify-between p-3 bg-white rounded-lg border border-purple-200 hover:border-purple-300 transition-colors">
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-gray-900">{macro.name}</p>
+                        {macro.description && (
+                          <p className="text-xs text-gray-500 mt-1">{macro.description}</p>
+                        )}
+                        <p className="text-xs text-purple-600 mt-1">
+                          {macro.actions.length} azioni
+                        </p>
+                      </div>
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        className="ml-3 border-purple-600 text-purple-600 hover:bg-purple-600 hover:text-white"
+                        onClick={() => handleExecuteMacro(macro._id, macro.name)}
+                      >
+                        <Zap className="h-3 w-3 mr-1" />
+                        Esegui
+                      </Button>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
 
             {/* Azioni ticket */}
             {canManage && (

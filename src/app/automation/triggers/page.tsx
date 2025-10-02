@@ -44,7 +44,7 @@ export default function TriggersPage() {
   })
 
   // Get clinic ID from user
-  const clinicId = user?.clinic?._id
+  const clinicId = (user as any)?.clinicId || (user as any)?.clinic?._id
   
   // Queries
   const triggers = useQuery(api.triggers.getTriggersByClinic, 
@@ -53,6 +53,33 @@ export default function TriggersPage() {
   const triggerStats = useQuery(api.triggers.getTriggerStats, 
     clinicId ? { clinicId } : "skip"
   )
+  
+  // Query per categorie
+  const categoriesFromDB = useQuery(
+    api.categories.getCategoriesByClinic,
+    clinicId ? { clinicId, isActive: true } : "skip"
+  )
+  
+  // Query per utenti (agenti/admin)
+  const usersFromDB = useQuery(
+    api.users.getAvailableAgents,
+    clinicId && user?.email ? { clinicId, userEmail: user.email } : "skip"
+  )
+  
+  // Query per stati ticket DINAMICI dal database (con fallback)
+  const ticketStatusesFromDB = useQuery(api.ticketStatuses?.getActiveStatuses || "skip")
+  
+  // Mappa gli stati in formato semplice per le dropdown
+  // FALLBACK: Se Convex non ha ancora caricato il nuovo file, usa stati statici
+  const ticketStatuses = ticketStatusesFromDB?.map(status => ({
+    value: status.slug,
+    label: status.name,
+    color: status.color
+  })) || [
+    { value: 'open', label: 'Aperto', color: '#ef4444' },
+    { value: 'in_progress', label: 'In Corso', color: '#f59e0b' },
+    { value: 'closed', label: 'Chiuso', color: '#22c55e' }
+  ]
   
   // Mutations (usando versioni semplici)
   const createTrigger = useMutation(api.triggers.createTriggerSimple)
@@ -67,7 +94,7 @@ export default function TriggersPage() {
   // Handle form submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!clinicId || !formData.name.trim()) {
+    if (!clinicId || !formData.name.trim() || !user?.email) {
       alert('Errore: Clinica non trovata o nome trigger mancante')
       return
     }
@@ -90,7 +117,8 @@ export default function TriggersPage() {
           name: formData.name,
           conditions,
           actions,
-          requiresApproval: formData.requiresApproval
+          requiresApproval: formData.requiresApproval,
+          userEmail: user.email
         })
       } else {
         // Create new trigger
@@ -99,7 +127,8 @@ export default function TriggersPage() {
           clinicId,
           conditions,
           actions,
-          requiresApproval: formData.requiresApproval
+          requiresApproval: formData.requiresApproval,
+          userEmail: user.email // AGGIUNTO: Campo mancante!
         })
       }
       
@@ -403,7 +432,7 @@ export default function TriggersPage() {
                       <select 
                         className="w-full p-2 border rounded-md"
                         value={formData.conditionType}
-                        onChange={(e) => setFormData(prev => ({ ...prev, conditionType: e.target.value }))}
+                        onChange={(e) => setFormData(prev => ({ ...prev, conditionType: e.target.value, conditionValue: '' }))}
                       >
                         <option value="status_change">Cambio di stato</option>
                         <option value="priority_high">Priorità alta</option>
@@ -417,11 +446,41 @@ export default function TriggersPage() {
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         Valore Condizione
                       </label>
-                      <Input 
-                        placeholder="es. open, 24 ore, urgente..." 
-                        value={formData.conditionValue}
-                        onChange={(e) => setFormData(prev => ({ ...prev, conditionValue: e.target.value }))}
-                      />
+                      {formData.conditionType === 'category_match' ? (
+                        <select 
+                          className="w-full p-2 border rounded-md"
+                          value={formData.conditionValue}
+                          onChange={(e) => setFormData(prev => ({ ...prev, conditionValue: e.target.value }))}
+                          required
+                        >
+                          <option value="">Seleziona una categoria...</option>
+                          {categoriesFromDB?.map((cat) => (
+                            <option key={cat._id} value={cat.slug}>
+                              {cat.name}
+                            </option>
+                          ))}
+                        </select>
+                      ) : formData.conditionType === 'status_change' ? (
+                        <select 
+                          className="w-full p-2 border rounded-md"
+                          value={formData.conditionValue}
+                          onChange={(e) => setFormData(prev => ({ ...prev, conditionValue: e.target.value }))}
+                          required
+                        >
+                          <option value="">Seleziona uno stato...</option>
+                          {ticketStatuses.map((status) => (
+                            <option key={status.value} value={status.value}>
+                              {status.label}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <Input 
+                          placeholder="es. 24 ore, parola chiave..." 
+                          value={formData.conditionValue}
+                          onChange={(e) => setFormData(prev => ({ ...prev, conditionValue: e.target.value }))}
+                        />
+                      )}
                     </div>
                   </div>
                   
@@ -433,7 +492,7 @@ export default function TriggersPage() {
                       <select 
                         className="w-full p-2 border rounded-md"
                         value={formData.actionType}
-                        onChange={(e) => setFormData(prev => ({ ...prev, actionType: e.target.value }))}
+                        onChange={(e) => setFormData(prev => ({ ...prev, actionType: e.target.value, actionValue: '' }))}
                       >
                         <option value="assign_user">Assegna utente</option>
                         <option value="change_status">Cambia stato</option>
@@ -447,11 +506,41 @@ export default function TriggersPage() {
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         Valore Azione
                       </label>
-                      <Input 
-                        placeholder="es. user_id, in_progress, urgent..." 
-                        value={formData.actionValue}
-                        onChange={(e) => setFormData(prev => ({ ...prev, actionValue: e.target.value }))}
-                      />
+                      {formData.actionType === 'assign_user' ? (
+                        <select 
+                          className="w-full p-2 border rounded-md"
+                          value={formData.actionValue}
+                          onChange={(e) => setFormData(prev => ({ ...prev, actionValue: e.target.value }))}
+                          required
+                        >
+                          <option value="">Seleziona un utente...</option>
+                          {usersFromDB?.map((userItem) => (
+                            <option key={userItem._id} value={userItem.email}>
+                              {userItem.name} ({userItem.email})
+                            </option>
+                          ))}
+                        </select>
+                      ) : formData.actionType === 'change_status' ? (
+                        <select 
+                          className="w-full p-2 border rounded-md"
+                          value={formData.actionValue}
+                          onChange={(e) => setFormData(prev => ({ ...prev, actionValue: e.target.value }))}
+                          required
+                        >
+                          <option value="">Seleziona uno stato...</option>
+                          {ticketStatuses.map((status) => (
+                            <option key={status.value} value={status.value}>
+                              {status.label}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <Input 
+                          placeholder="es. urgent, testo commento..." 
+                          value={formData.actionValue}
+                          onChange={(e) => setFormData(prev => ({ ...prev, actionValue: e.target.value }))}
+                        />
+                      )}
                     </div>
                   </div>
                   

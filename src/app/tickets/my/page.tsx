@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { useQuery } from 'convex/react';
+import { useQuery, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useRole } from '@/providers/RoleProvider';
@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Badge } from '@/components/ui/Badge';
+import { useToast } from '@/components/ui/use-toast';
 import {
   Search,
   Filter,
@@ -22,7 +23,8 @@ import {
   CheckCircle,
   AlertTriangle,
   ArrowUpDown,
-  Pencil
+  Pencil,
+  Bell
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -65,6 +67,7 @@ const priorityOptions = [
 
 export default function MyTicketsPage() {
   const { user } = useRole();
+  const { toast } = useToast();
   
   // Fetch dei ticket reali da Convex in base al ruolo
   const myCreatedTickets = useQuery(
@@ -75,6 +78,9 @@ export default function MyTicketsPage() {
     api.tickets.getMyAssignedTicketsWithAuth, 
     user?.email ? { userEmail: user.email } : "skip"
   ); // Ticket assegnati a me (per agenti)
+  
+  // Mutation per sollecitare i ticket
+  const nudgeTicket = useMutation(api.ticketComments.nudge);
   
   // Combina i ticket in base al ruolo
   const ticketsData = useMemo(() => {
@@ -122,7 +128,7 @@ export default function MyTicketsPage() {
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [editingStatusId, setEditingStatusId] = useState<string | null>(null);
-  const [sortBy, setSortBy] = useState('created');
+  const [sortBy, setSortBy] = useState('id');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   // Filtraggio dei ticket
@@ -147,7 +153,11 @@ export default function MyTicketsPage() {
       let aVal: any = a[sortBy as keyof Ticket];
       let bVal: any = b[sortBy as keyof Ticket];
       
-      if (sortBy === 'created') {
+      if (sortBy === 'id') {
+        // Estrai il numero dall'ID (es. "#123" -> 123)
+        aVal = parseInt(a.id.replace('#', '')) || 0;
+        bVal = parseInt(b.id.replace('#', '')) || 0;
+      } else if (sortBy === 'created') {
         aVal = new Date(a.createdAt).getTime();
         bVal = new Date(b.createdAt).getTime();
       }
@@ -192,6 +202,27 @@ export default function MyTicketsPage() {
     console.log(`🔄 Aggiornamento status ticket ${id} a ${newStatus}`);
     // TODO: Implementare con mutation Convex
     setEditingStatusId(null);
+  };
+
+  const handleNudge = async (ticketId: string, ticketTitle: string) => {
+    if (!user?.email) {
+      toast({ title: 'Errore', description: 'Devi essere autenticato per sollecitare un ticket', variant: 'destructive' });
+      return;
+    }
+
+    try {
+      await nudgeTicket({
+        ticketId: ticketId as any,
+        userEmail: user.email
+      });
+      toast({ 
+        title: '🔔 Sollecito inviato!', 
+        description: `Il ticket "${ticketTitle}" è stato sollecitato`, 
+        variant: 'default' 
+      });
+    } catch (error: any) {
+      toast({ title: 'Errore', description: error.message, variant: 'destructive' });
+    }
   };
 
   return (
@@ -309,13 +340,15 @@ export default function MyTicketsPage() {
               <div className="overflow-hidden">
                 <table className="w-full table-fixed">
                   <colgroup>
+                    <col style={{ width: '7%' }} />
+                    <col style={{ width: '20%' }} />
+                    <col style={{ width: '12%' }} />
+                    <col style={{ width: '12%' }} />
                     <col style={{ width: '10%' }} />
-                    <col style={{ width: '25%' }} />
-                    <col style={{ width: '15%' }} />
-                    <col style={{ width: '15%' }} />
-                    <col style={{ width: '12%' }} />
-                    <col style={{ width: '12%' }} />
-                    <col style={{ width: '11%' }} />
+                    <col style={{ width: '10%' }} />
+                    <col style={{ width: '10%' }} />
+                    <col style={{ width: '9%' }} />
+                    <col style={{ width: '10%' }} />
                   </colgroup>
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
@@ -347,6 +380,9 @@ export default function MyTicketsPage() {
                         Clinica
                       </th>
                       <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Assegnato a
+                      </th>
+                      <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                         <button
                           onClick={() => handleSort('createdAt')}
                           className="flex items-center hover:text-gray-700 mx-auto"
@@ -354,6 +390,9 @@ export default function MyTicketsPage() {
                           Creato
                           <ArrowUpDown className="h-3 w-3 ml-1" />
                         </button>
+                      </th>
+                      <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Solleciti
                       </th>
                       <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Azioni
@@ -386,9 +425,9 @@ export default function MyTicketsPage() {
                             <button onClick={() => setEditingStatusId(ticket.id)} className="inline-flex">
                               <Badge 
                                 variant={
-                                  ticket.status === 'open' ? 'destructive' :
-                                  ticket.status === 'in_progress' ? 'secondary' :
-                                  ticket.status === 'closed' ? 'default' : 'outline'
+                                  ticket.status === 'open' ? 'danger' :
+                                  ticket.status === 'in_progress' ? 'warning' :
+                                  ticket.status === 'closed' ? 'success' : 'default'
                                 }
                                 className="text-xs flex items-center cursor-pointer hover:opacity-80"
                               >
@@ -404,7 +443,7 @@ export default function MyTicketsPage() {
                           )}
                         </td>
                         <td className="px-3 py-3 text-center">
-                          <Badge variant="outline" className="text-xs">
+                          <Badge variant="info" className="text-xs">
                             {ticket.category}
                           </Badge>
                         </td>
@@ -413,8 +452,25 @@ export default function MyTicketsPage() {
                             {ticket.clinic}
                           </span>
                         </td>
+                        <td className="px-3 py-3 text-center">
+                          <span className="text-xs text-gray-600">
+                            {ticket.assignee}
+                          </span>
+                        </td>
                         <td className="px-3 py-3 text-center text-xs text-gray-500">
                           {ticket.createdAt}
+                        </td>
+                        <td className="px-3 py-3 text-center">
+                          <Button 
+                            size="sm" 
+                            variant="ghost" 
+                            className="h-7 px-2"
+                            onClick={() => handleNudge(ticket._id || '', ticket.title)}
+                            disabled={ticket.status === 'closed'}
+                            title={ticket.status === 'closed' ? 'Non puoi sollecitare un ticket chiuso' : 'Sollecita questo ticket'}
+                          >
+                            <Bell className={`h-3 w-3 ${ticket.status === 'closed' ? 'text-gray-400' : 'text-orange-600'}`} />
+                          </Button>
                         </td>
                         <td className="px-3 py-3 text-center">
                           <Link href={`/tickets/${ticket._id}`}>

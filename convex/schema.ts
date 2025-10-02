@@ -151,16 +151,28 @@ export default defineSchema({
     .index("by_tag", ["tagId"])
     .index("by_ticket_tag", ["ticketId", "tagId"]),
 
+  // Ticket Statuses - Gestione dinamica degli stati dei ticket
+  ticketStatuses: defineTable({
+    name: v.string(), // Nome visualizzato (es. "Aperto", "In Corso")
+    slug: v.string(), // Slug univoco (es. "open", "in_progress")
+    description: v.optional(v.string()),
+    color: v.string(), // Colore hex per UI (es. "#22c55e")
+    icon: v.optional(v.string()), // Nome icona opzionale
+    order: v.number(), // Ordine di visualizzazione
+    isSystem: v.boolean(), // true per stati di default (non eliminabili)
+    isActive: v.boolean(), // false per stati disabilitati
+    isFinal: v.boolean(), // true per stati che indicano ticket chiusi/completati
+  })
+    .index("by_slug", ["slug"])
+    .index("by_order", ["order"])
+    .index("by_active", ["isActive"]),
+
   // Tickets table - Enhanced with simplified status and polymorphic support
   tickets: defineTable({
     title: v.string(),
     description: v.string(),
-    // Simplified status: only 3 states as per requirements
-    status: v.union(
-      v.literal("open"),
-      v.literal("in_progress"), 
-      v.literal("closed")
-    ),
+    // Status come string per supportare stati dinamici
+    status: v.string(), // Ora usa slug da ticketStatuses
     ticketNumber: v.optional(v.number()), // Numero incrementale tipo #1234 - opzionale per compatibilità
     categoryId: v.id("categories"),
     clinicId: v.id("clinics"),
@@ -308,6 +320,14 @@ export default defineSchema({
     conditions: v.any(),
     targetHours: v.number(),
     isActive: v.boolean(),
+    requiresApproval: v.optional(v.boolean()),
+    isApproved: v.optional(v.boolean()),
+    approvedBy: v.optional(v.id("users")),
+    approvedAt: v.optional(v.number()),
+    rejectedBy: v.optional(v.id("users")),
+    rejectedAt: v.optional(v.number()),
+    rejectionReason: v.optional(v.string()),
+    createdBy: v.optional(v.id("users")),
   })
     .index("by_clinic", ["clinicId"])
     .index("by_active", ["isActive"]),
@@ -320,6 +340,12 @@ export default defineSchema({
     actions: v.any(),
     isActive: v.boolean(),
     requiresApproval: v.boolean(),
+    isApproved: v.optional(v.boolean()), // Se il trigger è stato approvato
+    approvedBy: v.optional(v.id("users")), // Chi ha approvato
+    approvedAt: v.optional(v.number()), // Quando è stato approvato
+    rejectedBy: v.optional(v.id("users")), // Chi ha rifiutato
+    rejectedAt: v.optional(v.number()), // Quando è stato rifiutato
+    rejectionReason: v.optional(v.string()), // Motivo del rifiuto
     createdBy: v.id("users"),
   })
     .index("by_clinic", ["clinicId"])
@@ -329,15 +355,24 @@ export default defineSchema({
   // Macros table
   macros: defineTable({
     name: v.string(),
+    description: v.optional(v.string()),
     clinicId: v.id("clinics"),
-    actions: v.any(),
+    category: v.string(), // Slug della categoria (es. "prescrizioni", "password-dimenticata")
+    actions: v.any(), // Array di azioni da eseguire
     isActive: v.boolean(),
     requiresApproval: v.boolean(),
+    isApproved: v.optional(v.boolean()),
+    approvedBy: v.optional(v.id("users")),
+    approvedAt: v.optional(v.number()),
+    rejectedBy: v.optional(v.id("users")),
+    rejectedAt: v.optional(v.number()),
+    rejectionReason: v.optional(v.string()),
     createdBy: v.id("users"),
   })
     .index("by_clinic", ["clinicId"])
     .index("by_creator", ["createdBy"])
-    .index("by_active", ["isActive"]),
+    .index("by_active", ["isActive"])
+    .index("by_clinic_category", ["clinicId", "category"]),
 
   // Presence table - Real-time user presence tracking
   presence: defineTable({
@@ -415,4 +450,115 @@ export default defineSchema({
   })
     .index("by_ticket", ["ticketId"]) // _creationTime viene aggiunto automaticamente
     .index("by_author", ["authorId"]),
+
+  // Knowledge Base Articles
+  kbArticles: defineTable({
+    title: v.string(),
+    content: v.string(), // Contenuto dell'articolo (può essere markdown/HTML)
+    excerpt: v.string(), // Breve estratto/descrizione
+    category: v.string(), // Account, Hardware, Software, Rete, Sicurezza, etc.
+    difficulty: v.union(v.literal("Facile"), v.literal("Medio"), v.literal("Avanzato")),
+    clinicId: v.id("clinics"), // Articolo specifico per clinica o globale
+    authorId: v.id("users"), // Chi ha creato l'articolo
+    views: v.number(), // Numero di visualizzazioni
+    likes: v.number(), // Numero di "mi piace"
+    featured: v.boolean(), // In evidenza?
+    isActive: v.boolean(), // Articolo pubblicato o bozza
+    publishedAt: v.optional(v.number()), // Data pubblicazione
+    lastUpdatedAt: v.number(), // Ultimo aggiornamento
+    tags: v.optional(v.array(v.string())), // Tag per ricerca
+    attachments: v.optional(v.array(v.object({
+      name: v.string(),
+      url: v.string(),
+      type: v.string(), // image/png, image/jpeg, application/pdf, etc.
+      size: v.number(),
+    }))),
+  })
+    .index("by_clinic", ["clinicId"])
+    .index("by_category", ["category"])
+    .index("by_author", ["authorId"])
+    .index("by_active", ["isActive"])
+    .index("by_featured", ["featured"]),
+
+  // Article Suggestions (suggerimenti utenti)
+  articleSuggestions: defineTable({
+    title: v.string(),
+    description: v.string(), // Descrizione del problema/argomento
+    category: v.string(),
+    priority: v.union(v.literal("Bassa"), v.literal("Media"), v.literal("Alta")),
+    clinicId: v.id("clinics"),
+    suggestedBy: v.id("users"), // Chi ha suggerito
+    status: v.union(
+      v.literal("pending"),    // In attesa di revisione
+      v.literal("approved"),   // Approvato, articolo creato
+      v.literal("rejected")    // Rifiutato
+    ),
+    reviewedBy: v.optional(v.id("users")), // Chi ha revisionato
+    reviewedAt: v.optional(v.number()),
+    reviewNotes: v.optional(v.string()), // Note della revisione
+    relatedArticleId: v.optional(v.id("kbArticles")), // Se approvato, ID articolo creato
+  })
+    .index("by_clinic", ["clinicId"])
+    .index("by_status", ["status"])
+    .index("by_suggested", ["suggestedBy"])
+    .index("by_reviewed", ["reviewedBy"]),
+
+  // Article Comments (commenti articoli KB)
+  kbArticleComments: defineTable({
+    articleId: v.id("kbArticles"),
+    authorId: v.id("users"),
+    content: v.string(),
+    parentCommentId: v.optional(v.id("kbArticleComments")), // Per risposte annidate
+    isEdited: v.optional(v.boolean()),
+    editedAt: v.optional(v.number()),
+  })
+    .index("by_article", ["articleId"])
+    .index("by_author", ["authorId"])
+    .index("by_parent", ["parentCommentId"]),
+
+  // Notifications (notifiche sistema)
+  notifications: defineTable({
+    userId: v.id("users"), // A chi è destinata
+    type: v.string(), // 'kb_suggestion', 'kb_comment', 'ticket_assigned', etc.
+    title: v.string(),
+    message: v.string(),
+    relatedId: v.optional(v.string()), // ID dell'entità correlata (articleId, ticketId, etc.)
+    relatedUrl: v.optional(v.string()), // URL per navigare
+    isRead: v.boolean(),
+    readAt: v.optional(v.number()),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_read", ["userId", "isRead"])
+    .index("by_type", ["type"]),
+
+  // Ticket Views (viste personalizzate dei ticket)
+  ticketViews: defineTable({
+    name: v.string(),
+    description: v.string(),
+    createdBy: v.id("users"),
+    clinicId: v.id("clinics"),
+    isPublic: v.boolean(), // Se true, visibile a tutti
+    isPersonal: v.boolean(), // Se true, è una vista personale (solo per il creatore)
+    filters: v.object({
+      status: v.optional(v.array(v.string())), // Array di stati (es. ["open", "in_progress"])
+      categoryId: v.optional(v.id("categories")),
+      assignedTo: v.optional(v.id("users")),
+      clinicId: v.optional(v.id("clinics")),
+      areaManager: v.optional(v.id("users")),
+      dateRange: v.optional(v.object({
+        type: v.string(), // "last_days", "last_month", "custom"
+        days: v.optional(v.number()), // Per "last_days"
+        startDate: v.optional(v.number()), // Per "custom"
+        endDate: v.optional(v.number()), // Per "custom"
+      })),
+    }),
+    assignedTo: v.optional(v.array(v.id("users"))), // Array di utenti/agenti a cui è assegnata
+    assignedToRoles: v.optional(v.array(v.string())), // Array di ruoli (es. ["agent", "user"])
+    isActive: v.boolean(),
+  })
+    .index("by_creator", ["createdBy"])
+    .index("by_clinic", ["clinicId"])
+    .index("by_public", ["isPublic"])
+    .index("by_personal", ["isPersonal"])
+    .index("by_active", ["isActive"]),
 })

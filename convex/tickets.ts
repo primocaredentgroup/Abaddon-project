@@ -133,7 +133,7 @@ export const getById = query({
   },
 })
 
-// Query per ottenere ticket sollecitati (per agenti)
+// Query per ottenere TUTTI i ticket da risolvere per agenti (con evidenziati i sollecitati)
 export const getNudgedTickets = query({
   args: {
     userEmail: v.optional(v.string()), // Per test temporaneo
@@ -151,22 +151,45 @@ export const getNudgedTickets = query({
       throw new ConvexError("Utente non trovato")
     }
 
-    // Verifica che l'utente sia un agente o admin
+    // Verifica che l'utente sia un agente o admin (nomi in ITALIANO)
     const role = await ctx.db.get(user.roleId)
-    if (!role || (role.name !== 'agent' && role.name !== 'admin')) {
+    if (!role || (role.name !== 'Agente' && role.name !== 'Amministratore')) {
       throw new ConvexError("Solo agenti e admin possono vedere i ticket sollecitati")
     }
 
-    // Ottieni tutti i ticket che sono stati sollecitati
-    const nudgedTickets = await ctx.db
+    // Ottieni TUTTI i ticket aperti o in corso (non solo quelli sollecitati)
+    const allTickets = await ctx.db
       .query("tickets")
-      .filter((q) => q.gt(q.field("nudgeCount"), 0))
-      .order("desc")
+      .filter((q) => 
+        q.or(
+          q.eq(q.field("status"), "open"),
+          q.eq(q.field("status"), "in_progress")
+        )
+      )
       .collect()
+
+    // Ordina: prima i sollecitati, poi per data
+    const sortedTickets = allTickets.sort((a, b) => {
+      const aNudged = (a.nudgeCount || 0) > 0
+      const bNudged = (b.nudgeCount || 0) > 0
+      
+      // Prima mostra i sollecitati
+      if (aNudged && !bNudged) return -1
+      if (!aNudged && bNudged) return 1
+      
+      // Tra i sollecitati, ordina per numero di solleciti
+      if (aNudged && bNudged) {
+        const nudgeDiff = (b.nudgeCount || 0) - (a.nudgeCount || 0)
+        if (nudgeDiff !== 0) return nudgeDiff
+      }
+      
+      // Altrimenti ordina per data (più recenti prima)
+      return b._creationTime - a._creationTime
+    })
 
     // Popola i dettagli per ogni ticket
     const ticketsWithDetails = await Promise.all(
-      nudgedTickets.map(async (ticket: any) => {
+      sortedTickets.map(async (ticket: any) => {
         const category = await ctx.db.get(ticket.categoryId)
         const clinic = await ctx.db.get(ticket.clinicId)
         const creator = await ctx.db.get(ticket.creatorId)
@@ -184,7 +207,8 @@ export const getNudgedTickets = query({
       })
     )
 
-    console.log(`✅ Trovati ${ticketsWithDetails.length} ticket sollecitati`)
+    const nudgedCount = ticketsWithDetails.filter(t => (t.nudgeCount || 0) > 0).length
+    console.log(`✅ Trovati ${ticketsWithDetails.length} ticket da risolvere (${nudgedCount} sollecitati)`)
     return ticketsWithDetails
   },
 })
@@ -552,6 +576,66 @@ export const createWithAuth: any = mutation({
 
     console.log('✅ Ticket creato con ID:', ticketId, 'numero:', ticketNumber)
 
+    // 🎯 ESEGUI I TRIGGER ATTIVI DELLA CLINICA
+    const triggers = await ctx.db
+      .query("triggers")
+      .withIndex("by_clinic", (q) => q.eq("clinicId", user.clinicId))
+      .filter((q) => q.eq(q.field("isActive"), true))
+      .collect()
+
+    console.log(`🔍 Trovati ${triggers.length} trigger attivi per la clinica ${user.clinicId}`)
+
+    for (const trigger of triggers) {
+      console.log(`🎯 Valutazione trigger: ${trigger.name}`, trigger.conditions)
+      
+      let conditionMet = false
+
+      // Valuta le condizioni
+      if (trigger.conditions.type === 'category_match') {
+        // Confronta con lo slug della categoria
+        const categorySlug = category.slug
+        conditionMet = categorySlug === trigger.conditions.value
+        console.log(`  ↳ Categoria match? ${categorySlug} === ${trigger.conditions.value} = ${conditionMet}`)
+      } else if (trigger.conditions.type === 'status_change') {
+        // Confronta con lo status del ticket (sempre "open" alla creazione)
+        conditionMet = 'open' === trigger.conditions.value
+        console.log(`  ↳ Status match? open === ${trigger.conditions.value} = ${conditionMet}`)
+      }
+
+      // Se la condizione è soddisfatta, esegui le azioni
+      if (conditionMet) {
+        console.log(`✅ Condizione soddisfatta! Eseguo azione: ${trigger.actions.type}`)
+
+        if (trigger.actions.type === 'assign_user') {
+          // Trova l'utente da assegnare per email
+          const assigneeUser = await ctx.db
+            .query("users")
+            .filter((q) => q.eq(q.field("email"), trigger.actions.value))
+            .first()
+
+          if (assigneeUser) {
+            // Assegna il ticket all'utente
+            await ctx.db.patch(ticketId, { 
+              assigneeId: assigneeUser._id,
+              lastActivityAt: Date.now()
+            })
+            console.log(`  ↳ Ticket assegnato a ${assigneeUser.email}`)
+          } else {
+            console.warn(`  ⚠️ Utente ${trigger.actions.value} non trovato`)
+          }
+        } else if (trigger.actions.type === 'change_status') {
+          // Cambia lo status del ticket
+          await ctx.db.patch(ticketId, { 
+            status: trigger.actions.value,
+            lastActivityAt: Date.now()
+          })
+          console.log(`  ↳ Status cambiato in ${trigger.actions.value}`)
+        }
+      } else {
+        console.log(`❌ Condizione NON soddisfatta, salto trigger`)
+      }
+    }
+
     return { ticketId, ticketNumber }
   },
 })
@@ -595,7 +679,29 @@ export const getMyCreatedWithAuth = query({
     tickets.sort((a, b) => b._creationTime - a._creationTime)
 
     const limit = args.limit || 20
-    return tickets.slice(0, limit)
+    const limitedTickets = tickets.slice(0, limit)
+
+    // Popola i dati correlati (category, clinic, creator, assignee)
+    const ticketsWithDetails = await Promise.all(
+      limitedTickets.map(async (ticket) => {
+        const [category, clinic, creator, assignee] = await Promise.all([
+          ctx.db.get(ticket.categoryId),
+          ctx.db.get(ticket.clinicId),
+          ctx.db.get(ticket.creatorId),
+          ticket.assigneeId ? ctx.db.get(ticket.assigneeId) : null,
+        ])
+
+        return {
+          ...ticket,
+          category,
+          clinic,
+          creator,
+          assignee,
+        }
+      })
+    )
+
+    return ticketsWithDetails
   },
 })
 
@@ -1044,7 +1150,7 @@ export const search = query({
 
     // Apply filters
     if (args.status && args.status.length > 0) {
-      tickets = tickets.filter(ticket => args.status!.includes(ticket.status))
+      tickets = tickets.filter(ticket => args.status!.includes(ticket.status as any))
     }
 
     if (args.categoryId) {
@@ -1107,9 +1213,9 @@ export const search = query({
           break
         case "status":
           // Custom status order: open, in_progress, closed
-          const statusOrder = { open: 0, in_progress: 1, closed: 2 }
-          aValue = statusOrder[a.status]
-          bValue = statusOrder[b.status]
+          const statusOrder: Record<string, number> = { open: 0, in_progress: 1, closed: 2 }
+          aValue = statusOrder[a.status] ?? 999 // Stati sconosciuti vanno in fondo
+          bValue = statusOrder[b.status] ?? 999
           break
         default:
           aValue = a.lastActivityAt

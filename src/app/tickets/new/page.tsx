@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/Textarea';
 import { Select } from '@/components/ui/Select';
 import { Badge } from '@/components/ui/Badge';
+import { KBWidget } from '@/components/kb/KBWidget';
 import { ArrowLeft, Upload, User, Tag } from 'lucide-react';
 import Link from 'next/link';
 
@@ -25,10 +26,16 @@ export default function NewTicketPage() {
   // Mutation per creare il ticket con autenticazione
   const createTicket = useMutation(api.tickets.createWithAuth);
   
+  // Ottieni l'email dell'utente corrente (necessario per le mutation)
+  const currentUserEmail = authUser?.email || user?.email;
+  
+  // Estrai clinicId in modo sicuro (potrebbe essere authUser.clinicId o authUser.clinic._id)
+  const clinicId = (authUser as any)?.clinicId || (authUser as any)?.clinic?._id
+  
   // Query per ottenere le categorie pubbliche da Convex
   const categoriesData = useQuery(
     api.categories.getPublicCategories,
-    authUser?.clinic?._id ? { clinicId: authUser.clinic._id } : "skip"
+    clinicId ? { clinicId } : "skip"
   );
   
   // Trasforma le categorie nel formato atteso dal Select
@@ -54,6 +61,13 @@ export default function NewTicketPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // VALIDAZIONE: Verifica che l'utente sia autenticato
+    if (!currentUserEmail) {
+      alert('Errore: Utente non autenticato. Ricarica la pagina e riprova.');
+      return;
+    }
+    
     setIsSubmitting(true);
     
     try {
@@ -85,6 +99,7 @@ export default function NewTicketPage() {
         description: formData.description.trim(),
         categoryId: formData.category as any, // Cast necessario per TypeScript
         visibility: 'private', // Default a privato
+        userEmail: currentUserEmail, // Email utente autenticato (validato sopra)
       });
       
       console.log('✅ Ticket creato:', result);
@@ -235,6 +250,13 @@ export default function NewTicketPage() {
                   </div>
                 </CardContent>
               </Card>
+
+              {/* KB Widget - Articoli Correlati */}
+              <KBWidget
+                category={formData.category ? categoriesData?.find(c => c._id === formData.category)?.slug : undefined}
+                searchTerm={formData.title + ' ' + formData.description}
+                clinicId={clinicId}
+              />
 
               {/* Preview */}
               {formData.visibility && (

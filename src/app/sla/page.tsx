@@ -65,65 +65,21 @@ export default function SLAMonitorPage() {
     requiresApproval: false
   })
 
-  // Query per ottenere le categorie dal database (fittizia per ora)
-  const [availableCategories, setAvailableCategories] = useState<string[]>([
-    'general',
-    'software',
-    'hardware',
-    'security',
-    'network',
-    'maintenance',
-    'account',
-    'billing',
-    'training',
-    'other'
-  ])
-  const [loadingCategories, setLoadingCategories] = useState(false)
+  // Get clinic ID from user  
+  const clinicId = (user as any)?.clinicId || (user as any)?.clinic?._id
 
-  // Get clinic ID from user
-  const clinicId = user?.clinic?._id
-
-  // NOTA: Questa funzione dovrà essere sostituita con una vera query Convex
-  // quando le API per le categorie saranno disponibili nel backend
-  const loadCategoriesFromDB = async () => {
-    setLoadingCategories(true)
-    try {
-      // Simulazione caricamento categorie dal database
-      // In futuro questo sarà: const categories = useQuery(api.categories.getByClinic, { clinicId })
-      
-      // Per ora, simulo un piccolo ritardo per mostrare lo stato di caricamento
-      await new Promise(resolve => setTimeout(resolve, 500))
-      
-      // Qui andrebbero caricate le categorie reali dal database
-      // Per ora mantengo le categorie di esempio ma potrebbero venire da Convex
-      const categoriesFromDB = [
-        'general',
-        'software', 
-        'hardware',
-        'security',
-        'network',
-        'maintenance',
-        'account',
-        'billing',
-        'training',
-        'other'
-      ]
-      
-      setAvailableCategories(categoriesFromDB)
-    } catch (error) {
-      console.error('Errore nel caricare le categorie:', error)
-      // In caso di errore, mantengo le categorie di default
-    } finally {
-      setLoadingCategories(false)
-    }
-  }
-
-  // Carica le categorie all'avvio
-  React.useEffect(() => {
-    if (clinicId) {
-      loadCategoriesFromDB()
-    }
-  }, [clinicId])
+  // Query per ottenere le categorie REALI dal database
+  const categoriesFromDB = useQuery(
+    api.categories.getCategoriesByClinic,
+    clinicId ? { clinicId, isActive: true } : "skip"
+  )
+  
+  // Mappa le categorie in un formato semplice per il form
+  const availableCategories = categoriesFromDB?.map(cat => ({
+    id: cat._id,
+    name: cat.name,
+    slug: cat.slug
+  })) || []
   
   // Queries - NOTA: Queste query dovranno essere implementate nel backend
   // Per ora uso dei dati fittizi per la struttura del frontend
@@ -666,7 +622,7 @@ export default function SLAMonitorPage() {
                     <label className="block text-sm font-medium text-gray-700 mb-3">
                       Categorie Applicabili
                     </label>
-                    {loadingCategories ? (
+                    {!categoriesFromDB ? (
                       <div className="flex items-center justify-center py-4">
                         <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
                         <span className="ml-2 text-sm text-gray-600">Caricamento categorie...</span>
@@ -680,37 +636,28 @@ export default function SLAMonitorPage() {
                       <>
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                           {availableCategories.map((category) => (
-                            <div key={category} className="flex items-center">
+                            <div key={category.id} className="flex items-center">
                               <input
                                 type="checkbox"
-                                id={`category-${category}`}
-                                checked={formData.categories.includes(category)}
+                                id={`category-${category.id}`}
+                                checked={formData.categories.includes(category.id)}
                                 onChange={(e) => {
                                   if (e.target.checked) {
                                     setFormData(prev => ({
                                       ...prev,
-                                      categories: [...prev.categories, category]
+                                      categories: [...prev.categories, category.id]
                                     }))
                                   } else {
                                     setFormData(prev => ({
                                       ...prev,
-                                      categories: prev.categories.filter(c => c !== category)
+                                      categories: prev.categories.filter(c => c !== category.id)
                                     }))
                                   }
                                 }}
                                 className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                               />
-                              <label htmlFor={`category-${category}`} className="ml-2 text-sm text-gray-700 capitalize">
-                                {category === 'general' ? 'Generale' :
-                                 category === 'software' ? 'Software' :
-                                 category === 'hardware' ? 'Hardware' :
-                                 category === 'security' ? 'Sicurezza' :
-                                 category === 'network' ? 'Rete' :
-                                 category === 'maintenance' ? 'Manutenzione' :
-                                 category === 'account' ? 'Account' :
-                                 category === 'billing' ? 'Fatturazione' :
-                                 category === 'training' ? 'Formazione' :
-                                 category === 'other' ? 'Altro' : category}
+                              <label htmlFor={`category-${category.id}`} className="ml-2 text-sm text-gray-700">
+                                {category.name}
                               </label>
                             </div>
                           ))}

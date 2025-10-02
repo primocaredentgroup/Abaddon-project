@@ -5,6 +5,7 @@ import { ConvexClientProvider } from "@/providers/ConvexProvider";
 import { AuthProvider } from "@/providers/AuthProvider";
 import { RoleProvider } from "@/providers/RoleProvider";
 import { ToastProvider } from "@/components/ui/Toast";
+import { Toaster } from "sonner";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -33,6 +34,7 @@ export default function RootLayout({
             </RoleProvider>
           </AuthProvider>
         </ConvexClientProvider>
+        <Toaster position="top-right" richColors />
       </body>
     </html>
   );

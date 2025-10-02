@@ -7,6 +7,7 @@ interface ExtendedUser {
   email: string;
   ruolo: string;
   id: string;
+  clinicId?: string;  // ✅ Aggiunto clinicId
   clinic?: {
     name: string;
   };
@@ -42,6 +43,7 @@ export function useAuth() {
           cognome: '', // Non abbiamo un cognome, lasciamo vuoto
           email: userData.email || '',
           ruolo: userData.role?.name || 'user',
+          clinicId: userData.clinicId,  // ✅ Aggiunto clinicId
           clinic: userData.clinic,
           role: userData.role
         });
@@ -114,11 +116,18 @@ export function useAuth() {
     window.location.href = '/api/auth/logout-local';
   };
 
+  // Funzione per ricaricare i dati dell'utente
+  const refreshUser = () => {
+    console.log('🔄 Ricaricando dati utente...');
+    checkSession();
+  };
+
   return {
     user,
     isLoading,
     error,
     login,
-    logout
+    logout,
+    refreshUser // Espone la funzione per ricaricare
   };
 }

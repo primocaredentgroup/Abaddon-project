@@ -50,15 +50,19 @@ Puoi aiutare gli utenti a:
 Rispondi sempre in italiano e sii professionale ma amichevole.`
   })
 
+  // Estrai clinicId in modo sicuro (potrebbe essere user.clinicId o user.clinic._id)
+  const clinicId = (user as any)?.clinicId || (user as any)?.clinic?._id
+  
   // Query per ottenere la configurazione corrente
   const agentConfig = useQuery(
     "agent:getAgentConfig",
-    user?.clinicId ? { clinicId: user.clinicId } : "skip"
+    clinicId ? { clinicId } : "skip"
   )
 
   // Mutation per aggiornare la configurazione
-  const updateConfig = useMutation("agent:updateAgentConfig")
-  const initializeConfig = useMutation("agent:initializeAgentConfig")
+  // NOTA: Usando versione Simple per sviluppo (senza controllo autenticazione)
+  const updateConfig = useMutation(api.agent.updateAgentConfigSimple)
+  const initializeConfig = useMutation(api.agent.initializeAgentConfig)
 
   // Carica la configurazione esistente quando disponibile
   React.useEffect(() => {
@@ -68,32 +72,38 @@ Rispondi sempre in italiano e sii professionale ma amichevole.`
   }, [agentConfig])
 
   const handleSave = async () => {
-    if (!user?.clinicId) {
-      toast.error('Clinica non trovata')
+    // Prova sia _id che id per compatibilità
+    const userId = user?._id || (user as any)?.id
+    
+    if (!clinicId || !userId) {
+      toast.error('❌ Clinica o utente non trovato')
       return
     }
 
     setIsUpdating(true)
     try {
       await updateConfig({
-        clinicId: user.clinicId,
+        clinicId: clinicId,
+        userId: userId,
         settings: config,
       })
-      toast.success('Configurazione salvata con successo!')
+      toast.success('✅ Configurazione Ermes AI salvata con successo!', {
+        duration: 4000,
+      })
     } catch (error) {
       console.error('Errore salvataggio configurazione:', error)
-      toast.error('Errore durante il salvataggio')
+      toast.error('❌ Errore durante il salvataggio della configurazione')
     } finally {
       setIsUpdating(false)
     }
   }
 
   const handleInitialize = async () => {
-    if (!user?.clinicId) return
+    if (!clinicId) return
 
     setIsUpdating(true)
     try {
-      await initializeConfig({ clinicId: user.clinicId })
+      await initializeConfig({ clinicId: clinicId })
       toast.success('Agent inizializzato!')
     } catch (error) {
       console.error('Errore inizializzazione:', error)

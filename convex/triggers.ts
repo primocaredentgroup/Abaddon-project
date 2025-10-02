@@ -272,7 +272,7 @@ export const getTriggerStats = query({
     
     const activeTriggers = triggers.filter(trigger => trigger.isActive)
     const inactiveTriggers = triggers.filter(trigger => !trigger.isActive)
-    const pendingApproval = triggers.filter(trigger => trigger.requiresApproval)
+    const pendingApproval = triggers.filter(trigger => trigger.requiresApproval && !trigger.isApproved)
     
     return {
       total: triggers.length,
@@ -280,5 +280,132 @@ export const getTriggerStats = query({
       inactive: inactiveTriggers.length,
       pendingApproval: pendingApproval.length
     }
+  }
+})
+
+// Mutation per approvare un trigger
+export const approveTrigger = mutation({
+  args: { 
+    triggerId: v.id("triggers")
+  },
+  handler: async (ctx, { triggerId }) => {
+    // Verifica autenticazione
+    const currentUser = await getCurrentUser(ctx)
+    
+    // Verifica che l'utente sia admin
+    const role = await ctx.db.get(currentUser.roleId)
+    if (!role || role.name !== 'Amministratore') {
+      throw new ConvexError("Solo gli amministratori possono approvare i trigger")
+    }
+    
+    // Verifica che il trigger esista
+    const trigger = await ctx.db.get(triggerId)
+    if (!trigger) {
+      throw new ConvexError("Trigger not found")
+    }
+    
+    // Verifica che il trigger richieda approvazione
+    if (!trigger.requiresApproval) {
+      throw new ConvexError("Questo trigger non richiede approvazione")
+    }
+    
+    // Approva il trigger
+    await ctx.db.patch(triggerId, {
+      isApproved: true,
+      approvedBy: currentUser._id,
+      approvedAt: Date.now(),
+      isActive: true // Attiva automaticamente il trigger approvato
+    })
+    
+    return triggerId
+  }
+})
+
+// Mutation per rifiutare un trigger
+export const rejectTrigger = mutation({
+  args: { 
+    triggerId: v.id("triggers"),
+    reason: v.optional(v.string())
+  },
+  handler: async (ctx, { triggerId, reason }) => {
+    // Verifica autenticazione
+    const currentUser = await getCurrentUser(ctx)
+    
+    // Verifica che l'utente sia admin
+    const role = await ctx.db.get(currentUser.roleId)
+    if (!role || role.name !== 'Amministratore') {
+      throw new ConvexError("Solo gli amministratori possono rifiutare i trigger")
+    }
+    
+    // Verifica che il trigger esista
+    const trigger = await ctx.db.get(triggerId)
+    if (!trigger) {
+      throw new ConvexError("Trigger not found")
+    }
+    
+    // Rifiuta il trigger
+    await ctx.db.patch(triggerId, {
+      isApproved: false,
+      rejectedBy: currentUser._id,
+      rejectedAt: Date.now(),
+      rejectionReason: reason || 'Trigger rifiutato dall\'amministratore',
+      isActive: false // Disattiva il trigger rifiutato
+    })
+    
+    return triggerId
+  }
+})
+
+// =================== MUTATIONS SIMPLE (per sviluppo) ===================
+// NOTA: Queste sono versioni temporanee per lo sviluppo
+// In produzione, usare le versioni normali con autenticazione
+
+export const approveTriggerSimple = mutation({
+  args: { 
+    triggerId: v.id("triggers"),
+    userId: v.id("users")
+  },
+  handler: async (ctx, { triggerId, userId }) => {
+    // Verifica che il trigger esista
+    const trigger = await ctx.db.get(triggerId)
+    if (!trigger) {
+      throw new ConvexError("Trigger not found")
+    }
+    
+    // Approva il trigger
+    await ctx.db.patch(triggerId, {
+      isApproved: true,
+      approvedBy: userId,
+      approvedAt: Date.now(),
+      isActive: true
+    })
+    
+    return triggerId
+  }
+})
+
+export const rejectTriggerSimple = mutation({
+  args: { 
+    triggerId: v.id("triggers"),
+    userId: v.id("users"),
+    reason: v.optional(v.string())
+  },
+  handler: async (ctx, { triggerId, userId, reason }) => {
+    // Verifica che il trigger esista
+    const trigger = await ctx.db.get(triggerId)
+    if (!trigger) {
+      throw new ConvexError("Trigger not found")
+    }
+    
+    // Rifiuta il trigger
+    await ctx.db.patch(triggerId, {
+      isApproved: false,
+      rejectedBy: userId,
+      rejectedAt: Date.now(),
+      rejectionReason: reason || 'Trigger rifiutato dall\'amministratore',
+      isActive: false
+    })
+    
+    return triggerId
   }
 })

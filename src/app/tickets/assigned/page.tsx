@@ -54,10 +54,10 @@ export default function AssignedTicketsPage() {
   const [statusFilter, setStatusFilter] = useState<string>('')
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'updated' | 'nudged'>('newest')
 
-  // Fetch assigned tickets
+  // Fetch assigned tickets (skip se user non è ancora caricato)
   const convexTickets = useQuery(
     api.tickets.getMyAssignedTicketsWithAuth,
-    { userEmail: user?.email }
+    user?.email ? { userEmail: user.email } : "skip"
   )
 
   // Transform Convex data to expected format

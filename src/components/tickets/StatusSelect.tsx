@@ -121,21 +121,19 @@ export const StatusSelect: React.FC<StatusSelectProps> = ({
         </label>
         <Select
           value={value}
-          onValueChange={handleStatusChange}
+          onChange={(e) => handleStatusChange(e.target.value)}
           disabled={disabled || isChanging}
-        >
-          <option value={value}>
-            {currentConfig.icon} {currentConfig.label} (Attuale)
-          </option>
-          {nextStatuses.map((status) => {
-            const config = getStatusConfig(status)
-            return (
-              <option key={status} value={status}>
-                {config.icon} {config.label}
-              </option>
-            )
-          })}
-        </Select>
+          options={[
+            { value: value, label: `${currentConfig.icon} ${currentConfig.label} (Attuale)` },
+            ...nextStatuses.map((status) => {
+              const config = getStatusConfig(status)
+              return {
+                value: status,
+                label: `${config.icon} ${config.label}`
+              }
+            })
+          ]}
+        />
       </div>
 
       {/* Status descriptions */}

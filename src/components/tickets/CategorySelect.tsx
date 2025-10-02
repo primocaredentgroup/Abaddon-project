@@ -106,7 +106,7 @@ export const CategorySelect: React.FC<CategorySelectProps> = ({
         {/* Category selection */}
         <Select
           value={value || ''}
-          onChange={handleCategoryChange}
+          onChange={(e) => handleCategoryChange(e.target.value)}
           disabled={disabled || isChanging}
           placeholder="Seleziona categoria"
           options={categoryOptions}

@@ -22,7 +22,8 @@ import {
   CheckCircle,
   AlertTriangle,
   ArrowUpDown,
-  Pencil
+  Pencil,
+  Layers
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -66,15 +67,38 @@ const priorityOptions = [
 export default function ClinicTicketsPage() {
   const { user } = useRole();
   
+  // Estrai clinicId
+  const clinicId = (user as any)?.clinicId || (user as any)?.clinic?._id
+  
+  // Fetch delle viste disponibili
+  const availableViews = useQuery(
+    api.ticketViews.getAvailableViewsForUser,
+    user?.email && clinicId ? { userEmail: user.email, clinicId } : "skip"
+  )
+  
+  // Stato per la vista selezionata
+  const [selectedViewId, setSelectedViewId] = useState<string | null>(null)
+  
   // Fetch dei ticket della clinica da Convex
   const ticketsData = useQuery(
     api.tickets.getMyClinicTicketsWithAuth, 
     user?.email ? { userEmail: user.email } : "skip"
   ) || [];
   
+  // Fetch dei ticket filtrati per vista (se una vista è selezionata)
+  const viewTickets = useQuery(
+    api.ticketViews.getTicketsByView,
+    selectedViewId && user?.email
+      ? { viewId: selectedViewId as any, userEmail: user.email }
+      : "skip"
+  )
+  
+  // Usa i ticket dalla vista se selezionata, altrimenti tutti i ticket
+  const activeTicketsData = selectedViewId && viewTickets ? viewTickets : ticketsData
+  
   // Trasforma i dati di Convex nel formato aspettato dal componente
   const convexTickets = useMemo(() => {
-    const sortedTickets = [...ticketsData].sort((a, b) => a._creationTime - b._creationTime)
+    const sortedTickets = [...activeTicketsData].sort((a, b) => a._creationTime - b._creationTime)
     
     let tempTicketNumber = 1000 // Fallback per ticket senza numero
     
@@ -95,7 +119,7 @@ export default function ClinicTicketsPage() {
       visibility: ticket.visibility,
       _id: ticket._id,
     }))
-  }, [ticketsData]);
+  }, [activeTicketsData]);
 
   // Usa SOLO i dati reali da Convex (NO MOCK!)
   const displayTickets = convexTickets;
@@ -218,45 +242,88 @@ export default function ClinicTicketsPage() {
               Filtri
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <CardContent className="space-y-4">
+            {/* Dropdown Viste */}
+            {availableViews && availableViews.length > 0 && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Cerca
+                  <Layers className="h-4 w-4 inline mr-1" />
+                  Vista Rapida
                 </label>
-                <div className="relative">
-                  <Search className="h-4 w-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-                  <Input
-                    type="text"
-                    placeholder="Cerca per titolo, descrizione o ID..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10"
+                <div className="flex items-center gap-2">
+                  <Select
+                    value={selectedViewId || 'none'}
+                    onChange={(e) => setSelectedViewId(e.target.value === 'none' ? null : e.target.value)}
+                    options={[
+                      { value: 'none', label: '📋 Tutti i ticket' },
+                      ...availableViews.map(view => ({
+                        value: view._id,
+                        label: `${view.isPublic ? '🌐' : view.isPersonal ? '👤' : '👥'} ${view.name}`
+                      }))
+                    ]}
+                    className="flex-1"
+                  />
+                  {selectedViewId && (
+                    <Badge className="bg-blue-100 text-blue-800">
+                      Vista attiva
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Seleziona una vista per filtrare rapidamente i ticket
+                </p>
+              </div>
+            )}
+            
+            {/* Filtri manuali (disabilitati se c'è una vista attiva) */}
+            <div className={selectedViewId ? 'opacity-50 pointer-events-none' : ''}>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Cerca
+                  </label>
+                  <div className="relative">
+                    <Search className="h-4 w-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                    <Input
+                      type="text"
+                      placeholder="Cerca per titolo, descrizione o ID..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="pl-10"
+                      disabled={!!selectedViewId}
+                    />
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Stato
+                  </label>
+                  <Select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    options={statusOptions}
+                    disabled={!!selectedViewId}
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Priorità
+                  </label>
+                  <Select
+                    value={priorityFilter}
+                    onChange={(e) => setPriorityFilter(e.target.value)}
+                    options={priorityOptions}
+                    disabled={!!selectedViewId}
                   />
                 </div>
               </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Stato
-                </label>
-                <Select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  options={statusOptions}
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Priorità
-                </label>
-                <Select
-                  value={priorityFilter}
-                  onChange={(e) => setPriorityFilter(e.target.value)}
-                  options={priorityOptions}
-                />
-              </div>
+              {selectedViewId && (
+                <p className="text-xs text-blue-600 mt-2">
+                  💡 I filtri manuali sono disabilitati quando una vista è attiva. Deseleziona la vista per usarli.
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -372,9 +439,9 @@ export default function ClinicTicketsPage() {
                             <button onClick={() => setEditingStatusId(ticket.id)} className="inline-flex">
                               <Badge 
                                 variant={
-                                  ticket.status === 'open' ? 'destructive' :
-                                  ticket.status === 'in_progress' ? 'secondary' :
-                                  ticket.status === 'closed' ? 'default' : 'outline'
+                                  ticket.status === 'open' ? 'danger' :
+                                  ticket.status === 'in_progress' ? 'warning' :
+                                  ticket.status === 'closed' ? 'success' : 'default'
                                 }
                                 className="text-xs flex items-center cursor-pointer hover:opacity-80"
                               >
@@ -390,7 +457,7 @@ export default function ClinicTicketsPage() {
                           )}
                         </td>
                         <td className="px-3 py-3 text-center">
-                          <Badge variant="outline" className="text-xs">
+                          <Badge variant="default" className="text-xs">
                             {ticket.category}
                           </Badge>
                         </td>

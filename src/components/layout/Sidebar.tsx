@@ -18,8 +18,10 @@ import {
   Tags,
   Bot,
   Bell,
-  UserCheck // Icon for assigned tickets
-
+  UserCheck, // Icon for assigned tickets
+  Shield, // Icon for admin dashboard
+  CheckSquare, // Icon for approvals
+  Eye // Icon for views
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
@@ -42,25 +44,26 @@ const navigation: NavItem[] = [
   { name: 'Dashboard', href: '/dashboard', icon: Home, roles: ['user', 'agent', 'admin'] },
   { name: 'I miei ticket', href: '/tickets/my', icon: Ticket, roles: ['user', 'agent', 'admin'] },
   { name: 'Ticket clinica', href: '/tickets/clinic', icon: Building2, roles: ['user', 'agent', 'admin'] },
+  { name: 'Viste', href: '/views', icon: Eye, roles: ['user', 'agent', 'admin'] },
   { name: 'Assistente AI', href: '/agent', icon: Bot, roles: ['user', 'agent', 'admin'] },
 ]
 
 const agentNavigation: NavItem[] = [
   { name: 'Ticket Assegnati', href: '/tickets/assigned', icon: UserCheck, roles: ['agent', 'admin'] },
-  { name: 'Utenti', href: '/users', icon: Users, roles: ['agent', 'admin'] },
   { name: 'Categorie', href: '/categories', icon: Filter, roles: ['agent', 'admin'] },
-  { name: 'Solleciti', href: '/dashboard/nudges', icon: Bell, roles: ['agent', 'admin'] },
+  { name: 'Ticket da Gestire', href: '/dashboard/nudges', icon: Bell, roles: ['agent', 'admin'] },
   { name: 'Trigger', href: '/automation/triggers', icon: Zap, roles: ['agent', 'admin'] },
   { name: 'Macro', href: '/automation/macros', icon: Zap, roles: ['agent', 'admin'] },
   { name: 'SLA Monitor', href: '/sla', icon: Clock, roles: ['agent', 'admin'] },
 ]
 
 const adminNavigation: NavItem[] = [
-  { name: 'Gestione Utenti', href: '/admin/users', icon: Users, roles: ['admin'] },
-  { name: 'Cliniche', href: '/admin/clinics', icon: Building2, roles: ['admin'] },
-  { name: 'Ruoli e Permessi', href: '/admin/roles', icon: UserCog, roles: ['admin'] },
-  { name: 'Statistiche', href: '/admin/analytics', icon: BarChart3, roles: ['admin'] },
-  { name: 'Configurazione', href: '/admin/settings', icon: Settings, roles: ['admin'] },
+  { name: 'Dashboard Admin', href: '/admin', icon: Shield, roles: ['admin'] },
+  { name: 'Approvazioni', href: '/admin/approvals', icon: CheckSquare, roles: ['admin'] },
+  { name: 'Gestione Utenti', href: '/users', icon: Users, roles: ['admin'] },
+  { name: 'Gestione Viste', href: '/admin/views', icon: Eye, roles: ['admin'] },
+  { name: 'Config. Ermes AI', href: '/admin/agent-config', icon: Bot, roles: ['admin'] },
+  { name: 'Ruoli e Permessi', href: '/roles', icon: UserCog, roles: ['admin'] },
 ]
 
 const quickActions: NavItem[] = [

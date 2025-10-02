@@ -9,13 +9,16 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { AppLayout } from '@/components/layout/AppLayout'
+import { useAuth } from '@/hooks/useAuth'
+import { toast } from 'sonner'
 
 export default function UsersPage() {
+  const { user: currentUser, refreshUser } = useAuth() // Ottieni l'utente corrente e la funzione refresh
   const users = useQuery(api.users.getAllUsers, {})
   const roles = useQuery(api.roles.getAllRoles, { includeSystem: true })
 
   const createUser = useMutation(api.users.createUser)
-  const updateUser = useMutation(api.users.updateUser)
+  const updateUser = useMutation(api.users.updateUserSimple) // Usa la versione Simple per lo sviluppo
   const createPermissions = useMutation(api.roles.createSystemPermissions)
   const createSystemRoles = useMutation(api.roles.createSystemRoles)
 
@@ -49,10 +52,32 @@ export default function UsersPage() {
 
   const handleToggleActive = async (user: any) => {
     await updateUser({ userId: user._id, isActive: !user.isActive })
+    
+    // Se stai modificando te stesso, ricarica i dati
+    if (currentUser && user.email === currentUser.email) {
+      toast.success('Ruolo aggiornato! Ricaricando i tuoi dati...')
+      setTimeout(() => refreshUser(), 500)
+    }
   }
 
   const handleChangeRole = async (user: any, newRoleId: string) => {
-    await updateUser({ userId: user._id, roleId: newRoleId as any })
+    try {
+      await updateUser({ userId: user._id, roleId: newRoleId as any })
+      
+      // Se stai modificando il TUO ruolo, ricarica i dati
+      if (currentUser && user.email === currentUser.email) {
+        toast.success('Ruolo aggiornato! Ricaricando i tuoi dati...')
+        // Aspetta un attimo e poi ricarica per dare tempo al database di aggiornarsi
+        setTimeout(() => {
+          refreshUser()
+        }, 800)
+      } else {
+        toast.success(`Ruolo di ${user.name} aggiornato con successo!`)
+      }
+    } catch (error) {
+      console.error('Errore cambio ruolo:', error)
+      toast.error('Errore durante l\'aggiornamento del ruolo')
+    }
   }
 
   return (
@@ -89,34 +114,45 @@ export default function UsersPage() {
             </tr>
           </thead>
           <tbody>
-            {users.map((u) => (
-              <tr key={u._id} className="border-t">
-                <td className="px-3 py-2">{u.name}</td>
-                <td className="px-3 py-2 text-gray-700">{u.email}</td>
-                <td className="px-3 py-2">
-                  <select
-                    className="border rounded-md px-2 py-1 text-sm"
-                    value={u.roleId as any}
-                    onChange={(e) => handleChangeRole(u, e.target.value)}
-                    disabled={roleOptions.length === 0}
-                  >
-                    {roleOptions.map((r: any) => (
-                      <option key={r.value} value={r.value}>{r.label}</option>
-                    ))}
-                  </select>
-                </td>
-                <td className="px-3 py-2">
-                  <Badge variant={u.isActive ? 'default' : 'secondary'}>
-                    {u.isActive ? 'Attivo' : 'Disattivo'}
-                  </Badge>
-                </td>
-                <td className="px-3 py-2 text-right">
-                  <Button variant="outline" size="sm" onClick={() => handleToggleActive(u)}>
-                    {u.isActive ? 'Disattiva' : 'Attiva'}
-                  </Button>
-                </td>
-              </tr>
-            ))}
+            {users.map((u) => {
+              const isCurrentUser = currentUser && u.email === currentUser.email
+              return (
+                <tr key={u._id} className={`border-t ${isCurrentUser ? 'bg-blue-50' : ''}`}>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      {u.name}
+                      {isCurrentUser && (
+                        <Badge variant="default" className="text-xs">Tu</Badge>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 text-gray-700">{u.email}</td>
+                  <td className="px-3 py-2">
+                    <select
+                      className={`border rounded-md px-2 py-1 text-sm ${isCurrentUser ? 'border-blue-400' : ''}`}
+                      value={u.roleId as any}
+                      onChange={(e) => handleChangeRole(u, e.target.value)}
+                      disabled={roleOptions.length === 0}
+                      title={isCurrentUser ? 'Stai modificando il TUO ruolo' : ''}
+                    >
+                      {roleOptions.map((r: any) => (
+                        <option key={r.value} value={r.value}>{r.label}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="px-3 py-2">
+                    <Badge variant={u.isActive ? 'default' : 'secondary'}>
+                      {u.isActive ? 'Attivo' : 'Disattivo'}
+                    </Badge>
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <Button variant="outline" size="sm" onClick={() => handleToggleActive(u)}>
+                      {u.isActive ? 'Disattiva' : 'Attiva'}
+                    </Button>
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>

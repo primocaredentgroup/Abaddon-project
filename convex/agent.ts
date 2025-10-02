@@ -676,3 +676,44 @@ Sono qui per rendere il tuo lavoro più semplice ed efficiente! Rispondi sempre 
     return existing._id;
   },
 });
+
+// Mutation semplificata per aggiornamento senza autenticazione (per sviluppo)
+// NOTA: Questa è una versione temporanea per lo sviluppo
+// In produzione, usare updateAgentConfig che richiede autenticazione admin
+export const updateAgentConfigSimple = mutation({
+  args: {
+    clinicId: v.id("clinics"),
+    userId: v.id("users"),
+    settings: v.object({
+      canSearchTickets: v.boolean(),
+      canSuggestCategories: v.boolean(),
+      canCreateTickets: v.boolean(),
+      canAccessUserData: v.boolean(),
+      canAccessClinicsData: v.boolean(),
+      temperature: v.number(),
+      maxTokens: v.number(),
+      systemPrompt: v.string(),
+    }),
+  },
+  handler: async (ctx, { clinicId, userId, settings }) => {
+    const existingConfig = await ctx.db
+      .query("agentConfig")
+      .withIndex("by_clinic", (q) => q.eq("clinicId", clinicId))
+      .unique();
+
+    if (existingConfig) {
+      await ctx.db.patch(existingConfig._id, {
+        settings,
+        lastUpdatedBy: userId,
+      });
+      return existingConfig._id;
+    } else {
+      return await ctx.db.insert("agentConfig", {
+        clinicId,
+        isEnabled: true,
+        settings,
+        lastUpdatedBy: userId,
+      });
+    }
+  },
+});

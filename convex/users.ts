@@ -610,3 +610,63 @@ export const createUserSimple = mutation({
     return userId;
   },
 });
+
+// ==========================================
+// MUTATION SEMPLICI PER LO SVILUPPO
+// (senza controllo autenticazione)
+// ==========================================
+
+// Mutation semplice per aggiornare un utente (senza autenticazione)
+export const updateUserSimple = mutation({
+  args: {
+    userId: v.id("users"),
+    name: v.optional(v.string()),
+    email: v.optional(v.string()),
+    roleId: v.optional(v.id("roles")),
+    clinicId: v.optional(v.id("clinics")),
+    isActive: v.optional(v.boolean()),
+    preferences: v.optional(v.object({
+      notifications: v.object({
+        email: v.boolean(),
+        push: v.boolean(),
+      }),
+      dashboard: v.object({
+        defaultView: v.string(),
+        itemsPerPage: v.number(),
+      }),
+    }))
+  },
+  handler: async (ctx, { userId, ...updates }) => {
+    // Verifica che l'utente esista
+    const user = await ctx.db.get(userId)
+    if (!user) {
+      throw new ConvexError("User not found")
+    }
+    
+    // Validazioni
+    if (updates.name && updates.name.length < 2) {
+      throw new ConvexError("Name must be at least 2 characters long")
+    }
+    
+    // Verifica che la clinica esista se fornita
+    if (updates.clinicId) {
+      const clinic = await ctx.db.get(updates.clinicId)
+      if (!clinic) {
+        throw new ConvexError("Clinic not found")
+      }
+    }
+    
+    // Verifica che il ruolo esista se fornito
+    if (updates.roleId) {
+      const role = await ctx.db.get(updates.roleId)
+      if (!role) {
+        throw new ConvexError("Role not found")
+      }
+    }
+    
+    // Aggiorna l'utente
+    await ctx.db.patch(userId, updates)
+    
+    return userId
+  }
+});

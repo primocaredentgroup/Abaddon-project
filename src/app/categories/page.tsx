@@ -45,8 +45,8 @@ export default function AdminCategoriesPage() {
     synonyms: ''
   })
 
-  // Get clinic ID from user - assuming user has clinic info
-  const clinicId = user?.clinic?._id
+  // Estrai clinicId in modo sicuro (potrebbe essere user.clinicId o user.clinic._id)
+  const clinicId = (user as any)?.clinicId || (user as any)?.clinic?._id
   
   // Queries
   const categories = useQuery(api.categories.getAllCategoriesByClinic, 

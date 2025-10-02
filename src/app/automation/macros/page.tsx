@@ -39,7 +39,7 @@ export default function MacrosPage() {
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    category: 'general' as string,
+    category: '' as string, // Slug della categoria (es. "prescrizioni")
     actions: [] as Array<{
       type: string
       value: string
@@ -50,14 +50,32 @@ export default function MacrosPage() {
     allowedRoles: [] as string[]
   })
 
-  // Get clinic ID from user
-  const clinicId = user?.clinic?._id
+  // Get clinic ID from user (con cast per supportare sia ID diretto che oggetto clinic)
+  const clinicId = (user as any)?.clinicId || (user as any)?.clinic?._id
   
-  // Queries - NOTA: Queste query dovranno essere implementate nel backend
-  // Per ora uso dei dati fittizi per la struttura del frontend
-  const [macros, setMacros] = useState<any[]>([])
+  // Fetch real categories from Convex
+  const categoriesFromDB = useQuery(
+    api.categories.getCategoriesByClinic,
+    clinicId ? { clinicId } : "skip"
+  )
   
-  // Stats temporanee - da implementare nel backend
+  // Fetch ticket statuses from Convex
+  const ticketStatusesFromDB = useQuery(api.ticketStatuses.getActiveStatuses)
+  
+  // Fallback statico per stati ticket se Convex non è ancora pronto
+  const ticketStatuses = ticketStatusesFromDB || [
+    { _id: '1', name: 'Aperto', slug: 'open', color: '#ef4444' },
+    { _id: '2', name: 'In Corso', slug: 'in_progress', color: '#f59e0b' },
+    { _id: '3', name: 'Chiuso', slug: 'closed', color: '#22c55e' },
+  ]
+  
+  // Fetch macros from Convex
+  const macros = useQuery(
+    api.macros.getMacrosByClinic,
+    clinicId ? { clinicId } : "skip"
+  )
+  
+  // Stats basate sui dati reali
   const macroStats = {
     total: macros?.length || 0,
     active: macros?.filter((m: any) => m.isActive).length || 0,
@@ -65,25 +83,10 @@ export default function MacrosPage() {
     pendingApproval: 0
   }
   
-  // Mutations fittizie - da implementare nel backend
-  const createMacro = async (data: any) => {
-    // Simulazione creazione
-    const newMacro = { ...data, _id: Date.now().toString(), creator: { name: (user as any)?.name || 'Sconosciuto' } }
-    setMacros(prev => [...prev, newMacro])
-    return newMacro
-  }
-  
-  const updateMacro = async (data: any) => {
-    // Simulazione aggiornamento
-    setMacros(prev => prev.map(m => m._id === data.ticketId ? { ...m, ...data } : m))
-    return data
-  }
-  
-  const deleteMacro = async (data: any) => {
-    // Simulazione eliminazione
-    setMacros(prev => prev.filter(m => m._id !== data.ticketId))
-    return data
-  }
+  // Real Convex mutations
+  const createMacroMutation = useMutation(api.macros.createMacro)
+  const updateMacroMutation = useMutation(api.macros.updateMacro)
+  const deleteMacroMutation = useMutation(api.macros.deleteMacro)
 
   // Filter macros based on search
   const filteredMacros = macros?.filter((macro: any) =>
@@ -99,28 +102,26 @@ export default function MacrosPage() {
     }
 
     try {
-      const macroData = {
-        name: formData.name,
-        description: formData.description,
-        category: formData.category,
-        actions: formData.actions,
-        isActive: formData.isActive,
-        requiresApproval: formData.requiresApproval,
-        allowedRoles: formData.allowedRoles,
-        clinicId
-      }
-
       if (editingMacro) {
         // Update existing macro
-        await updateMacro({
-          ticketId: editingMacro._id,
-          ...macroData
+        await updateMacroMutation({
+          macroId: editingMacro._id,
+          name: formData.name,
+          description: formData.description,
+          category: formData.category,
+          actions: formData.actions,
+          isActive: formData.isActive,
+          userEmail: user?.email || ""
         })
       } else {
         // Create new macro
-        await createMacro({
-          ...macroData,
-          creatorId: (user as any)?._id
+        await createMacroMutation({
+          name: formData.name,
+          description: formData.description,
+          category: formData.category,
+          actions: formData.actions,
+          clinicId,
+          userEmail: user?.email || ""
         })
       }
       
@@ -128,7 +129,7 @@ export default function MacrosPage() {
       setFormData({ 
         name: '', 
         description: '', 
-        category: 'general',
+        category: '',
         actions: [],
         isActive: true,
         requiresApproval: false,
@@ -148,7 +149,7 @@ export default function MacrosPage() {
     setFormData({
       name: macro.name,
       description: macro.description || '',
-      category: macro.category || 'general',
+      category: macro.category || '',
       actions: macro.actions || [],
       isActive: macro.isActive !== false,
       requiresApproval: macro.requiresApproval || false,
@@ -161,7 +162,10 @@ export default function MacrosPage() {
   const handleDelete = async (macroId: string) => {
     if (confirm('Sei sicuro di voler eliminare questa macro?')) {
       try {
-        await deleteMacro({ ticketId: macroId })
+        await deleteMacroMutation({ 
+          macroId: macroId as any,
+          userEmail: user?.email || ""
+        })
       } catch (error) {
         console.error('Errore nell\'eliminare la macro:', error)
         alert('Errore nell\'eliminare la macro: ' + error)
@@ -406,7 +410,7 @@ export default function MacrosPage() {
                       <FileText className="h-4 w-4 text-blue-500" />
                       <span className="font-medium">Categoria:</span>
                       <Badge variant="default">
-                        {macro.category || 'Generale'}
+                        {categoriesFromDB?.find(c => c.slug === macro.category)?.name || macro.category || 'Non specificata'}
                       </Badge>
                     </div>
                     <div className="flex items-center space-x-2 text-sm">
@@ -480,19 +484,24 @@ export default function MacrosPage() {
                   
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Categoria
+                      Categoria Ticket
                     </label>
                     <select 
                       className="w-full p-2 border rounded-md"
                       value={formData.category}
                       onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
+                      required
                     >
-                      <option value="general">Generale</option>
-                      <option value="ticket_management">Gestione Ticket</option>
-                      <option value="notification">Notifiche</option>
-                      <option value="assignment">Assegnazione</option>
-                      <option value="escalation">Escalation</option>
+                      <option value="">Seleziona categoria...</option>
+                      {categoriesFromDB?.map((cat) => (
+                        <option key={cat._id} value={cat.slug}>
+                          {cat.name}
+                        </option>
+                      ))}
                     </select>
+                    {!categoriesFromDB && (
+                      <p className="text-xs text-gray-500 mt-1">Caricamento categorie...</p>
+                    )}
                   </div>
                   
                   {/* Actions Section */}
@@ -531,12 +540,30 @@ export default function MacrosPage() {
                             <option value="add_comment">Aggiungi commento</option>
                             <option value="set_due_date">Imposta scadenza</option>
                           </select>
-                          <Input 
-                            placeholder="Valore"
-                            value={action.value}
-                            onChange={(e) => updateAction(index, 'value', e.target.value)}
-                            className="w-32"
-                          />
+                          
+                          {/* Valore azione - Condizionale in base al tipo */}
+                          {action.type === 'change_status' ? (
+                            <select 
+                              className="w-48 p-2 border rounded-md"
+                              value={action.value}
+                              onChange={(e) => updateAction(index, 'value', e.target.value)}
+                              required
+                            >
+                              <option value="">Seleziona stato...</option>
+                              {ticketStatuses.map((status) => (
+                                <option key={status._id} value={status.slug}>
+                                  {status.name}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <Input 
+                              placeholder="Valore"
+                              value={action.value}
+                              onChange={(e) => updateAction(index, 'value', e.target.value)}
+                              className="w-32"
+                            />
+                          )}
                           <Button 
                             type="button"
                             size="sm"

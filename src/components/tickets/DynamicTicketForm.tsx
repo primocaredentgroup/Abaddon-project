@@ -42,7 +42,9 @@ export const DynamicTicketForm: React.FC<DynamicTicketFormProps> = ({
 
   // Get current user and clinic settings
   const currentUser = useQuery(api.users.getCurrentUser, {})
-  const clinicSettings = currentUser ? useQuery(api.clinics.getById, { clinicId: currentUser.clinicId }) : null
+  // Estrai clinicId in modo sicuro (potrebbe essere currentUser.clinicId o currentUser.clinic._id)
+  const userClinicId = currentUser ? ((currentUser as any)?.clinicId || (currentUser as any)?.clinic?._id) : null
+  const clinicSettings = userClinicId ? useQuery(api.clinics.getById, { clinicId: userClinicId }) : null
 
   // Get category attributes when category is selected
   const categoryAttributes = useQuery(

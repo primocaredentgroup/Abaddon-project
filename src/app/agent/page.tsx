@@ -59,8 +59,8 @@ export default function AgentPage() {
   const [isLoading, setIsLoading] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  // Get clinic ID from user
-  const clinicId = (user as any)?.clinic?._id
+  // Estrai clinicId in modo sicuro (potrebbe essere user.clinicId o user.clinic._id)
+  const clinicId = (user as any)?.clinicId || (user as any)?.clinic?._id
 
   // Simulazione ricerca ticket (da sostituire con query Convex reali)
   const searchTickets = async (query: string): Promise<TicketInfo[]> => {

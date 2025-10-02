@@ -12,6 +12,7 @@ interface RoleContextType {
     name: string;
     email: string;
     clinic: string;
+    clinicId?: string;  // ✅ Aggiunto clinicId
     roleName?: string;
   } | null;
   isLoading: boolean;
@@ -32,11 +33,14 @@ export function RoleProvider({ children }: RoleProviderProps) {
     name: authUser.nome || authUser.email?.split('@')[0] || 'Utente',
     email: authUser.email || 'example@email.com',
     clinic: authUser.clinic?.name || 'Clinica Esempio',
+    clinicId: authUser.clinicId,  // ✅ Aggiunto clinicId
     roleName: authUser.role?.name || 'Utente'
   } : null;
 
   // Mappa il ruolo dal formato Convex al formato del RoleProvider
-  const role: UserRole = authUser?.role?.name === 'Admin' ? 'admin' : 
+  // IMPORTANTE: Mantieni 'user' come default SOLO se i dati sono caricati, altrimenti aspetta
+  const role: UserRole = !authUser && isLoading ? 'user' :
+                        authUser?.role?.name === 'Amministratore' ? 'admin' :
                         authUser?.role?.name === 'Agente' ? 'agent' : 'user';
 
   const setRole = (newRole: UserRole) => {

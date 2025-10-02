@@ -23,14 +23,14 @@ import Link from 'next/link';
 export default function NudgedTicketsPage() {
   const { user } = useRole();
   
-  // Fetch dei ticket sollecitati
-  const nudgedTickets = useQuery(
+  // Fetch di TUTTI i ticket da risolvere (aperti e in corso)
+  const allTickets = useQuery(
     api.tickets.getNudgedTickets, 
     user?.email ? { userEmail: user.email } : "skip"
   ) || [];
 
   // Solo agenti e admin possono vedere questa pagina
-  if (user?.roleName !== 'agent' && user?.roleName !== 'admin') {
+  if (user?.roleName !== 'Agente' && user?.roleName !== 'Amministratore') {
     return (
       <AppLayout>
         <div className="flex items-center justify-center min-h-[50vh]">
@@ -42,6 +42,9 @@ export default function NudgedTicketsPage() {
       </AppLayout>
     );
   }
+  
+  // Conta i ticket sollecitati
+  const nudgedTickets = allTickets.filter((t: any) => (t.nudgeCount || 0) > 0);
 
   const getUrgencyLevel = (nudgeCount: number, lastNudgeAt: number) => {
     const hoursAgo = (Date.now() - lastNudgeAt) / (1000 * 60 * 60);
@@ -55,15 +58,6 @@ export default function NudgedTicketsPage() {
     }
   };
 
-  const sortedTickets = nudgedTickets.sort((a, b) => {
-    // Prima ordina per numero di solleciti (più sollecitati = più urgenti)
-    if (a.nudgeCount !== b.nudgeCount) {
-      return (b.nudgeCount || 0) - (a.nudgeCount || 0);
-    }
-    // Poi per tempo dell'ultimo sollecito (più recenti = più urgenti)
-    return (b.lastNudgeAt || 0) - (a.lastNudgeAt || 0);
-  });
-
   return (
     <AppLayout>
       <div className="space-y-6">
@@ -72,25 +66,38 @@ export default function NudgedTicketsPage() {
           <div>
             <h1 className="text-3xl font-bold text-gray-900 flex items-center">
               <Bell className="h-8 w-8 mr-3 text-orange-600" />
-              Ticket Sollecitati
+              Ticket da Gestire
             </h1>
             <p className="text-gray-600 mt-1">
-              Ticket che richiedono attenzione immediata • {nudgedTickets.length} solleciti attivi
+              Tutti i ticket aperti e in corso • {allTickets.length} totali • {nudgedTickets.length} con sollecito
             </p>
           </div>
         </div>
 
         {/* Statistiche rapide */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Solleciti Totali</CardTitle>
-              <Bell className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-medium">Ticket Totali</CardTitle>
+              <Clock className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{nudgedTickets.length}</div>
+              <div className="text-2xl font-bold">{allTickets.length}</div>
               <p className="text-xs text-muted-foreground">
-                Ultimi 7 giorni
+                Aperti e in corso
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Con Sollecito</CardTitle>
+              <Bell className="h-4 w-4 text-orange-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-orange-600">{nudgedTickets.length}</div>
+              <p className="text-xs text-muted-foreground">
+                Richiedono attenzione
               </p>
             </CardContent>
           </Card>
@@ -102,7 +109,7 @@ export default function NudgedTicketsPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-red-600">
-                {nudgedTickets.filter(t => (t.nudgeCount || 0) >= 3).length}
+                {allTickets.filter((t: any) => (t.nudgeCount || 0) >= 3).length}
               </div>
               <p className="text-xs text-muted-foreground">
                 3+ solleciti
@@ -113,11 +120,11 @@ export default function NudgedTicketsPage() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Non Assegnati</CardTitle>
-              <User className="h-4 w-4 text-orange-500" />
+              <User className="h-4 w-4 text-blue-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-orange-600">
-                {nudgedTickets.filter(t => !t.assigneeId).length}
+              <div className="text-2xl font-bold text-blue-600">
+                {allTickets.filter((t: any) => !t.assigneeId).length}
               </div>
               <p className="text-xs text-muted-foreground">
                 Da assegnare
@@ -126,27 +133,33 @@ export default function NudgedTicketsPage() {
           </Card>
         </div>
 
-        {/* Lista ticket sollecitati */}
-        {nudgedTickets.length === 0 ? (
+        {/* Lista ticket da risolvere */}
+        {allTickets.length === 0 ? (
           <Card>
             <CardContent className="text-center py-12">
-              <Bell className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+              <Clock className="h-12 w-12 text-gray-400 mx-auto mb-4" />
               <h3 className="text-lg font-medium text-gray-900 mb-2">
-                Nessun ticket sollecitato
+                Nessun ticket da risolvere
               </h3>
               <p className="text-gray-600">
-                Non ci sono ticket che richiedono attenzione immediata.
+                Ottimo lavoro! Non ci sono ticket aperti al momento.
               </p>
             </CardContent>
           </Card>
         ) : (
           <div className="space-y-4">
-            {sortedTickets.map((ticket: any) => {
-              const urgency = getUrgencyLevel(ticket.nudgeCount || 0, ticket.lastNudgeAt || 0);
-              const hoursAgo = Math.floor((Date.now() - (ticket.lastNudgeAt || 0)) / (1000 * 60 * 60));
+            {allTickets.map((ticket: any) => {
+              const isNudged = (ticket.nudgeCount || 0) > 0;
+              const urgency = isNudged ? getUrgencyLevel(ticket.nudgeCount || 0, ticket.lastNudgeAt || 0) : null;
+              const hoursAgo = ticket.lastNudgeAt ? Math.floor((Date.now() - ticket.lastNudgeAt) / (1000 * 60 * 60)) : null;
+              
+              // Bordo colorato solo per ticket sollecitati
+              const borderClass = isNudged 
+                ? (ticket.nudgeCount >= 3 ? "border-l-red-500" : "border-l-orange-500")
+                : "border-l-gray-300";
               
               return (
-                <Card key={ticket._id} className="border-l-4 border-l-orange-500">
+                <Card key={ticket._id} className={`border-l-4 ${borderClass}`}>
                   <CardContent className="p-6">
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
@@ -155,10 +168,15 @@ export default function NudgedTicketsPage() {
                           <Badge className="text-sm font-semibold">
                             #{ticket.ticketNumber || 'N/A'}
                           </Badge>
-                          <Badge className={`text-xs ${urgency.color}`}>
-                            <Bell className="h-3 w-3 mr-1" />
-                            {urgency.label} ({ticket.nudgeCount || 0} solleciti)
-                          </Badge>
+                          
+                          {/* Badge sollecitato - mostra solo se sollecitato */}
+                          {isNudged && urgency && (
+                            <Badge className={`text-xs ${urgency.color}`}>
+                              <Bell className="h-3 w-3 mr-1" />
+                              {urgency.label} ({ticket.nudgeCount} solleciti)
+                            </Badge>
+                          )}
+                          
                           <Badge 
                             variant={
                               ticket.status === 'open' ? 'destructive' :
@@ -189,10 +207,15 @@ export default function NudgedTicketsPage() {
                             <Building className="h-4 w-4 mr-1" />
                             <span>{ticket.clinic?.name || 'N/A'}</span>
                           </div>
-                          <div className="flex items-center">
-                            <Calendar className="h-4 w-4 mr-1" />
-                            <span>Sollecitato {hoursAgo}h fa</span>
-                          </div>
+                          
+                          {/* Mostra info sollecito solo se sollecitato */}
+                          {isNudged && hoursAgo !== null && (
+                            <div className="flex items-center text-orange-600 font-medium">
+                              <Bell className="h-4 w-4 mr-1" />
+                              <span>Sollecitato {hoursAgo}h fa</span>
+                            </div>
+                          )}
+                          
                           {ticket.assigneeId && (
                             <div className="flex items-center">
                               <User className="h-4 w-4 mr-1" />

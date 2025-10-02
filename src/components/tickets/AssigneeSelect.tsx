@@ -34,13 +34,16 @@ export const AssigneeSelect: React.FC<AssigneeSelectProps> = ({
   // Get current user
   const { user } = useAuth()
   
+  // Estrai clinicId in modo sicuro (potrebbe essere user.clinicId o user.clinic._id)
+  const clinicId = (user as any)?.clinicId || (user as any)?.clinic?._id
+  
   // Get available agents for assignment using the new Convex function
   const availableAgents = useQuery(
     api.users.getAvailableAgents, 
-    { 
-      clinicId: user?.clinic?._id,
-      userEmail: user?.email 
-    }
+    clinicId && user?.email ? { 
+      clinicId: clinicId,
+      userEmail: user.email 
+    } : "skip"
   )
 
   // Mutation per cambiare l'assegnatario
