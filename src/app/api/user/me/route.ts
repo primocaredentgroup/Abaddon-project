@@ -42,8 +42,16 @@ export async function GET(request: NextRequest) {
     const userName = extractCookieValue(cookies, 'auth0_user_name');
     const userId = extractCookieValue(cookies, 'auth0_user_id');
     
+    console.log('🔍 Cookie estratti:', {
+      hasUserEmail: !!userEmail,
+      hasUserName: !!userName,
+      hasUserId: !!userId,
+      cookiesLength: cookies.length
+    });
+    
     if (!userEmail || !userName || !userId) {
       console.log('❌ Dati utente Auth0 mancanti nei cookies');
+      console.log('📋 Cookies disponibili:', cookies.substring(0, 200));
       return NextResponse.json(
         { error: 'Sessione Auth0 incompleta' },
         { status: 401 }

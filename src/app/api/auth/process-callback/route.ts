@@ -73,29 +73,18 @@ export async function POST(request: NextRequest) {
     });
 
     // Salva le informazioni essenziali nei cookies per l'uso successivo
-    response.cookies.set('auth0_user_email', userInfo.email, {
+    const isProduction = process.env.NODE_ENV === 'production';
+    const cookieOptions = {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      secure: isProduction,
+      sameSite: (isProduction ? 'none' : 'lax') as 'none' | 'lax',
       path: '/',
       maxAge: 60 * 60 * 24 * 7 // 7 giorni
-    });
+    };
 
-    response.cookies.set('auth0_user_name', userInfo.name, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production', 
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 60 * 24 * 7 // 7 giorni
-    });
-
-    response.cookies.set('auth0_user_id', userInfo.sub, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax', 
-      path: '/',
-      maxAge: 60 * 60 * 24 * 7 // 7 giorni
-    });
+    response.cookies.set('auth0_user_email', userInfo.email, cookieOptions);
+    response.cookies.set('auth0_user_name', userInfo.name, cookieOptions);
+    response.cookies.set('auth0_user_id', userInfo.sub, cookieOptions);
 
     return response;
 
