@@ -536,11 +536,16 @@ RISPONDI SOLO con un JSON in questo formato:
   }
 }`;
 
+    console.log("🤖 Analyzing intent for message:", message);
     const aiResponse = await call_llm(intentPrompt);
+    console.log("🤖 AI Response:", aiResponse);
+    
     const parsed = JSON.parse(aiResponse.replace(/```json\n?|\n?```/g, '').trim());
+    console.log("🤖 Parsed intent:", parsed);
 
     // Se l'utente sta segnalando un problema → suggerisci categoria
     if (parsed.intent === "report_problem") {
+      console.log("✅ Detected report_problem, suggesting category");
       return {
         type: "suggest_category",
         title: message.substring(0, 100), // Prime 100 caratteri come titolo
@@ -550,14 +555,18 @@ RISPONDI SOLO con un JSON in questo formato:
 
     // Se vuole cercare ticket
     if (parsed.intent === "search_ticket") {
+      console.log("✅ Detected search_ticket");
       return {
         type: "search_ticket",
         query: message,
       };
     }
+    
+    console.log("ℹ️ Intent is general, using general conversation");
 
   } catch (error) {
-    console.error("Errore analisi intento AI:", error);
+    console.error("❌ Errore analisi intento AI:", error);
+    console.error("❌ Error details:", (error as Error).message);
   }
 
   // Fallback: conversazione generale
