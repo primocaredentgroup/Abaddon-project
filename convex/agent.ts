@@ -499,34 +499,68 @@ async function analyzeUserIntent(message: string): Promise<{
 }> {
   const messageLower = message.toLowerCase();
 
-  // Cerca ticket
-  if (messageLower.includes("cerca") || messageLower.includes("trova") || messageLower.includes("ticket")) {
-    // Estrai query di ricerca
-    const queryMatch = message.match(/cerca|trova|ticket\s+(.+)/i);
+  // Keyword semplici per azioni esplicite (veloci, senza AI)
+  if (messageLower.includes("cerca ticket") || messageLower.includes("trova ticket")) {
+    const queryMatch = message.match(/cerca|trova\s+ticket\s+(.+)/i);
     return {
       type: "search_ticket",
       query: queryMatch?.[1] || message,
     };
   }
 
-  // Suggerimento categoria
-  if (messageLower.includes("categoria") || messageLower.includes("dove") || messageLower.includes("classificare")) {
-    // Prova a estrarre titolo e descrizione dal messaggio
-    const lines = message.split('\n').filter(l => l.trim());
-    if (lines.length >= 2) {
-      return {
-        type: "suggest_category",
-        title: lines[0],
-        description: lines.slice(1).join(' '),
-      };
-    }
-  }
-
-  // Creazione ticket (se l'utente conferma una categoria suggerita)
-  if (messageLower.includes("sì") || messageLower.includes("crea") || messageLower.includes("conferma")) {
+  // Conferma creazione ticket
+  if (messageLower.includes("sì") || messageLower.includes("si") || messageLower.includes("conferma") || messageLower.includes("crea il ticket")) {
     return { type: "create_ticket" };
   }
 
+  // Per tutto il resto, usa l'AI per capire l'intento
+  try {
+    const intentPrompt = `Analizza questo messaggio di un utente di una clinica dentistica e determina l'intento.
+
+MESSAGGIO UTENTE: "${message}"
+
+CONTESTO: L'utente sta interagendo con un assistente per un sistema di ticketing healthcare.
+
+POSSIBILI INTENTI:
+1. "search_ticket" - Vuole cercare un ticket esistente (es: "dov'è il mio ticket?", "stato del ticket 123")
+2. "report_problem" - Sta segnalando un problema/richiesta e vuole aprire un ticket (es: "il riunito non funziona", "ho bisogno di aiuto con...")
+3. "general" - Saluto, domanda generica, conversazione normale
+
+RISPONDI SOLO con un JSON in questo formato:
+{
+  "intent": "search_ticket" | "report_problem" | "general",
+  "confidence": 0-100,
+  "extracted_info": {
+    "problem_description": "breve descrizione del problema se presente",
+    "urgency": "low" | "medium" | "high" | "unknown"
+  }
+}`;
+
+    const aiResponse = await call_llm(intentPrompt);
+    const parsed = JSON.parse(aiResponse.replace(/```json\n?|\n?```/g, '').trim());
+
+    // Se l'utente sta segnalando un problema → suggerisci categoria
+    if (parsed.intent === "report_problem") {
+      return {
+        type: "suggest_category",
+        title: message.substring(0, 100), // Prime 100 caratteri come titolo
+        description: parsed.extracted_info?.problem_description || message,
+      };
+    }
+
+    // Se vuole cercare ticket
+    if (parsed.intent === "search_ticket") {
+      return {
+        type: "search_ticket",
+        query: message,
+      };
+    }
+
+  } catch (error) {
+    console.error("Errore analisi intento AI:", error);
+  }
+
+  // Fallback: conversazione generale
   return { type: "general" };
 }
 
