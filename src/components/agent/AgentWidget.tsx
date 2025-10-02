@@ -5,7 +5,7 @@ import { MessageCircle, X, Send, Bot, User, Minimize2, Maximize2 } from 'lucide-
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { useAction, useMutation, useQuery } from 'convex/react'
-import { api } from 'convex/_generated/api'
+import { api } from '@/convex/_generated/api'
 import { useAuth } from '@/hooks/useAuth'
 
 interface AgentWidgetProps {
