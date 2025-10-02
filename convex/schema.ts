@@ -63,10 +63,11 @@ export default defineSchema({
   // Roles table
   roles: defineTable({
     name: v.string(),
-    description: v.string(),
+    description: v.optional(v.string()),
     clinicId: v.optional(v.id("clinics")),
-    permissions: v.array(v.id("permissions")),
-    isSystem: v.boolean(),
+    permissions: v.array(v.string()), // Cambiato da v.id("permissions") a v.string() per semplicità
+    isSystem: v.optional(v.boolean()),
+    isActive: v.boolean(),
   })
     .index("by_clinic", ["clinicId"])
     .index("by_system", ["isSystem"]),
