@@ -68,9 +68,9 @@ const adminNavigation: NavItem[] = [
 
 const quickActions: NavItem[] = [
   { name: 'Knowledge Base', href: '/kb', icon: BookOpen, roles: ['user', 'agent', 'admin'] },
-  { name: 'Filtri salvati', href: '/filters', icon: Filter, roles: ['user', 'agent', 'admin'] },
+  // { name: 'Filtri salvati', href: '/filters', icon: Filter, roles: ['user', 'agent', 'admin'] }, // TODO: Da implementare
   { name: 'Ruoli e Permessi', href: '/roles', icon: UserCog, roles: ['agent', 'admin'] },
-  { name: 'Impostazioni', href: '/settings', icon: Settings, roles: ['user', 'agent', 'admin'] },
+  // { name: 'Impostazioni', href: '/settings', icon: Settings, roles: ['user', 'agent', 'admin'] }, // TODO: Da implementare
 ]
 
 export function Sidebar({ isOpen, onClose, userRole = 'user' }: SidebarProps) {
