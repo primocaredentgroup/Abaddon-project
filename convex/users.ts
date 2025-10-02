@@ -559,12 +559,36 @@ export const createUserSimple = mutation({
     ruolo: v.string()
   },
   handler: async (ctx, args) => {
-    // Trova un ruolo di default
-    const roles = await ctx.db.query("roles").collect();
+    // Trova un ruolo di default, o crealo se non esiste
+    let roles = await ctx.db.query("roles").collect();
+    
+    // Se non ci sono ruoli, crea quelli di default
+    if (roles.length === 0) {
+      console.log("🆕 Creando ruoli di default...");
+      const userRoleId = await ctx.db.insert("roles", {
+        name: "Utente",
+        permissions: ["view_own_tickets", "create_tickets", "comment_tickets"],
+        isActive: true,
+      });
+      const agentRoleId = await ctx.db.insert("roles", {
+        name: "Agente",
+        permissions: ["view_all_tickets", "create_tickets", "edit_tickets", "assign_tickets"],
+        isActive: true,
+      });
+      const adminRoleId = await ctx.db.insert("roles", {
+        name: "Amministratore",
+        permissions: ["full_access"],
+        isActive: true,
+      });
+      
+      // Ricarica i ruoli
+      roles = await ctx.db.query("roles").collect();
+    }
+    
     const defaultRole = roles.find(r => r.name === args.ruolo) || roles[0];
     
     if (!defaultRole) {
-      throw new Error("Nessun ruolo trovato nel sistema");
+      throw new Error("Errore nella creazione dei ruoli di default");
     }
     
     // Trova o crea una clinica di default
