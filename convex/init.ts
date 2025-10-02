@@ -62,44 +62,29 @@ export const initializeDatabase = mutation({
     console.log(`Created ${permissionIds.length} permissions`)
     
     // 2. Crea i ruoli di base
-    const allPermissions = await ctx.db.query("permissions").collect()
-    
-    // Permessi per ruolo Utente
-    const userPermissions = allPermissions.filter(p => 
-      (p.resource === "tickets" && p.scope === "own") ||
-      (p.resource === "tickets" && p.action === "read" && p.scope === "clinic") ||
-      (p.resource === "categories" && p.action === "read")
-    ).map(p => p._id)
-    
-    // Permessi per ruolo Agente
-    const agentPermissions = allPermissions.filter(p => 
-      p.scope === "clinic" || 
-      (p.resource === "tickets" && p.scope === "own")
-    ).map(p => p._id)
-    
-    // Permessi per ruolo Admin (tutti)
-    const adminPermissions = allPermissions.map(p => p._id)
-    
-    // Crea i ruoli
+    // Crea i ruoli con permissions come stringhe
     const userRoleId = await ctx.db.insert("roles", {
       name: "Utente",
       description: "Utente base che può creare e gestire i propri ticket",
-      permissions: userPermissions,
+      permissions: ["view_own_tickets", "create_tickets", "comment_tickets"],
       isSystem: true,
+      isActive: true,
     })
     
     const agentRoleId = await ctx.db.insert("roles", {
       name: "Agente",
       description: "Agente che può gestire ticket della propria clinica",
-      permissions: agentPermissions,
+      permissions: ["view_all_tickets", "create_tickets", "edit_tickets", "assign_tickets"],
       isSystem: true,
+      isActive: true,
     })
     
     const adminRoleId = await ctx.db.insert("roles", {
       name: "Amministratore",
       description: "Amministratore con accesso completo al sistema",
-      permissions: adminPermissions,
+      permissions: ["full_access"],
       isSystem: true,
+      isActive: true,
     })
     
     console.log("Created system roles: User, Agent, Admin")

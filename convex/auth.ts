@@ -115,39 +115,17 @@ export const checkUserPermission = query({
       return false
     }
     
-    // Ottieni tutti i permessi del ruolo
-    const permissions = await Promise.all(
-      role.permissions.map(permId => ctx.db.get(permId))
-    )
-    
     // Verifica se l'utente ha il permesso richiesto
-    for (const permission of permissions) {
-      if (!permission) continue
-      
-      if (permission.resource === resource && permission.action === action) {
-        // Verifica lo scope del permesso
-        switch (permission.scope) {
-          case "global":
-            return true
-          case "clinic":
-            // Per scope clinic, verifica che l'utente appartenga alla stessa clinica
-            if (targetId) {
-              // Se targetId è fornito, verifica che appartenga alla stessa clinica
-              // Questo richiede logica specifica per ogni tipo di risorsa
-              return true // Semplificato per ora
-            }
-            return true
-          case "own":
-            // Per scope own, verifica che l'utente sia il proprietario
-            if (targetId) {
-              return targetId === user._id
-            }
-            return true
-        }
-      }
+    // Per ora usiamo un sistema semplificato con stringhe
+    const permissionString = `${resource}:${action}`
+    
+    // Se ha "full_access", ha tutti i permessi
+    if (role.permissions.includes("full_access")) {
+      return true
     }
     
-    return false
+    // Altrimenti verifica se ha il permesso specifico
+    return role.permissions.includes(permissionString)
   }
 })
 

@@ -45,14 +45,10 @@ export const getRoleById = query({
       throw new ConvexError("Role not found")
     }
     
-    // Popola i permessi
-    const permissions = await Promise.all(
-      role.permissions.map(permId => ctx.db.get(permId))
-    )
-    
+    // Ora permissions è già un array di stringhe, non serve fare lookup
     return {
       ...role,
-      permissionDetails: permissions.filter(Boolean)
+      permissionDetails: role.permissions
     }
   }
 })
@@ -129,45 +125,29 @@ export const createSystemRoles = mutation({
       return existingRoles
     }
     
-    // Ottieni tutti i permessi
-    const allPermissions = await ctx.db.query("permissions").collect()
-    
-    // Permessi per ruolo Utente
-    const userPermissions = allPermissions.filter(p => 
-      (p.resource === "tickets" && p.scope === "own") ||
-      (p.resource === "tickets" && p.action === "read" && p.scope === "clinic") ||
-      (p.resource === "categories" && p.action === "read")
-    ).map(p => p._id)
-    
-    // Permessi per ruolo Agente
-    const agentPermissions = allPermissions.filter(p => 
-      p.scope === "clinic" || 
-      (p.resource === "tickets" && p.scope === "own")
-    ).map(p => p._id)
-    
-    // Permessi per ruolo Admin (tutti)
-    const adminPermissions = allPermissions.map(p => p._id)
-    
-    // Crea i ruoli
+    // Crea i ruoli con permissions come stringhe
     const userRoleId = await ctx.db.insert("roles", {
       name: "Utente",
       description: "Utente base che può creare e gestire i propri ticket",
-      permissions: userPermissions,
+      permissions: ["view_own_tickets", "create_tickets", "comment_tickets"],
       isSystem: true,
+      isActive: true,
     })
     
     const agentRoleId = await ctx.db.insert("roles", {
       name: "Agente",
       description: "Agente che può gestire ticket della propria clinica",
-      permissions: agentPermissions,
+      permissions: ["view_all_tickets", "create_tickets", "edit_tickets", "assign_tickets"],
       isSystem: true,
+      isActive: true,
     })
     
     const adminRoleId = await ctx.db.insert("roles", {
       name: "Amministratore",
       description: "Amministratore con accesso completo al sistema",
-      permissions: adminPermissions,
+      permissions: ["full_access"],
       isSystem: true,
+      isActive: true,
     })
     
     return [userRoleId, agentRoleId, adminRoleId]
@@ -180,7 +160,7 @@ export const createRole = mutation({
     name: v.string(),
     description: v.string(),
     clinicId: v.optional(v.id("clinics")),
-    permissions: v.array(v.id("permissions")),
+    permissions: v.array(v.string()),
   },
   handler: async (ctx, args) => {
     // Verifica autenticazione
@@ -191,15 +171,6 @@ export const createRole = mutation({
       throw new ConvexError("Role name must be at least 2 characters long")
     }
     
-    // Verifica che i permessi esistano
-    const permissionChecks = await Promise.all(
-      args.permissions.map(permId => ctx.db.get(permId))
-    )
-    
-    if (permissionChecks.some(perm => !perm)) {
-      throw new ConvexError("One or more permissions not found")
-    }
-    
     // Crea il ruolo
     const roleId = await ctx.db.insert("roles", {
       name: args.name,
@@ -207,6 +178,7 @@ export const createRole = mutation({
       clinicId: args.clinicId,
       permissions: args.permissions,
       isSystem: false,
+      isActive: true,
     })
     
     return roleId
@@ -219,7 +191,7 @@ export const updateRole = mutation({
     roleId: v.id("roles"),
     name: v.optional(v.string()),
     description: v.optional(v.string()),
-    permissions: v.optional(v.array(v.id("permissions"))),
+    permissions: v.optional(v.array(v.string())),
   },
   handler: async (ctx, { roleId, ...updates }) => {
     // Verifica autenticazione
@@ -239,17 +211,6 @@ export const updateRole = mutation({
     // Validazioni
     if (updates.name && updates.name.length < 2) {
       throw new ConvexError("Role name must be at least 2 characters long")
-    }
-    
-    // Verifica che i permessi esistano se forniti
-    if (updates.permissions) {
-      const permissionChecks = await Promise.all(
-        updates.permissions.map(permId => ctx.db.get(permId))
-      )
-      
-      if (permissionChecks.some(perm => !perm)) {
-        throw new ConvexError("One or more permissions not found")
-      }
     }
     
     // Aggiorna il ruolo
