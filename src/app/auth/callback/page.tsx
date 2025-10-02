@@ -1,8 +1,9 @@
 "use client";
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
-export default function CallbackPage() {
+// Componente interno che usa useSearchParams
+function CallbackContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [status, setStatus] = useState('Processando login...');
@@ -72,5 +73,22 @@ export default function CallbackPage() {
         <p className="text-gray-600">{status}</p>
       </div>
     </div>
+  );
+}
+
+// Componente principale con Suspense boundary
+export default function CallbackPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Accesso in corso!</h1>
+          <p className="text-gray-600">Processando login...</p>
+        </div>
+      </div>
+    }>
+      <CallbackContent />
+    </Suspense>
   );
 }
