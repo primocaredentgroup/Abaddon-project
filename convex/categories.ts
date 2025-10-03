@@ -120,6 +120,36 @@ export const getCategoryById = query({
   }
 })
 
+// Query per ottenere tutte le categorie attive (per competenze agenti)
+export const getAllCategories = query({
+  args: {
+    clinicId: v.optional(v.id("clinics"))
+  },
+  handler: async (ctx, { clinicId }) => {
+    let categories
+    
+    // Se clinicId è fornito, filtra per clinica
+    if (clinicId) {
+      categories = await ctx.db
+        .query("categories")
+        .withIndex("by_clinic", (q) => q.eq("clinicId", clinicId))
+        .collect()
+    } else {
+      categories = await ctx.db.query("categories").collect()
+    }
+    
+    // Filtra solo categorie attive e non eliminate
+    const activeCategories = categories.filter(cat => 
+      cat.isActive && !cat.deletedAt
+    )
+    
+    // Ordina per nome
+    activeCategories.sort((a, b) => a.name.localeCompare(b.name))
+    
+    return activeCategories
+  }
+})
+
 // Query per ottenere categorie pubbliche di una clinica (per utenti)
 export const getPublicCategories = query({
   args: { clinicId: v.id("clinics") },

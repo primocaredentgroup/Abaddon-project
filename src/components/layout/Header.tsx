@@ -1,13 +1,17 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Search, User, Menu, X, Home as HomeIcon } from 'lucide-react';
+import { Search, User, Menu, X, Home as HomeIcon, Tag } from 'lucide-react';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { Badge } from '@/components/ui/Badge';
 import { useRole } from '@/providers/RoleProvider';
+import { useQuery } from 'convex/react';
+import { api } from '@/../convex/_generated/api';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { Id } from '@/../convex/_generated/dataModel';
 
 interface HeaderProps {
   onMenuClick: () => void;
@@ -25,10 +29,11 @@ export function Header({ onMenuClick, user }: HeaderProps) {
   // Usa i dati da useRole invece della prop user
   const displayUser = roleUser || user;
   
-  // Debug: vediamo cosa contiene displayUser
-  // console.log('🔍 Header displayUser:', displayUser);
-  // console.log('🔍 Header roleUser:', roleUser);
-  // console.log('🔍 Header user prop:', user);
+  // Carica le competenze se è un agente
+  const userCompetencies = useQuery(
+    api.userCompetencies.getUserCompetencies,
+    displayUser?.id ? { userId: displayUser.id as Id<"users"> } : "skip"
+  );
   
   const [showUserMenu, setShowUserMenu] = useState(false);
   const pathname = usePathname();
@@ -107,13 +112,35 @@ export function Header({ onMenuClick, user }: HeaderProps) {
 
             {/* User Menu Dropdown */}
             {showUserMenu && (
-              <div className="absolute right-0 top-full mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
+              <div className="absolute right-0 top-full mt-2 w-72 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
                 <div className="p-3 border-b border-gray-200">
                   <p className="text-sm font-medium text-gray-900">{displayUser?.name || 'Utente'}</p>
                   <p className="text-xs text-gray-500">{displayUser?.email || 'esempio@email.com'}</p>
                   <p className="text-xs text-blue-600 font-medium mt-1">{displayUser?.roleName || 'Utente'}</p>
                   <p className="text-xs text-gray-400">{displayUser?.clinic || 'Nessuna clinica'}</p>
                 </div>
+                
+                {/* Categorie di competenza per agenti */}
+                {displayUser?.roleName === 'Agente' && (
+                  <div className="p-3 border-b border-gray-200">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Tag className="h-4 w-4 text-gray-500" />
+                      <p className="text-xs font-medium text-gray-700">Categorie di competenza</p>
+                    </div>
+                    {userCompetencies && userCompetencies.length > 0 ? (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {userCompetencies.map((category) => (
+                          <Badge key={category._id} variant="secondary" className="text-xs">
+                            {category.name}
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-400 italic">Nessuna competenza assegnata</p>
+                    )}
+                  </div>
+                )}
+                
                 <div className="py-1">
                   {displayUser ? (
                     <a href="/api/auth/logout-local" className="block px-4 py-2 text-sm text-red-600 hover:bg-gray-100">

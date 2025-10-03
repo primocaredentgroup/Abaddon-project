@@ -11,6 +11,7 @@ export default defineSchema({
     auth0Id: v.string(),
     isActive: v.boolean(),
     lastLoginAt: v.optional(v.number()),
+    categoryCompetencies: v.optional(v.array(v.id("categories"))), // Categorie di competenza per agenti
     preferences: v.object({
       notifications: v.object({
         email: v.boolean(),

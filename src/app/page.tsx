@@ -11,10 +11,15 @@ export default function Home() {
   const { user, login, isLoading } = useAuth()
   const router = useRouter()
 
-  // Reindirizza alla dashboard se autenticato
+  // Reindirizza alla dashboard se autenticato (basato sul ruolo)
   useEffect(() => {
     if (user) {
-      router.push('/dashboard')
+      // Agenti vanno direttamente ai ticket assegnati
+      if (user.roleName === 'Agente') {
+        router.push('/tickets/assigned')
+      } else {
+        router.push('/dashboard')
+      }
     }
   }, [user, router])
 

@@ -1,9 +1,10 @@
 'use client'
 
 import React, { useState, useMemo } from 'react'
-import { useQuery } from 'convex/react'
+import { useQuery, useMutation } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { useAuth } from '@/hooks/useAuth'
+import { AppLayout } from '@/components/layout/AppLayout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -12,8 +13,10 @@ import { Badge } from '@/components/ui/Badge'
 import { StatusBadge } from '@/components/tickets/StatusBadge'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
-import { Search, Clock, User, Filter, Calendar } from 'lucide-react'
+import { useToast } from '@/components/ui/use-toast'
+import { Search, Clock, User, Filter, Calendar, UserPlus } from 'lucide-react'
 import Link from 'next/link'
+import { Id } from '@/convex/_generated/dataModel'
 
 interface AssignedTicket {
   _id: string
@@ -50,13 +53,18 @@ interface AssignedTicket {
 
 export default function AssignedTicketsPage() {
   const { user } = useAuth()
+  const { toast } = useToast()
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('')
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'updated' | 'nudged'>('newest')
+  const [assigningTicket, setAssigningTicket] = useState<string | null>(null)
+  
+  // Mutation per assegnare ticket a se stessi
+  const assignToMe = useMutation(api.tickets.assignToMe)
 
-  // Fetch assigned tickets (skip se user non è ancora caricato)
+  // Fetch "Ticket da gestire" - include ticket assegnati + ticket nelle competenze
   const convexTickets = useQuery(
-    api.tickets.getMyAssignedTicketsWithAuth,
+    api.ticketsToManage.getTicketsToManage,
     user?.email ? { userEmail: user.email } : "skip"
   )
 
@@ -165,6 +173,49 @@ export default function AssignedTicketsPage() {
     }
   }
 
+  // Handler per assegnare ticket a se stessi
+  const handleAssignToMe = async (ticketId: string) => {
+    if (!user?.email) {
+      toast({
+        title: 'Errore',
+        description: 'Devi essere autenticato',
+        variant: 'destructive'
+      })
+      return
+    }
+
+    setAssigningTicket(ticketId)
+    
+    try {
+      const result = await assignToMe({ 
+        ticketId: ticketId as Id<"tickets">, 
+        userEmail: user.email 
+      })
+
+      if (result.alreadyAssigned) {
+        toast({
+          title: 'Già assegnato',
+          description: 'Questo ticket è già assegnato a te',
+          variant: 'default'
+        })
+      } else {
+        toast({
+          title: 'Ticket assegnato',
+          description: 'Il ticket è stato assegnato con successo',
+          variant: 'default'
+        })
+      }
+    } catch (error: any) {
+      toast({
+        title: 'Errore',
+        description: error.message || 'Impossibile assegnare il ticket',
+        variant: 'destructive'
+      })
+    } finally {
+      setAssigningTicket(null)
+    }
+  }
+
   // Format date
   const formatDate = (timestamp: number) => {
     return new Date(timestamp).toLocaleDateString('it-IT', {
@@ -190,21 +241,30 @@ export default function AssignedTicketsPage() {
   }
 
   if (convexTickets === undefined) {
-    return <LoadingState message="Caricamento ticket assegnati..." />
+    return (
+      <AppLayout>
+        <LoadingState message="Caricamento ticket assegnati..." />
+      </AppLayout>
+    )
   }
 
   if (!user) {
-    return <ErrorState message="Accesso non autorizzato" />
+    return (
+      <AppLayout>
+        <ErrorState message="Accesso non autorizzato" />
+      </AppLayout>
+    )
   }
 
   return (
-    <div className="container mx-auto px-4 py-6">
+    <AppLayout>
+      <div className="container mx-auto px-4 py-6">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900 mb-2">
-          Ticket Assegnati a Me
+          Ticket da Gestire
         </h1>
         <p className="text-gray-600">
-          Gestisci tutti i ticket che ti sono stati assegnati
+          Gestisci i ticket assegnati a te e quelli delle tue categorie di competenza
         </p>
       </div>
 
@@ -436,8 +496,20 @@ export default function AssignedTicketsPage() {
                       </div>
                       
                       <div className="flex space-x-2">
+                        {/* Mostra "Assegna a me" solo se il ticket NON è assegnato all'utente corrente */}
+                        {ticket.assignee?._id !== user?.id && (
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            onClick={() => handleAssignToMe(ticket._id)}
+                            disabled={assigningTicket === ticket._id}
+                          >
+                            <UserPlus className="h-4 w-4 mr-2" />
+                            {assigningTicket === ticket._id ? 'Assegnazione...' : 'Assegna a me'}
+                          </Button>
+                        )}
                         <Link href={`/tickets/${ticket._id}`}>
-                          <Button size="sm" variant="outline">
+                          <Button size="sm">
                             Apri Ticket
                           </Button>
                         </Link>
@@ -457,6 +529,7 @@ export default function AssignedTicketsPage() {
           Mostrando {filteredAndSortedTickets.length} di {assignedTickets.length} ticket assegnati
         </div>
       )}
-    </div>
+      </div>
+    </AppLayout>
   )
 }

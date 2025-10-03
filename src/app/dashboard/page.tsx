@@ -65,10 +65,10 @@ export default function DashboardPage() {
     }
   }, [authUser, isLoading, router])
 
-  // Redirect agenti alla dashboard specializzata
+  // Redirect agenti alla loro pagina principale: ticket assegnati
   useEffect(() => {
     if (role === 'agent') {
-      router.push('/dashboard/agent')
+      router.push('/tickets/assigned')
     }
   }, [role, router])
 

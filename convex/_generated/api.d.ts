@@ -38,8 +38,10 @@ import type * as ticketComments from "../ticketComments.js";
 import type * as ticketStatuses from "../ticketStatuses.js";
 import type * as ticketViews from "../ticketViews.js";
 import type * as tickets from "../tickets.js";
+import type * as ticketsToManage from "../ticketsToManage.js";
 import type * as triggers from "../triggers.js";
 import type * as userClinics from "../userClinics.js";
+import type * as userCompetencies from "../userCompetencies.js";
 import type * as users from "../users.js";
 
 /**
@@ -76,8 +78,10 @@ declare const fullApi: ApiFromModules<{
   ticketStatuses: typeof ticketStatuses;
   ticketViews: typeof ticketViews;
   tickets: typeof tickets;
+  ticketsToManage: typeof ticketsToManage;
   triggers: typeof triggers;
   userClinics: typeof userClinics;
+  userCompetencies: typeof userCompetencies;
   users: typeof users;
 }>;
 export declare const api: FilterApi<

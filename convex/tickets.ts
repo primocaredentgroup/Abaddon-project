@@ -996,6 +996,64 @@ export const assign = mutation({
   },
 })
 
+// Mutation per assegnare il ticket a se stessi
+export const assignToMe = mutation({
+  args: {
+    ticketId: v.id("tickets"),
+    userEmail: v.string()
+  },
+  handler: async (ctx, { ticketId, userEmail }) => {
+    console.log('🙋 assignToMe chiamata per ticket:', ticketId, 'da utente:', userEmail)
+
+    // Trova l'utente corrente
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", userEmail))
+      .first()
+
+    if (!user) {
+      throw new ConvexError("Utente non trovato")
+    }
+
+    // Verifica che sia un agente o admin
+    const role = await ctx.db.get(user.roleId)
+    if (!role || (role.name !== 'Agente' && role.name !== 'Amministratore')) {
+      throw new ConvexError("Solo agenti e admin possono assegnarsi ticket")
+    }
+
+    // Verifica che il ticket esista e appartenga alla stessa clinica
+    const ticket = await ctx.db.get(ticketId)
+    if (!ticket) {
+      throw new ConvexError("Ticket non trovato")
+    }
+
+    if (ticket.clinicId !== user.clinicId) {
+      throw new ConvexError("Non puoi assegnarti ticket di altre cliniche")
+    }
+
+    // Verifica che il ticket non sia già assegnato all'utente
+    if (ticket.assigneeId === user._id) {
+      console.log('⚠️ Ticket già assegnato a questo utente')
+      return { success: true, alreadyAssigned: true }
+    }
+
+    // Assegna il ticket all'utente
+    await ctx.db.patch(ticketId, {
+      assigneeId: user._id,
+      lastActivityAt: Date.now(),
+    })
+
+    console.log('✅ Ticket assegnato con successo a:', userEmail)
+
+    return { 
+      success: true, 
+      ticketId,
+      assigneeId: user._id,
+      alreadyAssigned: false
+    }
+  },
+})
+
 // Mutation to change ticket status
 export const changeStatus = mutation({
   args: {
