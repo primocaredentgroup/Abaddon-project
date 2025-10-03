@@ -444,6 +444,48 @@ export default defineSchema({
     .index("by_clinic", ["clinicId"])
     .index("by_enabled", ["isEnabled"]),
 
+  // 🆕 Agent Feedback table - Correzioni e feedback dell'utente sull'agent
+  agentFeedback: defineTable({
+    threadId: v.id("agentThreads"), // thread della conversazione
+    userId: v.id("users"), // utente che ha dato il feedback
+    clinicId: v.id("clinics"),
+    
+    // Cosa ha suggerito l'agent (SBAGLIATO)
+    suggestedCategoryId: v.optional(v.id("categories")),
+    suggestedCategoryName: v.optional(v.string()),
+    
+    // Cosa era corretto (secondo l'utente)
+    correctCategoryId: v.optional(v.id("categories")),
+    correctCategoryName: v.optional(v.string()),
+    
+    // Contesto della richiesta
+    ticketTitle: v.string(),
+    ticketDescription: v.string(),
+    
+    // Tipo di feedback
+    feedbackType: v.union(
+      v.literal("wrong_category"), // categoria sbagliata
+      v.literal("general_error"), // errore generico
+      v.literal("positive") // feedback positivo
+    ),
+    
+    // Note aggiuntive dall'utente
+    userComment: v.optional(v.string()),
+    
+    // Confidenza dell'agent quando ha sbagliato
+    confidence: v.optional(v.number()),
+    
+    // È stato risolto?
+    wasResolved: v.boolean(),
+  })
+    .index("by_thread", ["threadId"])
+    .index("by_user", ["userId"])
+    .index("by_clinic", ["clinicId"])
+    .index("by_feedback_type", ["feedbackType"])
+    .index("by_suggested_category", ["suggestedCategoryId"])
+    .index("by_correct_category", ["correctCategoryId"])
+    .index("by_clinic_type", ["clinicId", "feedbackType"]),
+
   // Comments on tickets (sistema chat)
   ticketComments: defineTable({
     ticketId: v.id("tickets"),

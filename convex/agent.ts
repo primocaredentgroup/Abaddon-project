@@ -496,6 +496,44 @@ export const chatWithAgent = action({
 
     try {
       switch (intent.type) {
+        case "correction":
+          // 🆕 L'utente dice che l'agent ha sbagliato
+          console.log("❌ [correction] User says agent was wrong!");
+          
+          const lastSuggestion = lastAssistantMessage?.metadata?.suggestedCategory;
+          const lastTicketInfo = lastAssistantMessage?.metadata?.suggestedTicket;
+          
+          if (lastSuggestion && lastTicketInfo) {
+            // Salva il feedback negativo (lo faremo dopo)
+            responseContent = `😔 Mi dispiace per l'errore! Grazie per avermelo fatto notare.\n\n`;
+            responseContent += `Qual è la categoria corretta? Puoi:\n`;
+            responseContent += `• Dirmi il nome della categoria\n`;
+            responseContent += `• Scrivermi "mostra categorie" per vedere la lista completa\n\n`;
+            responseContent += `Voglio imparare per fare meglio la prossima volta! 📝`;
+            
+            metadata.awaitingCorrection = true;
+            metadata.wrongSuggestion = lastSuggestion;
+            metadata.ticketInfo = lastTicketInfo;
+          } else {
+            responseContent = `😔 Mi dispiace! Cosa non va bene?\n\nPuoi spiegarmi meglio in modo che possa aiutarti? 🙏`;
+          }
+          break;
+
+        case "fallback_help":
+          // 🆕 L'utente non sa cosa fare
+          console.log("🆘 [fallback_help] User needs guidance!");
+          
+          responseContent = `😅 Ops! Non ho capito bene cosa intendi.\n\n`;
+          responseContent += `Posso aiutarti con:\n`;
+          responseContent += `🔍 Cercare ticket esistenti\n`;
+          responseContent += `➕ Aprire un nuovo ticket\n`;
+          responseContent += `💡 Suggerirti la categoria giusta per un problema\n\n`;
+          responseContent += `Oppure puoi:\n`;
+          responseContent += `👤 Contattare un operatore umano\n`;
+          responseContent += `🔄 Riformulare la tua domanda in modo più specifico\n\n`;
+          responseContent += `Cosa preferisci? 😊`;
+          break;
+
         case "search_ticket":
           const searchResults = await ctx.runAction(api.agent.searchTickets, {
             query: intent.query!,
@@ -649,8 +687,21 @@ export const chatWithAgent = action({
           break;
 
         default:
-          // Conversazione generale con AI
-          responseContent = await generateGeneralResponse(userMessage, messages, config.settings.systemPrompt);
+          // 🆕 Conversazione generale con AI (con fallback migliorato)
+          try {
+            responseContent = await generateGeneralResponse(userMessage, messages, config.settings.systemPrompt);
+          } catch (error) {
+            console.error("❌ [general] Error generating AI response:", error);
+            // Fallback se l'AI fallisce
+            responseContent = `😅 Ops! Non ho capito bene cosa intendi.\n\n`;
+            responseContent += `Posso aiutarti con:\n`;
+            responseContent += `🔍 **Cercare ticket** - "cerca ticket per problema stampante"\n`;
+            responseContent += `➕ **Aprire ticket** - "il riunito dello studio 3 non funziona"\n`;
+            responseContent += `💡 **Informazioni** - "come funziona il sistema ticket?"\n\n`;
+            responseContent += `Oppure:\n`;
+            responseContent += `👤 **Contatta operatore umano** - scrivi "operatore"\n\n`;
+            responseContent += `Come posso aiutarti? 😊`;
+          }
           break;
       }
 
@@ -692,14 +743,36 @@ export const chatWithAgent = action({
 // =================== HELPER FUNCTIONS ===================
 
 async function analyzeUserIntent(message: string): Promise<{
-  type: "search_ticket" | "suggest_category" | "create_ticket" | "general";
+  type: "search_ticket" | "suggest_category" | "create_ticket" | "general" | "correction" | "fallback_help";
   query?: string;
   title?: string;
   description?: string;
   categoryId?: string;
+  correctionType?: "wrong_category" | "general_error";
+  userFeedback?: string;
 }> {
   console.log("🔍 [analyzeUserIntent] START - Message:", message);
   const messageLower = message.toLowerCase();
+
+  // 🆕 CORREZIONE: L'utente sta dicendo che l'agent ha sbagliato
+  const correctionKeywords = /\b(no|sbagliato|non è corretto|non è questa|errato|non va bene|è sbagliato)\b/i;
+  if (correctionKeywords.test(messageLower) && messageLower.length < 30) {
+    console.log("✅ [analyzeUserIntent] Matched: correction (user says agent is wrong)");
+    return {
+      type: "correction",
+      correctionType: "wrong_category", // assume categoria sbagliata per ora
+      userFeedback: message,
+    };
+  }
+
+  // 🆕 RICHIESTA DI AIUTO: L'utente non sa cosa fare
+  const helpKeywords = /\b(non capisco|aiuto|non so|cosa posso fare|come funziona|help)\b/i;
+  if (helpKeywords.test(messageLower)) {
+    console.log("✅ [analyzeUserIntent] Matched: fallback_help (user needs guidance)");
+    return {
+      type: "fallback_help",
+    };
+  }
 
   // Keyword semplici per azioni esplicite (veloci, senza AI)
   if (messageLower.includes("cerca ticket") || messageLower.includes("trova ticket")) {
@@ -852,22 +925,57 @@ function formatCategorySuggestion(suggestion: any): string {
 }
 
 async function generateGeneralResponse(message: string, messages: any[], systemPrompt: string): Promise<string> {
-  const conversationHistory = messages.map((m: any) => `${m.role}: ${m.content}`).join('\n');
+  const conversationHistory = messages
+    .slice(-6) // Prendi solo gli ultimi 6 messaggi per non sovraccaricare il prompt
+    .map((m: any) => `${m.role}: ${m.content}`)
+    .join('\n');
   
   const prompt = `${systemPrompt}
 
-CRONOLOGIA CONVERSAZIONE:
+CRONOLOGIA CONVERSAZIONE RECENTE:
 ${conversationHistory}
 
 ULTIMO MESSAGGIO UTENTE: ${message}
 
-Rispondi in modo utile e professionale. Se l'utente ha bisogno di aiuto con ticket, guidalo verso le funzioni appropriate.`;
+IMPORTANTE:
+- Se l'utente sembra confuso o non sa cosa fare, elenca chiaramente le funzioni disponibili con ESEMPI concreti
+- Se l'utente chiede qualcosa che non puoi fare, sii onesto e suggerisci alternative
+- Se non capisci la richiesta, chiedi gentilmente di riformulare o offri esempi
+- Mantieni un tono amichevole ma professionale
+- Usa emoji in modo moderato per rendere la conversazione più piacevole
+
+FUNZIONI DISPONIBILI:
+🔍 Cercare ticket esistenti (es: "cerca ticket problema stampante")
+➕ Aprire nuovo ticket (es: "il computer non si accende")
+💡 Suggerire categorie per problemi
+🧭 Guidare nell'uso dell'applicazione
+
+Rispondi ora:`;
 
   try {
-    return await call_llm(prompt);
+    const response = await call_llm(prompt);
+    
+    // Se la risposta dell'AI è troppo generica o vuota, usa il fallback
+    if (response.length < 20 || response.toLowerCase().includes("non capisco")) {
+      throw new Error("Response too generic");
+    }
+    
+    return response;
   } catch (error) {
-    console.error("Errore generazione risposta generale:", error);
-    return "Ciao! Sono Ermes 🤖, il tuo assistente intelligente! Posso aiutarti a cercare ticket, suggerire categorie per nuovi ticket, e navigare nell'applicazione. Come posso aiutarti oggi? ✨";
+    console.error("❌ Errore generazione risposta generale:", error);
+    
+    // Fallback amichevole e informativo
+    return `Ciao! 👋 Sono Ermes, il tuo assistente intelligente!\n\n` +
+           `Posso aiutarti con:\n\n` +
+           `🔍 **Cercare ticket**\n` +
+           `   Esempio: "cerca ticket stampante" o "dov'è il ticket #123?"\n\n` +
+           `➕ **Aprire nuovi ticket**\n` +
+           `   Esempio: "il riunito dello studio 2 non funziona"\n\n` +
+           `💡 **Suggerire la categoria giusta**\n` +
+           `   Esempio: "ho un problema con la radiografia"\n\n` +
+           `🧭 **Guidarti nell'app**\n` +
+           `   Chiedi pure! "come funziona?" o "cosa posso fare?"\n\n` +
+           `Come posso aiutarti oggi? 😊`;
   }
 }
 
