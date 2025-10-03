@@ -765,12 +765,15 @@ export const getMyClinicTicketsWithAuth = query({
       clinicIds.includes(ticket.clinicId)
     )
 
+    // 🆕 Filtra per mostrare SOLO ticket pubblici (i privati vanno in "I miei ticket")
+    relevantTickets = relevantTickets.filter(ticket => ticket.visibility === 'public')
+
     // Filtra per status se specificato
     if (args.status) {
       relevantTickets = relevantTickets.filter(ticket => ticket.status === args.status)
     }
 
-    console.log(`📊 Trovati ${relevantTickets.length} ticket nelle cliniche dell'utente`)
+    console.log(`📊 Trovati ${relevantTickets.length} ticket pubblici nelle cliniche dell'utente`)
 
     // Sort by creation time (most recent first)
     relevantTickets.sort((a, b) => b._creationTime - a._creationTime)

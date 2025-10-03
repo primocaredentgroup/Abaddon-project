@@ -130,8 +130,14 @@ export default function NewTicketPage() {
   }, [categoryAttributes]);
   
   // 🔒 Effect: Imposta la visibilità di default quando cambia la categoria
+  // SOLO se l'utente non ha ancora scelto manualmente una visibilità
+  const [visibilitySetByUser, setVisibilitySetByUser] = useState(false);
+  const [previousCategory, setPreviousCategory] = useState('');
+  
   useEffect(() => {
-    if (formData.category && categoriesData) {
+    // Imposta la visibilità di default SOLO quando cambia categoria per la prima volta
+    // NON sovrascrivere se l'utente ha già fatto una scelta manuale
+    if (formData.category && categoriesData && formData.category !== previousCategory && !visibilitySetByUser) {
       const selectedCategory = categoriesData.find(cat => cat._id === formData.category);
       if (selectedCategory && selectedCategory.defaultTicketVisibility) {
         setFormData(prev => ({
@@ -139,8 +145,9 @@ export default function NewTicketPage() {
           visibility: selectedCategory.defaultTicketVisibility
         }));
       }
+      setPreviousCategory(formData.category);
     }
-  }, [formData.category, categoriesData]);
+  }, [formData.category, categoriesData, previousCategory, visibilitySetByUser]);
   
   // 🎯 Handler: Applica suggerimento dell'agent
   const handleApplySuggestion = () => {
@@ -205,7 +212,7 @@ export default function NewTicketPage() {
         title: formData.title.trim(),
         description: formData.description.trim(),
         categoryId: formData.category as any, // Cast necessario per TypeScript
-        visibility: 'private', // Default a privato
+        visibility: formData.visibility, // 🆕 Usa la visibilità selezionata dall'utente!
         userEmail: currentUserEmail, // Email utente autenticato (validato sopra)
       });
       
@@ -517,7 +524,10 @@ export default function NewTicketPage() {
                           name="visibility"
                           value="public"
                           checked={formData.visibility === 'public'}
-                          onChange={(e) => setFormData({...formData, visibility: e.target.value})}
+                          onChange={(e) => {
+                            setFormData({...formData, visibility: e.target.value});
+                            setVisibilitySetByUser(true); // 🆕 Marca che l'utente ha fatto una scelta manuale
+                          }}
                           className="text-blue-600"
                         />
                         <span className="text-sm">Pubblico - Visibile a tutta la clinica</span>
@@ -528,7 +538,10 @@ export default function NewTicketPage() {
                           name="visibility"
                           value="private"
                           checked={formData.visibility === 'private'}
-                          onChange={(e) => setFormData({...formData, visibility: e.target.value})}
+                          onChange={(e) => {
+                            setFormData({...formData, visibility: e.target.value});
+                            setVisibilitySetByUser(true); // 🆕 Marca che l'utente ha fatto una scelta manuale
+                          }}
                           className="text-blue-600"
                         />
                         <span className="text-sm">Privato - Solo per me</span>
