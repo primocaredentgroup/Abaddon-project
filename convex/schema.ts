@@ -101,6 +101,9 @@ export default defineSchema({
     visibility: v.union(v.literal("public"), v.literal("private")),
     requiresApproval: v.boolean(),
     isActive: v.boolean(),
+    
+    // 🆕 Visibilità di default per i ticket creati in questa categoria
+    defaultTicketVisibility: v.optional(v.union(v.literal("public"), v.literal("private"))), // Default: "public"
 
     // Albero gerarchico
     parentId: v.optional(v.id("categories")), // root = undefined

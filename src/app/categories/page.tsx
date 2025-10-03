@@ -30,7 +30,8 @@ import {
   Archive,
   AlertTriangle,
   Settings2,
-  X
+  X,
+  Lock // 🆕 Icona lucchetto
 } from 'lucide-react'
 
 export default function AdminCategoriesPage() {
@@ -46,6 +47,7 @@ export default function AdminCategoriesPage() {
     name: '',
     description: '',
     visibility: 'public' as 'public' | 'private',
+    defaultTicketVisibility: 'public' as 'public' | 'private', // 🆕 Visibilità di default per i ticket
     synonyms: ''
   })
 
@@ -107,7 +109,8 @@ export default function AdminCategoriesPage() {
           categoryId: editingCategory._id,
           name: formData.name,
           description: formData.description || undefined,
-          visibility: formData.visibility
+          visibility: formData.visibility,
+          defaultTicketVisibility: formData.defaultTicketVisibility // 🆕
         })
       } else {
         // Create new category
@@ -116,12 +119,13 @@ export default function AdminCategoriesPage() {
           description: formData.description || undefined,
           clinicId,
           visibility: formData.visibility,
+          defaultTicketVisibility: formData.defaultTicketVisibility, // 🆕
           synonyms: synonymsArray
         })
       }
       
       // Reset form
-      setFormData({ name: '', description: '', visibility: 'public', synonyms: '' })
+      setFormData({ name: '', description: '', visibility: 'public', defaultTicketVisibility: 'public', synonyms: '' })
       setShowCreateForm(false)
       setEditingCategory(null)
     } catch (error) {
@@ -137,6 +141,7 @@ export default function AdminCategoriesPage() {
       name: category.name,
       description: category.description || '',
       visibility: category.visibility,
+      defaultTicketVisibility: category.defaultTicketVisibility || 'public', // 🆕 Default a public se non impostato
       synonyms: category.synonyms.join(', ')
     })
     setShowCreateForm(true)
@@ -276,7 +281,7 @@ export default function AdminCategoriesPage() {
             <Button 
               onClick={() => {
                 setEditingCategory(null)
-                setFormData({ name: '', description: '', visibility: 'public', synonyms: '' })
+                setFormData({ name: '', description: '', visibility: 'public', defaultTicketVisibility: 'public', synonyms: '' })
                 setShowCreateForm(true)
               }}
             >
@@ -394,6 +399,12 @@ export default function AdminCategoriesPage() {
                             category.visibility === 'public' ? 'bg-green-500' : 'bg-gray-500'
                           }`} />
                           {category.name}
+                          {/* 🆕 Lucchetto se la categoria ha ticket privati di default */}
+                          {category.defaultTicketVisibility === 'private' && (
+                            <span title="I ticket in questa categoria sono privati di default">
+                              <Lock className="h-4 w-4 ml-2 text-orange-600" />
+                            </span>
+                          )}
                         </CardTitle>
                         <CardDescription className="mt-1">
                           {category.description || 'Nessuna descrizione'}
@@ -631,6 +642,24 @@ export default function AdminCategoriesPage() {
                     </select>
                   </div>
                   
+                  {/* 🆕 Visibilità di default per i ticket */}
+                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <label className="block text-sm font-medium text-blue-900 mb-2">
+                      🔒 Visibilità di Default per i Ticket
+                    </label>
+                    <p className="text-xs text-blue-700 mb-3">
+                      Quando un utente crea un ticket in questa categoria, questa sarà la visibilità iniziale (può comunque cambiarla)
+                    </p>
+                    <select 
+                      className="w-full p-2 border border-blue-300 rounded-md bg-white"
+                      value={formData.defaultTicketVisibility}
+                      onChange={(e) => setFormData(prev => ({ ...prev, defaultTicketVisibility: e.target.value as 'public' | 'private' }))}
+                    >
+                      <option value="public">🌍 Pubblico - Visibile a tutti gli utenti della clinica</option>
+                      <option value="private">🔒 Privato - Solo per chi l'ha creato e gli agenti assegnati</option>
+                    </select>
+                  </div>
+                  
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Sinonimi
@@ -652,7 +681,7 @@ export default function AdminCategoriesPage() {
                       onClick={() => {
                         setShowCreateForm(false)
                         setEditingCategory(null)
-                        setFormData({ name: '', description: '', visibility: 'public', synonyms: '' })
+                        setFormData({ name: '', description: '', visibility: 'public', defaultTicketVisibility: 'public', synonyms: '' })
                       }}
                     >
                       Annulla

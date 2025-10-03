@@ -549,6 +549,7 @@ export const createCategorySimple = mutation({
     description: v.optional(v.string()),
     clinicId: v.id("clinics"),
     visibility: v.union(v.literal("public"), v.literal("private")),
+    defaultTicketVisibility: v.optional(v.union(v.literal("public"), v.literal("private"))), // 🆕
     synonyms: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
@@ -568,6 +569,7 @@ export const createCategorySimple = mutation({
       description: args.description,
       clinicId: args.clinicId,
       visibility: args.visibility,
+      defaultTicketVisibility: args.defaultTicketVisibility || "public", // 🆕 Default a public
       parentId: undefined, // Solo categorie root per ora
       path: [],
       depth: 0,
@@ -587,6 +589,7 @@ export const updateCategorySimple = mutation({
     name: v.optional(v.string()),
     description: v.optional(v.string()),
     visibility: v.optional(v.union(v.literal("public"), v.literal("private"))),
+    defaultTicketVisibility: v.optional(v.union(v.literal("public"), v.literal("private"))), // 🆕
   },
   handler: async (ctx, { categoryId, ...updates }) => {
     // Verifica che la categoria esista
@@ -662,6 +665,38 @@ export const hardDeleteCategorySimple = mutation({
     
     return categoryId
   }
+})
+
+// 🔧 Mutation per fixare categorie esistenti senza defaultTicketVisibility
+export const fixExistingCategoriesVisibility = mutation({
+  handler: async (ctx) => {
+    console.log("🔧 [fixExistingCategoriesVisibility] Starting fix for existing categories...");
+    
+    const allCategories = await ctx.db.query("categories").collect();
+    
+    let fixed = 0;
+    let alreadyOk = 0;
+    
+    for (const category of allCategories) {
+      // @ts-ignore - Ignoriamo il tipo perché stiamo fixando vecchi dati
+      if (category.defaultTicketVisibility === undefined) {
+        await ctx.db.patch(category._id, {
+          defaultTicketVisibility: "public", // Default a public per categorie esistenti
+        });
+        console.log(`✅ Fixed category: ${category.name} -> defaultTicketVisibility: public`);
+        fixed++;
+      } else {
+        alreadyOk++;
+      }
+    }
+    
+    return {
+      total: allCategories.length,
+      fixed,
+      alreadyOk,
+      message: `✅ Fixed ${fixed} categories, ${alreadyOk} were already ok`
+    };
+  },
 })
 
 // Mutation per inizializzare le categorie di base per una clinica
