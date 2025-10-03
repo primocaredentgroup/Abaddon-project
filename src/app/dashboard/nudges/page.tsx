@@ -1,7 +1,7 @@
 'use client';
 
-import React from 'react';
-import { useQuery } from 'convex/react';
+import React, { useState } from 'react';
+import { useQuery, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useRole } from '@/providers/RoleProvider';
@@ -19,15 +19,20 @@ import {
   Eye
 } from 'lucide-react';
 import Link from 'next/link';
+import { toast } from 'sonner';
 
 export default function NudgedTicketsPage() {
   const { user } = useRole();
+  const [assigningTicket, setAssigningTicket] = useState<string | null>(null); // 🆕 Loading state
   
   // Fetch di TUTTI i ticket da risolvere (aperti e in corso)
   const allTickets = useQuery(
     api.tickets.getNudgedTickets, 
     user?.email ? { userEmail: user.email } : "skip"
   ) || [];
+  
+  // 🆕 Mutation per auto-assegnazione
+  const assignTicket = useMutation(api.tickets.assign);
 
   // Solo agenti e admin possono vedere questa pagina
   if (user?.roleName !== 'Agente' && user?.roleName !== 'Amministratore') {
@@ -55,6 +60,32 @@ export default function NudgedTicketsPage() {
       return { level: 'high', color: 'bg-orange-100 text-orange-800', label: 'Alta' };
     } else {
       return { level: 'normal', color: 'bg-yellow-100 text-yellow-800', label: 'Normale' };
+    }
+  };
+
+  // 🆕 Funzione per auto-assegnazione ticket
+  const handleAssignToMe = async (ticketId: string, ticketNumber: string) => {
+    if (!user?.id) {
+      toast.error('❌ Errore: ID utente non trovato');
+      return;
+    }
+
+    setAssigningTicket(ticketId); // Mostra loading
+    
+    try {
+      await assignTicket({
+        ticketId: ticketId as any,
+        assigneeId: user.id as any,
+      });
+      
+      toast.success(`✅ Ticket #${ticketNumber} assegnato con successo!`, {
+        duration: 3000,
+      });
+    } catch (error) {
+      console.error('Errore nell\'assegnazione:', error);
+      toast.error('❌ Errore nell\'assegnare il ticket. Riprova.');
+    } finally {
+      setAssigningTicket(null); // Rimuovi loading
     }
   };
 
@@ -238,13 +269,20 @@ export default function NudgedTicketsPage() {
                           <Button 
                             size="sm" 
                             variant="outline"
-                            onClick={() => {
-                              // TODO: Implementare auto-assegnazione
-                              console.log('Auto-assegnazione in sviluppo');
-                            }}
+                            onClick={() => handleAssignToMe(ticket._id, ticket.ticketNumber)}
+                            disabled={assigningTicket === ticket._id}
                           >
-                            <User className="h-4 w-4 mr-2" />
-                            Assegna a me
+                            {assigningTicket === ticket._id ? (
+                              <>
+                                <Clock className="h-4 w-4 mr-2 animate-spin" />
+                                Assegnazione...
+                              </>
+                            ) : (
+                              <>
+                                <User className="h-4 w-4 mr-2" />
+                                Assegna a me
+                              </>
+                            )}
                           </Button>
                         )}
                       </div>

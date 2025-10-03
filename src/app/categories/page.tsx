@@ -31,7 +31,8 @@ import {
   AlertTriangle,
   Settings2,
   X,
-  Lock // 🆕 Icona lucchetto
+  Lock, // 🆕 Icona lucchetto
+  Loader2 // 🆕 Spinner per loading
 } from 'lucide-react'
 
 export default function AdminCategoriesPage() {
@@ -41,6 +42,7 @@ export default function AdminCategoriesPage() {
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [editingCategory, setEditingCategory] = useState<any>(null)
   const [managingAttributesCategory, setManagingAttributesCategory] = useState<any>(null) // 🆕 Modal attributi
+  const [deletingCategoryId, setDeletingCategoryId] = useState<string | null>(null) // 🆕 Loading state per cancellazione
   
   // Form states
   const [formData, setFormData] = useState({
@@ -78,11 +80,13 @@ export default function AdminCategoriesPage() {
   const updateAttribute = useMutation(api.categoryAttributes.updateSimple)
   const deleteAttribute = useMutation(api.categoryAttributes.removeSimple)
 
-  // Filter categories based on search
+  // Filter categories based on search + Optimistic Update 🚀
   const filteredCategories = categories?.filter(cat =>
-    cat.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    // 🎯 Nascondi immediatamente la categoria che si sta cancellando (optimistic!)
+    cat._id !== deletingCategoryId &&
+    (cat.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     cat.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    cat.synonyms.some(syn => syn.toLowerCase().includes(searchTerm.toLowerCase()))
+    cat.synonyms.some(syn => syn.toLowerCase().includes(searchTerm.toLowerCase())))
   ) || []
 
   const filteredDeletedCategories = deletedCategories?.filter(cat =>
@@ -147,14 +151,21 @@ export default function AdminCategoriesPage() {
     setShowCreateForm(true)
   }
 
-  // Handle soft delete
+  // Handle soft delete con Optimistic Update 🚀
   const handleSoftDelete = async (categoryId: string) => {
     if (confirm('Sei sicuro di voler eliminare questa categoria? Potrà essere ripristinata dal cestino.')) {
+      // 🎯 STEP 1: Mostra immediatamente lo spinner (feedback istantaneo!)
+      setDeletingCategoryId(categoryId)
+      
       try {
+        // 🎯 STEP 2: Esegui la mutation in background
         await softDeleteCategory({ categoryId })
       } catch (error) {
         console.error('Errore nell\'eliminare la categoria:', error)
         alert('Errore nell\'eliminare la categoria: ' + error)
+      } finally {
+        // 🎯 STEP 3: Rimuovi lo spinner quando finito
+        setDeletingCategoryId(null)
       }
     }
   }
@@ -432,8 +443,13 @@ export default function AdminCategoriesPage() {
                           variant="ghost"
                           onClick={() => handleSoftDelete(category._id)}
                           title="Elimina categoria"
+                          disabled={deletingCategoryId === category._id}
                         >
-                          <Trash2 className="h-4 w-4 text-red-500" />
+                          {deletingCategoryId === category._id ? (
+                            <Loader2 className="h-4 w-4 text-red-500 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4 text-red-500" />
+                          )}
                         </Button>
                       </div>
                     </div>
