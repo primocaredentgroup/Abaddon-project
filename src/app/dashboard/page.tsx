@@ -176,59 +176,73 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Statistiche principali */}
+        {/* Statistiche principali - Box cliccabili */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Ticket Totali</CardTitle>
-              <Ticket className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.total}</div>
-              <p className="text-xs text-muted-foreground">
-                I tuoi ticket
-              </p>
-            </CardContent>
-          </Card>
+          {/* Box 1: Tutti i miei ticket */}
+          <Link href="/tickets/my">
+            <Card className="hover:shadow-lg transition-all cursor-pointer hover:scale-105">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">I miei ticket</CardTitle>
+                <Ticket className="h-4 w-4 text-blue-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{stats.total}</div>
+                <p className="text-xs text-blue-600">
+                  Clicca per vedere tutti
+                </p>
+              </CardContent>
+            </Card>
+          </Link>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Aperti</CardTitle>
-              <Clock className="h-4 w-4 text-orange-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-orange-600">{stats.open}</div>
-              <p className="text-xs text-muted-foreground">
-                Da completare
-              </p>
-            </CardContent>
-          </Card>
+          {/* Box 2: Ticket in lavorazione */}
+          <Link href="/tickets/my?status=open,in_progress">
+            <Card className="hover:shadow-lg transition-all cursor-pointer hover:scale-105">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">In lavorazione</CardTitle>
+                <Clock className="h-4 w-4 text-yellow-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-yellow-600">{stats.open + stats.inProgress}</div>
+                <p className="text-xs text-yellow-600">
+                  Richiede attenzione
+                </p>
+              </CardContent>
+            </Card>
+          </Link>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">In Lavorazione</CardTitle>
-              <AlertTriangle className="h-4 w-4 text-yellow-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-yellow-600">{stats.inProgress}</div>
-              <p className="text-xs text-muted-foreground">
-                In corso
-              </p>
-            </CardContent>
-          </Card>
+          {/* Box 3: Ticket risolti */}
+          <Link href="/tickets/my?status=resolved">
+            <Card className="hover:shadow-lg transition-all cursor-pointer hover:scale-105">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Risolti</CardTitle>
+                <CheckCircle className="h-4 w-4 text-green-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-green-600">{stats.resolved}</div>
+                <p className="text-xs text-green-600">
+                  Completati con successo
+                </p>
+              </CardContent>
+            </Card>
+          </Link>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Risolti</CardTitle>
-              <CheckCircle className="h-4 w-4 text-green-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-600">{stats.resolved}</div>
-              <p className="text-xs text-muted-foreground">
-                Completati
-              </p>
-            </CardContent>
-          </Card>
+          {/* Box 4: Ticket urgenti */}
+          <Link href="/tickets/my?priority=urgent">
+            <Card className="hover:shadow-lg transition-all cursor-pointer hover:scale-105 border-red-200">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Urgenti</CardTitle>
+                <AlertCircle className="h-4 w-4 text-red-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-red-600">
+                  {myTickets.filter(t => t.priority === 'urgent').length}
+                </div>
+                <p className="text-xs text-red-600">
+                  Azione immediata richiesta
+                </p>
+              </CardContent>
+            </Card>
+          </Link>
         </div>
 
         {/* Admin Tools - Solo per amministratori */}
