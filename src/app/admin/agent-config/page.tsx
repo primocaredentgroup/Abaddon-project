@@ -5,6 +5,7 @@ import { useQuery, useMutation } from 'convex/react'
 import { api } from '../../../../convex/_generated/api'
 import { useAuth } from '@/hooks/useAuth'
 import { AppLayout } from '@/components/layout/AppLayout'
+import { hasFullAccess } from '@/lib/permissions'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Textarea } from '@/components/ui/Textarea'
@@ -61,7 +62,7 @@ Rispondi sempre in italiano e sii professionale ma amichevole.`
 
   // Mutation per aggiornare la configurazione
   // NOTA: Usando versione Simple per sviluppo (senza controllo autenticazione)
-  const updateConfig = useMutation(api.agent.updateAgentConfigSimple)
+  const updateConfig = useMutation(api.agent.updateAgentConfig)
   const initializeConfig = useMutation(api.agent.initializeAgentConfig)
 
   // Carica la configurazione esistente quando disponibile
@@ -153,7 +154,8 @@ Rispondi sempre in italiano e sii professionale ma amichevole.`
     )
   }
 
-  if (user.role?.name !== 'Amministratore') {
+  // Controlla i permessi di amministratore
+  if (!hasFullAccess(user.role)) {
     return (
       <AppLayout>
         <div className="flex items-center justify-center min-h-screen">

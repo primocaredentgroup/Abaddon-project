@@ -4,6 +4,7 @@ import React, { useState } from 'react'
 import { useQuery, useMutation } from 'convex/react'
 import { api } from '../../../convex/_generated/api'
 import { useAuth } from '@/hooks/useAuth'
+import { canCreatePersonalViews as checkCanCreatePersonalViews } from '@/lib/permissions'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -202,7 +203,7 @@ export default function ViewsPage() {
     )
   }
   
-  const canCreatePersonalViews = user.role?.name === 'Agente' || user.role?.name === 'Amministratore'
+  const canCreatePersonalViews = checkCanCreatePersonalViews(user.role)
   
   return (
     <AppLayout>

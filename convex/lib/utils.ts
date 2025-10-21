@@ -1,5 +1,7 @@
 import { ConvexError } from "convex/values"
 import { QueryCtx, MutationCtx } from "../_generated/server"
+import { Id } from "../_generated/dataModel"
+import { hasFullAccess } from "./permissions"
 
 // Utility per ottenere l'utente corrente autenticato
 export async function getCurrentUser(ctx: QueryCtx | MutationCtx) {
@@ -18,6 +20,53 @@ export async function getCurrentUser(ctx: QueryCtx | MutationCtx) {
   }
   
   return user
+}
+
+// Richiede utente autenticato e ritorna user + role
+export async function requireUser(ctx: QueryCtx | MutationCtx) {
+  const user = await getCurrentUser(ctx)
+  const role = await ctx.db.get(user.roleId)
+  if (!role) {
+    throw new ConvexError("User role not found")
+  }
+  return { user, role }
+}
+
+// Richiede permesso specifico
+export async function requirePermission(
+  ctx: QueryCtx | MutationCtx,
+  permission: string
+) {
+  const { user, role } = await requireUser(ctx)
+  if (!role.permissions?.includes(permission) && !role.permissions?.includes("full_access")) {
+    throw new ConvexError(`Permission denied: ${permission} required`)
+  }
+  return { user, role }
+}
+
+// Richiede ownership della risorsa
+export async function requireOwnership(
+  ctx: QueryCtx | MutationCtx,
+  resourceUserId: Id<"users">,
+  role: any
+) {
+  const { user } = await requireUser(ctx)
+  if (user._id !== resourceUserId && !hasFullAccess(role)) {
+    throw new ConvexError("Not authorized to access this resource")
+  }
+  return { user }
+}
+
+// Richiede appartenenza alla stessa clinica
+export async function requireSameClinic(
+  ctx: QueryCtx | MutationCtx,
+  targetClinicId: Id<"clinics">
+) {
+  const { user } = await requireUser(ctx)
+  if (user.clinicId !== targetClinicId) {
+    throw new ConvexError("Access denied: different clinic")
+  }
+  return { user }
 }
 
 // Utility per verificare se un utente esiste

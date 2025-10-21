@@ -1,6 +1,7 @@
 import { v } from "convex/values"
 import { query, mutation } from "./_generated/server"
 import { ConvexError } from "convex/values"
+import { hasFullAccess } from "./lib/permissions"
 
 // Query per ottenere tutte le viste di una clinica (per admin)
 export const getViewsByClinic = query({
@@ -148,9 +149,9 @@ export const createView = mutation({
       throw new ConvexError("Clinica non trovata")
     }
     
-    // Se non è personale e non è admin, non può creare viste pubbliche/assegnate
+    // Se non è personale e non è admin, non può creare viste pubbliche/assegnate (controllo basato su permessi)
     const role = await ctx.db.get(creator.roleId)
-    if (!args.isPersonal && role?.name !== 'Amministratore') {
+    if (!args.isPersonal && !hasFullAccess(role)) {
       throw new ConvexError("Solo gli amministratori possono creare viste pubbliche o assegnate")
     }
     
@@ -218,9 +219,9 @@ export const updateView = mutation({
       throw new ConvexError("Vista non trovata")
     }
     
-    // Verifica permessi: solo il creatore o un admin può modificare
+    // Verifica permessi: solo il creatore o un admin può modificare (controllo basato su permessi)
     const role = await ctx.db.get(user.roleId)
-    if (view.createdBy !== user._id && role?.name !== 'Amministratore') {
+    if (view.createdBy !== user._id && !hasFullAccess(role)) {
       throw new ConvexError("Non hai i permessi per modificare questa vista")
     }
     
@@ -257,9 +258,9 @@ export const deleteView = mutation({
       throw new ConvexError("Vista non trovata")
     }
     
-    // Verifica permessi: solo il creatore o un admin può eliminare
+    // Verifica permessi: solo il creatore o un admin può eliminare (controllo basato su permessi)
     const role = await ctx.db.get(user.roleId)
-    if (view.createdBy !== user._id && role?.name !== 'Amministratore') {
+    if (view.createdBy !== user._id && !hasFullAccess(role)) {
       throw new ConvexError("Non hai i permessi per eliminare questa vista")
     }
     

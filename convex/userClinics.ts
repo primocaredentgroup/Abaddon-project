@@ -3,6 +3,7 @@ import { mutation, query, internalMutation } from "./_generated/server"
 import { ConvexError } from "convex/values"
 import { getCurrentUser } from "./lib/utils"
 import type { Id } from "./_generated/dataModel"
+import { getRoleType } from "./lib/permissions"
 
 // Query per ottenere tutte le cliniche di un utente
 export const getUserClinics = query({
@@ -228,10 +229,9 @@ export const migrateExistingUsersToMultiClinic = mutation({
         .unique()
 
       if (!existing) {
-        // Ottieni il ruolo dell'utente
+        // Ottieni il ruolo dell'utente basandosi sui permessi
         const role = await ctx.db.get(user.roleId)
-        const clinicRole = role?.name === "Agente" ? "agent" : 
-                          role?.name === "Amministratore" ? "admin" : "user"
+        const clinicRole = getRoleType(role)
 
         // Crea la relazione
         await ctx.db.insert("userClinics", {

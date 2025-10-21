@@ -11,8 +11,10 @@ import { Select } from '@/components/ui/Select'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { useAuth } from '@/hooks/useAuth'
 import { UserCompetenciesManager } from '@/components/admin/UserCompetenciesManager'
-import { ChevronDown, ChevronUp } from 'lucide-react'
+import { UserSocietiesManager } from '@/components/admin/UserSocietiesManager'
+import { ChevronDown, ChevronUp, Building2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { canManageCompetencies as checkCanManageCompetencies } from '@/lib/permissions'
 
 export default function UsersPage() {
   const { user: currentUser, refreshUser } = useAuth() // Ottieni l'utente corrente e la funzione refresh
@@ -20,7 +22,7 @@ export default function UsersPage() {
   const roles = useQuery(api.roles.getAllRoles, { includeSystem: true })
 
   const createUser = useMutation(api.users.createUser)
-  const updateUser = useMutation(api.users.updateUserSimple) // Usa la versione Simple per lo sviluppo
+  const updateUser = useMutation(api.users.updateUser) // Versione con autenticazione
   const createPermissions = useMutation(api.roles.createSystemPermissions)
   const createSystemRoles = useMutation(api.roles.createSystemRoles)
 
@@ -28,6 +30,7 @@ export default function UsersPage() {
   const [form, setForm] = useState({ name: '', email: '', roleId: '' })
   const [saving, setSaving] = useState(false)
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null)
+  const [expandedSocietiesUserId, setExpandedSocietiesUserId] = useState<string | null>(null)
 
   const roleOptions = useMemo(() => (roles || []).map((r: any) => ({ value: r._id, label: r.name })), [roles])
 
@@ -120,9 +123,10 @@ export default function UsersPage() {
             {users.map((u) => {
               const isCurrentUser = currentUser && u.email === currentUser.email
               const currentRole = roles?.find((r) => r._id === u.roleId)
-              // Mostra competenze per Agenti e Admin, ma non per Utenti
-              const canManageCompetencies = currentRole?.name === 'Agente' || currentRole?.name === 'Amministratore'
+              // Mostra competenze basandosi sui permessi del ruolo
+              const canManageCompetencies = checkCanManageCompetencies(currentRole)
               const isExpanded = expandedUserId === u._id
+              const isSocietiesExpanded = expandedSocietiesUserId === u._id
               
               return (
                 <React.Fragment key={u._id}>
@@ -160,7 +164,7 @@ export default function UsersPage() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <Badge 
-                        variant={u.isActive ? 'default' : 'secondary'}
+                        variant={u.isActive ? 'success' : 'danger'}
                         className="px-3 py-1"
                       >
                         {u.isActive ? '✓ Attivo' : '✗ Disattivo'}
@@ -191,6 +195,15 @@ export default function UsersPage() {
                             )}
                           </Button>
                         )}
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          onClick={() => setExpandedSocietiesUserId(isSocietiesExpanded ? null : u._id)}
+                          className={`transition-all ${isSocietiesExpanded ? 'bg-purple-100 text-purple-700' : 'hover:bg-gray-100'}`}
+                          title="Gestisci società utente"
+                        >
+                          <Building2 className="h-4 w-4" />
+                        </Button>
                       </div>
                     </td>
                   </tr>
@@ -203,6 +216,18 @@ export default function UsersPage() {
                           userName={u.name}
                           userEmail={u.email}
                           userClinicId={u.clinicId}
+                        />
+                      </td>
+                    </tr>
+                  )}
+                  {/* Riga espansa per gestione società */}
+                  {isSocietiesExpanded && (
+                    <tr className="bg-gradient-to-b from-purple-50 to-white">
+                      <td colSpan={5} className="px-6 py-6">
+                        <UserSocietiesManager 
+                          userId={u._id}
+                          userName={u.name}
+                          userEmail={u.email}
                         />
                       </td>
                     </tr>

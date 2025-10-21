@@ -1,6 +1,7 @@
 import { v } from "convex/values"
 import { query, mutation } from "./_generated/server"
 import { ConvexError } from "convex/values"
+import { hasFullAccess } from "./lib/permissions"
 
 // Query per ottenere tutte le macro di una clinica
 export const getMacrosByClinic = query({
@@ -275,9 +276,9 @@ export const approveMacro = mutation({
       throw new ConvexError("Approvatore non trovato")
     }
     
-    // Verifica che l'utente sia admin
+    // Verifica che l'utente sia admin (controllo basato su permessi)
     const role = await ctx.db.get(approver.roleId)
-    if (!role || role.name !== 'Amministratore') {
+    if (!role || !hasFullAccess(role)) {
       throw new ConvexError("Solo gli amministratori possono approvare le macro")
     }
     
@@ -323,9 +324,9 @@ export const rejectMacro = mutation({
       throw new ConvexError("Approvatore non trovato")
     }
     
-    // Verifica che l'utente sia admin
+    // Verifica che l'utente sia admin (controllo basato su permessi)
     const role = await ctx.db.get(approver.roleId)
-    if (!role || role.name !== 'Amministratore') {
+    if (!role || !hasFullAccess(role)) {
       throw new ConvexError("Solo gli amministratori possono rifiutare le macro")
     }
     

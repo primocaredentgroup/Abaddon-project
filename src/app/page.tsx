@@ -1,39 +1,87 @@
 'use client'
 
-import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { LogIn } from 'lucide-react'
+import { useEffect } from 'react'
+import { useConvexAuth } from 'convex/react'
+import { useAuth0 } from '@auth0/auth0-react'
 
 export default function Home() {
-  const { user, login, isLoading } = useAuth()
+  const { user, isLoading: userLoading, login } = useAuth()
+  const { isAuthenticated, isLoading: convexAuthLoading } = useConvexAuth()
+  const { user: auth0User, isAuthenticated: auth0IsAuthenticated, isLoading: auth0IsLoading } = useAuth0()
   const router = useRouter()
 
-  // Reindirizza alla dashboard se autenticato (basato sul ruolo)
+  // Debug dettagliato
   useEffect(() => {
-    if (user) {
-      // Agenti vanno direttamente ai ticket assegnati
-      if (user.roleName === 'Agente') {
-        router.push('/tickets/assigned')
+    console.log('🔍 Home state:', { 
+      // Convex auth state
+      convexIsAuthenticated: isAuthenticated, 
+      convexAuthLoading, 
+      // Auth0 auth state
+      auth0IsAuthenticated,
+      auth0IsLoading,
+      auth0HasUser: !!auth0User,
+      // Our custom hook state
+      userLoading, 
+      hasUser: !!user,
+      userRole: user?.ruolo,
+      url: typeof window !== 'undefined' ? window.location.href : 'N/A'
+    })
+  }, [isAuthenticated, convexAuthLoading, userLoading, user, auth0IsAuthenticated, auth0IsLoading, auth0User])
+
+  // Debug specifico per vedere quando Auth0 ha completato
+  useEffect(() => {
+    const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
+    if (params.has('code')) {
+      console.log('✅ Auth0 callback ricevuto con code:', params.get('code')?.substring(0, 10) + '...')
+    }
+  }, [])
+
+  // Redirect quando l'utente è autenticato con Convex e i dati sono caricati
+  useEffect(() => {
+    if (!convexAuthLoading && isAuthenticated && !userLoading && user) {
+      console.log('🚀 Redirect: utente pronto', user.ruolo)
+      
+      // Redirect basato sul ruolo
+      if (user.ruolo === 'agent' || user.roleName === 'Agente') {
+        router.replace('/tickets/assigned')
       } else {
-        router.push('/dashboard')
+        router.replace('/dashboard')
       }
     }
-  }, [user, router])
+  }, [isAuthenticated, convexAuthLoading, userLoading, user, router])
 
-  if (isLoading) {
+  // Mostra loading durante autenticazione o caricamento dati
+  if (convexAuthLoading || (isAuthenticated && userLoading)) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <div className="w-8 h-8 animate-spin rounded-full border-2 border-primary border-t-transparent mx-auto mb-4" />
-          <p className="text-muted-foreground">Caricamento...</p>
+          <p className="text-muted-foreground">
+            {convexAuthLoading ? 'Autenticazione Convex...' : 'Caricamento dati utente...'}
+          </p>
         </div>
       </div>
     )
   }
 
+  // Mostra loading durante redirect
+  if (isAuthenticated && user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 animate-spin rounded-full border-2 border-primary border-t-transparent mx-auto mb-4" />
+          <p className="text-muted-foreground">Reindirizzamento...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Mostra login se non autenticato
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex items-center justify-center">
       <Card className="max-w-md w-full shadow-lg">
@@ -49,15 +97,15 @@ export default function Home() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-                <div className="text-center">
-                  <Button 
-                    onClick={login}
-                    className="bg-blue-600 hover:bg-blue-700 px-8 py-3 text-lg"
-                  >
-                    <LogIn className="w-5 h-5 mr-3" />
-                    Accedi con Auth0
-                  </Button>
-                </div>
+          <div className="text-center">
+            <Button 
+              onClick={login}
+              className="bg-blue-600 hover:bg-blue-700 px-8 py-3 text-lg"
+            >
+              <LogIn className="w-5 h-5 mr-3" />
+              Accedi con Auth0
+            </Button>
+          </div>
           
           <div className="text-center text-sm text-gray-500">
             <p>Accedi con il tuo account Auth0 per iniziare</p>

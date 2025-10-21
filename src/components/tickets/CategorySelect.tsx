@@ -26,11 +26,12 @@ export const CategorySelect: React.FC<CategorySelectProps> = ({
   const [error, setError] = useState('')
 
   const { user } = useAuth()
+  const userId = (user as any)?._id
   
-  // Get categories for the clinic
+  // Get categories for the clinic filtered by user societies
   const categories = useQuery(
-    api.categories.getPublicCategories,
-    clinicId ? { clinicId } : "skip"
+    api.categories.getPublicCategoriesByUserSocieties,
+    (clinicId && userId) ? { clinicId, userId } : "skip"
   )
 
   const categoryOptions = useMemo(() => {

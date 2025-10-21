@@ -21,7 +21,8 @@ import {
   UserCheck, // Icon for assigned tickets
   Shield, // Icon for admin dashboard
   CheckSquare, // Icon for approvals
-  Eye // Icon for views
+  Eye, // Icon for views
+  Briefcase // Icon for societies
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
@@ -62,6 +63,7 @@ const adminNavigation: NavItem[] = [
   { name: 'Approvazioni', href: '/admin/approvals', icon: CheckSquare, roles: ['admin'] },
   { name: 'Gestione Utenti', href: '/users', icon: Users, roles: ['admin'] },
   { name: 'Gestione Viste', href: '/admin/views', icon: Eye, roles: ['admin'] },
+  { name: 'Società', href: '/admin/societies', icon: Briefcase, roles: ['admin'] },
   { name: 'Config. Ermes AI', href: '/admin/agent-config', icon: Bot, roles: ['admin'] },
   { name: 'Ruoli e Permessi', href: '/roles', icon: UserCog, roles: ['admin'] },
 ]
@@ -76,14 +78,8 @@ const quickActions: NavItem[] = [
 export function Sidebar({ isOpen, onClose, userRole = 'user' }: SidebarProps) {
   const pathname = usePathname()
   
-  // Debug: log del ruolo utente
-  console.log('Sidebar userRole:', userRole)
-  console.log('Sidebar pathname:', pathname)
-  
   const filterByRole = (items: NavItem[]) => {
-    const filtered = items.filter(item => item.roles.includes(userRole))
-    console.log('Filtering by role', userRole, 'filtered items:', filtered.map(f => f.name))
-    return filtered
+    return items.filter(item => item.roles.includes(userRole))
   }
 
   return (
@@ -128,7 +124,6 @@ export function Sidebar({ isOpen, onClose, userRole = 'user' }: SidebarProps) {
             <div className="space-y-1">
               {filterByRole(navigation).map((item) => {
                 const isActive = pathname === item.href
-                console.log('Rendering navigation item:', item.name, 'href:', item.href, 'isActive:', isActive) // Debug
                 return (
                   <Link
                     key={item.name}
@@ -139,10 +134,7 @@ export function Sidebar({ isOpen, onClose, userRole = 'user' }: SidebarProps) {
                         ? 'bg-blue-600 text-white'
                         : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
                     )}
-                    onClick={() => {
-                      console.log('Clicked navigation item:', item.name) // Debug
-                      onClose()
-                    }}
+                    onClick={() => onClose()}
                   >
                     <item.icon className="w-4 h-4" />
                     {item.name}

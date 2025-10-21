@@ -1,5 +1,8 @@
 "use client";
 import { useState, useEffect } from 'react';
+import { useAuth0 } from '@auth0/auth0-react';
+import { useQuery } from 'convex/react';
+import { api } from '../../convex/_generated/api';
 
 interface ExtendedUser {
   nome: string;
@@ -7,127 +10,85 @@ interface ExtendedUser {
   email: string;
   ruolo: string;
   id: string;
-  clinicId?: string;  // ✅ Aggiunto clinicId
+  clinicId?: string;
   clinic?: {
     name: string;
   };
   role?: {
     name: string;
+    permissions?: string[];
   };
 }
 
 export function useAuth() {
+  const { user: auth0User, error: auth0Error, isLoading: auth0Loading, loginWithRedirect, logout: auth0Logout } = useAuth0();
   const [user, setUser] = useState<ExtendedUser | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Funzione per controllare la sessione
-  const checkSession = async (retryCount = 0) => {
-    try {
-      setIsLoading(true);
-      console.log('🔍 Controllando sessione utente...');
-      
-      const response = await fetch('/api/user/me', {
-        credentials: 'include',
-        cache: 'no-cache' // Evita cache per avere dati aggiornati
-      });
-      
-      if (response.ok) {
-        const userData = await response.json();
-        console.log('✅ Utente autenticato:', userData);
-        
-        // Trasforma i dati nel formato dell'app
-        setUser({
-          id: userData._id,
-          nome: userData.email?.split('@')[0] || 'Utente', // Usa la parte prima della @ come nome
-          cognome: '', // Non abbiamo un cognome, lasciamo vuoto
-          email: userData.email || '',
-          ruolo: userData.role?.name || 'user',
-          clinicId: userData.clinicId,  // ✅ Aggiunto clinicId
-          clinic: userData.clinic,
-          role: userData.role
-        });
-        setError(null);
-        setIsLoading(false);
-      } else {
-        console.log('❌ Nessuna sessione attiva');
-        
-        // Se siamo in callback o dashboard, proviamo un retry
-        const isCallbackOrDashboard = 
-          typeof window !== 'undefined' && 
-          (window.location.pathname.includes('/auth/callback') || 
-           window.location.pathname.includes('/dashboard'));
-        
-        if (isCallbackOrDashboard && retryCount < 3) {
-          console.log(`🔄 Retry ${retryCount + 1}/3 tra 1.5 secondi...`);
-          setTimeout(() => checkSession(retryCount + 1), 1500);
-          return;
-        }
-        
-        setUser(null);
-        setError(null);
-        setIsLoading(false);
-      }
-    } catch (error) {
-      console.error('❌ Errore nel controllo sessione:', error);
-      
-      // Retry per errori di rete
-      if (retryCount < 2) {
-        console.log(`🔄 Retry per errore ${retryCount + 1}/2 tra 2 secondi...`);
-        setTimeout(() => checkSession(retryCount + 1), 2000);
-        return;
-      }
-      
-      setUser(null);
-      setError('Errore nel controllo della sessione');
-      setIsLoading(false);
-    }
-  };
+  // Get basic user first
+  const basicUser = useQuery(
+    api.users.getUserByEmail,
+    auth0User?.email ? { email: auth0User.email } : "skip"
+  );
 
-  // Controlla la sessione e sincronizza con Convex
+  // Get full user data with populated fields
+  const convexUser = useQuery(
+    api.users.getUserById,
+    basicUser?._id ? { userId: basicUser._id } : "skip"
+  );
+
+  // Sync Auth0 user with Convex user data
   useEffect(() => {
-    checkSession();
-    
-    // Listener per refresh della sessione dopo login
-    const handleAuthSuccess = () => {
-      console.log('🔄 Rilevato login completato, aggiornando sessione...');
-      checkSession();
-    };
-    
-    if (typeof window !== 'undefined') {
-      window.addEventListener('auth-login-complete', handleAuthSuccess);
+    if (auth0User && convexUser) {
+      console.log('✅ Utente autenticato:', convexUser);
       
-      return () => {
-        window.removeEventListener('auth-login-complete', handleAuthSuccess);
-      };
+      setUser({
+        id: convexUser._id,
+        nome: auth0User.email?.split('@')[0] || 'Utente',
+        cognome: '',
+        email: convexUser.email || '',
+        ruolo: convexUser.role?.name || 'user',
+        clinicId: convexUser.clinicId,
+        clinic: convexUser.clinic,
+        role: convexUser.role
+      });
+      setError(null);
+    } else if (!auth0User && !auth0Loading) {
+      setUser(null);
     }
-  }, []);
+
+    if (auth0Error) {
+      setError(auth0Error.message);
+    }
+  }, [auth0User, convexUser, auth0Loading, auth0Error]);
 
   const login = () => {
-    window.location.href = '/api/auth/login';
+    loginWithRedirect({
+      appState: { returnTo: window.location.pathname }
+    });
   };
 
   const logout = () => {
-    // Reset dello stato locale prima del logout
     setUser(null);
     setError(null);
-    
-    // Logout locale per sviluppo (cancella solo cookies)
-    window.location.href = '/api/auth/logout-local';
+    auth0Logout({ 
+      logoutParams: { 
+        returnTo: window.location.origin 
+      }
+    });
   };
 
-  // Funzione per ricaricare i dati dell'utente
   const refreshUser = () => {
-    console.log('🔄 Ricaricando dati utente...');
-    checkSession();
+    // Convex query will auto-refresh
+    console.log('🔄 User data will refresh automatically via Convex');
   };
 
   return {
     user,
-    isLoading,
+    isLoading: auth0Loading || (auth0User && !convexUser),
     error,
     login,
     logout,
-    refreshUser // Espone la funzione per ricaricare
+    refreshUser
   };
 }
