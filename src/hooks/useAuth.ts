@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from 'react';
 import { useAuth0 } from '@auth0/auth0-react';
-import { useQuery } from 'convex/react';
+import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 
 interface ExtendedUser {
@@ -24,11 +24,37 @@ export function useAuth() {
   const { user: auth0User, error: auth0Error, isLoading: auth0Loading, loginWithRedirect, logout: auth0Logout } = useAuth0();
   const [user, setUser] = useState<ExtendedUser | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [hasSynced, setHasSynced] = useState(false);
+  
+  // Mutation per sincronizzare auth0Id
+  const syncUser = useMutation(api.users.syncUserFromAuth0);
 
-  // Get basic user first
+  // Sync automatico quando l'utente fa login
+  useEffect(() => {
+    async function syncAuth0Id() {
+      if (auth0User && auth0User.sub && auth0User.email && !hasSynced) {
+        try {
+          console.log('🔄 [useAuth] Sincronizzazione auth0Id...');
+          await syncUser({
+            auth0Id: auth0User.sub,
+            email: auth0User.email,
+            name: auth0User.name
+          });
+          setHasSynced(true);
+          console.log('✅ [useAuth] Sincronizzazione completata');
+        } catch (error) {
+          console.error('❌ [useAuth] Errore sync:', error);
+        }
+      }
+    }
+    
+    syncAuth0Id();
+  }, [auth0User, hasSynced, syncUser]);
+
+  // Get basic user first (dopo la sync)
   const basicUser = useQuery(
     api.users.getUserByEmail,
-    auth0User?.email ? { email: auth0User.email } : "skip"
+    auth0User?.email && hasSynced ? { email: auth0User.email } : "skip"
   );
 
   // Get full user data with populated fields
@@ -55,6 +81,7 @@ export function useAuth() {
       setError(null);
     } else if (!auth0User && !auth0Loading) {
       setUser(null);
+      setHasSynced(false); // Reset sync quando si fa logout
     }
 
     if (auth0Error) {

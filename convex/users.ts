@@ -218,21 +218,14 @@ export const updateUser = mutation({
   },
   handler: async (ctx, { userId, ...updates }) => {
     // Verifica autenticazione
-    console.log('🔐 [updateUser] Verifica autenticazione...')
     const currentUser = await getCurrentUser(ctx)
-    console.log('✅ [updateUser] Utente autenticato:', { id: currentUser._id, email: currentUser.email })
     
     // Verifica permessi: solo gli admin possono modificare gli utenti
-    console.log('🔍 [updateUser] Caricamento ruolo:', currentUser.roleId)
     const currentUserRole = await ctx.db.get(currentUser.roleId)
-    console.log('📋 [updateUser] Ruolo caricato:', { name: currentUserRole?.name, permissions: currentUserRole?.permissions })
     
     if (!currentUserRole?.permissions?.includes("full_access")) {
-      console.error('❌ [updateUser] Permessi insufficienti - richiesto full_access')
       throw new ConvexError("Solo gli amministratori possono modificare gli utenti")
     }
-    
-    console.log('✅ [updateUser] Permessi verificati con successo')
     
     // Verifica che l'utente esista
     const user = await ctx.db.get(userId)
@@ -290,6 +283,60 @@ export const updateMyPreferences = mutation({
     await ctx.db.patch(currentUser._id, { preferences })
     
     return currentUser._id
+  }
+})
+
+// Mutation per sincronizzare auth0Id al login (auto-fix per ID sbagliati)
+export const syncUserFromAuth0 = mutation({
+  args: {
+    auth0Id: v.string(),
+    email: v.string(),
+    name: v.optional(v.string()),
+  },
+  handler: async (ctx, { auth0Id, email, name }) => {
+    console.log('🔄 [syncUserFromAuth0] Inizio sync per:', { auth0Id, email })
+    
+    // 1. Cerca per auth0Id
+    let user = await ctx.db
+      .query("users")
+      .withIndex("by_auth0", (q) => q.eq("auth0Id", auth0Id))
+      .unique()
+    
+    if (user) {
+      console.log('✅ [syncUserFromAuth0] Utente trovato per auth0Id, aggiorno lastLogin')
+      // Trovato per auth0Id corretto, aggiorna solo lastLogin
+      await ctx.db.patch(user._id, { 
+        lastLoginAt: Date.now(),
+        name: name || user.name // Aggiorna nome se fornito
+      })
+      return user._id
+    }
+    
+    // 2. Se non trovato per auth0Id, cerca per email
+    user = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", email))
+      .unique()
+    
+    if (user) {
+      console.log('⚠️ [syncUserFromAuth0] Utente trovato per email ma con auth0Id diverso!')
+      console.log('   Vecchio auth0Id:', user.auth0Id)
+      console.log('   Nuovo auth0Id:', auth0Id)
+      
+      // Trovato per email ma con auth0Id diverso → AGGIORNA!
+      await ctx.db.patch(user._id, { 
+        auth0Id,  // 🔑 Aggiorna con l'ID corretto da Auth0
+        lastLoginAt: Date.now(),
+        name: name || user.name
+      })
+      
+      console.log('✅ [syncUserFromAuth0] auth0Id aggiornato con successo!')
+      return user._id
+    }
+    
+    // 3. Se non esiste proprio, ritorna null (o crea se vuoi)
+    console.log('❌ [syncUserFromAuth0] Utente non trovato né per auth0Id né per email')
+    return null
   }
 })
 
