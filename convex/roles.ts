@@ -258,7 +258,6 @@ export const deleteRole = mutation({
 // 🔧 MUTATION TEMPORANEA per fixare ruoli vecchi senza isActive
 export const fixOldRolesSchema = mutation({
   handler: async (ctx) => {
-    console.log("🔧 Fixing old roles without isActive field...");
     
     const allRoles = await ctx.db.query("roles").collect();
     
@@ -271,7 +270,6 @@ export const fixOldRolesSchema = mutation({
         await ctx.db.patch(role._id, {
           isActive: true,
         });
-        console.log(`✅ Fixed role: ${role.name}`);
         fixed++;
       } else {
         alreadyOk++;
@@ -280,7 +278,6 @@ export const fixOldRolesSchema = mutation({
       // Fix anche permissions se sono ancora ID invece di stringhe
       // @ts-ignore
       if (role.permissions && role.permissions.length > 0 && typeof role.permissions[0] !== 'string') {
-        console.log(`⚠️ Role "${role.name}" has old permission format (IDs). Converting...`);
         await ctx.db.patch(role._id, {
           permissions: role.name === "Amministratore" 
             ? ["full_access"]

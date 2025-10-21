@@ -406,7 +406,6 @@ export const syncClinicFromExternal = mutation({
       // Aggiorna clinica esistente
       await ctx.db.patch(existingClinic._id, clinicData)
       
-      console.log(`🔄 Clinica aggiornata: ${args.name} (External ID: ${args.externalClinicId})`)
       return existingClinic._id
     } else {
       // Crea nuova clinica
@@ -419,7 +418,6 @@ export const syncClinicFromExternal = mutation({
         },
       })
       
-      console.log(`✅ Nuova clinica creata: ${args.name} (External ID: ${args.externalClinicId})`)
       return clinicId
     }
   }
@@ -486,7 +484,6 @@ export const markClinicAsUnsyncedFromExternal = mutation({
       // Opzionalmente potresti aggiungere un campo per il motivo
     })
 
-    console.log(`🔴 Clinica marcata come non sincronizzata: ${clinic.name} (Motivo: ${reason || 'Non specificato'})`)
     return clinic._id
   }
 })

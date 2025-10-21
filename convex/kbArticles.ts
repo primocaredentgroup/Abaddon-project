@@ -241,7 +241,6 @@ export const createArticle = mutation({
       attachments: args.attachments || [],
     })
 
-    console.log(`✅ Articolo KB creato: ${args.title} da ${args.userEmail}`)
     return { articleId }
   }
 })
@@ -306,7 +305,6 @@ export const updateArticle = mutation({
 
     await ctx.db.patch(args.articleId, updates)
 
-    console.log(`✅ Articolo KB aggiornato: ${article.title}`)
     return { success: true }
   }
 })
@@ -337,7 +335,6 @@ export const deleteArticle = mutation({
     // Elimina articolo
     await ctx.db.delete(args.articleId)
 
-    console.log(`🗑️ Articolo KB eliminato da ${args.userEmail}`)
     return { success: true }
   }
 })
@@ -398,7 +395,6 @@ export const createSuggestion = mutation({
       }
     }
 
-    console.log(`💡 Nuovo suggerimento KB da ${args.userEmail}: ${args.title}`)
     return { suggestionId }
   }
 })
@@ -497,7 +493,6 @@ export const reviewSuggestion = mutation({
     })
 
     const suggestion = await ctx.db.get(args.suggestionId)
-    console.log(`✅ Suggerimento ${args.action === "approve" ? "approvato" : "rifiutato"}: ${suggestion?.title}`)
     
     return { success: true }
   }

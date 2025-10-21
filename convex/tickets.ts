@@ -108,11 +108,9 @@ export const getById = query({
     userEmail: v.optional(v.string()) // Per test temporaneo
   },
   handler: async (ctx, { id, userEmail }) => {
-    console.log(`🔍 getById chiamata per ticket ${id}`)
     
     const ticket = await ctx.db.get(id)
     if (!ticket) {
-      console.log(`❌ Ticket ${id} non trovato`)
       return null
     }
     
@@ -146,7 +144,6 @@ export const getById = query({
       assignee: ticket.assigneeId ? await ctx.db.get(ticket.assigneeId) : null,
     }
     
-    console.log(`✅ Ticket ${id} trovato: ${ticket.title}`)
     return result
   },
 })
@@ -157,7 +154,6 @@ export const getNudgedTickets = query({
     userEmail: v.optional(v.string()), // Per test temporaneo
   },
   handler: async (ctx, { userEmail }) => {
-    console.log('🔔 getNudgedTickets chiamata per agenti')
     
     // TEMPORARY: Per ora prendo l'utente con la tua email
     const user = await ctx.db
@@ -226,7 +222,6 @@ export const getNudgedTickets = query({
     )
 
     const nudgedCount = ticketsWithDetails.filter(t => (t.nudgeCount || 0) > 0).length
-    console.log(`✅ Trovati ${ticketsWithDetails.length} ticket da risolvere (${nudgedCount} sollecitati)`)
     return ticketsWithDetails
   },
 })
@@ -244,7 +239,6 @@ export const update: any = mutation({
     userEmail: v.optional(v.string()) // Per test temporaneo
   },
   handler: async (ctx, args): Promise<any> => {
-    console.log(`🔄 update chiamata per ticket ${args.id}:`, args)
     
     // TEMPORARY: Per ora prendo l'utente con la tua email
     const user = await ctx.db
@@ -288,7 +282,6 @@ export const update: any = mutation({
     // Aggiorna il ticket
     await ctx.db.patch(args.id, updateData)
 
-    console.log(`✅ Ticket ${args.id} aggiornato`)
     return { success: true }
   },
 })
@@ -301,7 +294,6 @@ export const changeAssignee: any = mutation({
     userEmail: v.optional(v.string()) // Per test temporaneo
   },
   handler: async (ctx, args): Promise<any> => {
-    console.log(`👤 changeAssignee chiamata per ticket ${args.ticketId}, nuovo assegnatario: ${args.newAssigneeId}`)
     
     // TEMPORARY: Per ora prendo l'utente con la tua email
     const currentUser = await ctx.db
@@ -350,7 +342,6 @@ export const changeAssignee: any = mutation({
     })
 
     const actionText = args.newAssigneeId ? "assegnato" : "rimossa assegnazione"
-    console.log(`✅ Ticket ${args.ticketId} ${actionText}`)
     
     return { 
       success: true, 
@@ -508,7 +499,6 @@ export const create = mutation({
     if (args.attributes && Object.keys(args.attributes).length > 0) {
       // Note: setTicketAttributes is not exported as internal, so we'll handle attributes differently
       // For now, we'll skip setting attributes in the create mutation
-      console.log("Attributes provided but not yet implemented for internal mutations")
     }
 
     // Log the creation
@@ -539,7 +529,6 @@ export const createWithAuth = mutation({
     userEmail: v.string(),
   },
   handler: async (ctx, args): Promise<{ ticketId: any, ticketNumber: number }> => {
-    console.log('🎫 createWithAuth chiamata con:', args)
     
     const user = await ctx.db
       .query("users")
@@ -550,7 +539,6 @@ export const createWithAuth = mutation({
       throw new ConvexError("Utente non trovato nel sistema")
     }
     
-    console.log('👤 Utente trovato:', { id: user._id, email: user.email, clinic: user.clinicId })
 
     // Verify category exists
     const category = await ctx.db.get(args.categoryId)
@@ -558,14 +546,12 @@ export const createWithAuth = mutation({
       throw new ConvexError("Categoria non trovata")
     }
     
-    console.log('📂 Categoria trovata:', { id: category._id, name: category.name })
 
     // Ottieni il prossimo numero ticket GLOBALE
     const ticketNumber: any = await ctx.runMutation(internal.counters.getNextNumber, {
       counterName: "tickets"
     })
     
-    console.log('🔢 Numero ticket assegnato:', ticketNumber)
 
     // Get clinic settings to check if public tickets are allowed
     const clinic = await ctx.db.get(user.clinicId)
@@ -592,7 +578,6 @@ export const createWithAuth = mutation({
       attributeCount: 0,
     })
 
-    console.log('✅ Ticket creato con ID:', ticketId, 'numero:', ticketNumber)
 
     // 🎯 ESEGUI I TRIGGER ATTIVI DELLA CLINICA
     const triggers = await ctx.db
@@ -601,10 +586,8 @@ export const createWithAuth = mutation({
       .filter((q) => q.eq(q.field("isActive"), true))
       .collect()
 
-    console.log(`🔍 Trovati ${triggers.length} trigger attivi per la clinica ${user.clinicId}`)
 
     for (const trigger of triggers) {
-      console.log(`🎯 Valutazione trigger: ${trigger.name}`, trigger.conditions)
       
       let conditionMet = false
 
@@ -613,16 +596,13 @@ export const createWithAuth = mutation({
         // Confronta con lo slug della categoria
         const categorySlug = category.slug
         conditionMet = categorySlug === trigger.conditions.value
-        console.log(`  ↳ Categoria match? ${categorySlug} === ${trigger.conditions.value} = ${conditionMet}`)
       } else if (trigger.conditions.type === 'status_change') {
         // Confronta con lo status del ticket (sempre "open" alla creazione)
         conditionMet = 'open' === trigger.conditions.value
-        console.log(`  ↳ Status match? open === ${trigger.conditions.value} = ${conditionMet}`)
       }
 
       // Se la condizione è soddisfatta, esegui le azioni
       if (conditionMet) {
-        console.log(`✅ Condizione soddisfatta! Eseguo azione: ${trigger.actions.type}`)
 
         if (trigger.actions.type === 'assign_user') {
           // Trova l'utente da assegnare per email
@@ -637,7 +617,6 @@ export const createWithAuth = mutation({
               assigneeId: assigneeUser._id,
               lastActivityAt: Date.now()
             })
-            console.log(`  ↳ Ticket assegnato a ${assigneeUser.email}`)
           } else {
             console.warn(`  ⚠️ Utente ${trigger.actions.value} non trovato`)
           }
@@ -647,10 +626,8 @@ export const createWithAuth = mutation({
             status: trigger.actions.value,
             lastActivityAt: Date.now()
           })
-          console.log(`  ↳ Status cambiato in ${trigger.actions.value}`)
         }
       } else {
-        console.log(`❌ Condizione NON soddisfatta, salto trigger`)
       }
     }
 
@@ -667,8 +644,6 @@ export const getMyCreatedWithAuth = query({
     userEmail: v.string(),
   },
   handler: async (ctx, args) => {
-    console.log('📋 getMyCreatedWithAuth chiamata con:', args)
-    
     const user = await ctx.db
       .query("users")
       .filter((q) => q.eq(q.field("email"), args.userEmail))
@@ -677,8 +652,6 @@ export const getMyCreatedWithAuth = query({
     if (!user) {
       throw new ConvexError("Utente non trovato nel sistema")
     }
-    
-    console.log('👤 Utente trovato per query ticket:', { id: user._id, email: user.email })
 
     // UTENTE: vede solo i ticket che ha creato LUI
     let query = ctx.db
@@ -690,8 +663,6 @@ export const getMyCreatedWithAuth = query({
     }
 
     const tickets = await query.collect()
-    
-    console.log(`📊 Trovati ${tickets.length} ticket creati dall'utente ${user.email}`)
     
     // Sort by creation time (most recent first)  
     tickets.sort((a, b) => b._creationTime - a._creationTime)
@@ -731,7 +702,6 @@ export const getMyClinicTicketsWithAuth = query({
     userEmail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    console.log('🏥 getMyClinicTicketsWithAuth chiamata con:', args)
     
     const user = await ctx.db
       .query("users")
@@ -750,10 +720,8 @@ export const getMyClinicTicketsWithAuth = query({
     if (userClinics.length === 0) {
       // Fallback: usa la clinica principale per backward compatibility
       const clinicIds = [user.clinicId]
-      console.log(`🔄 Fallback: usando clinica principale ${user.clinicId}`)
     } else {
       const clinicIds = userClinics.map(uc => uc.clinicId)
-      console.log(`🏥 Utente ha accesso a ${clinicIds.length} cliniche:`, clinicIds)
     }
 
     const clinicIds = userClinics.length > 0 
@@ -774,7 +742,6 @@ export const getMyClinicTicketsWithAuth = query({
       relevantTickets = relevantTickets.filter(ticket => ticket.status === args.status)
     }
 
-    console.log(`📊 Trovati ${relevantTickets.length} ticket pubblici nelle cliniche dell'utente`)
 
     // Sort by creation time (most recent first)
     relevantTickets.sort((a, b) => b._creationTime - a._creationTime)
@@ -814,8 +781,6 @@ export const getMyAssignedTicketsWithAuth = query({
     userEmail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    console.log('🎯 getMyAssignedTicketsWithAuth chiamata con:', args)
-    
     const user = await ctx.db
       .query("users")
       .filter((q) => q.eq(q.field("email"), args.userEmail))
@@ -833,8 +798,6 @@ export const getMyAssignedTicketsWithAuth = query({
     }
 
     const tickets = await query.collect()
-    
-    console.log(`🎯 Trovati ${tickets.length} ticket assegnati all'agente ${user.email}`)
 
     // Sort by creation time (most recent first)
     tickets.sort((a, b) => b._creationTime - a._creationTime)
@@ -1004,7 +967,6 @@ export const assignToMe = mutation({
     userEmail: v.string()
   },
   handler: async (ctx, { ticketId, userEmail }) => {
-    console.log('🙋 assignToMe chiamata per ticket:', ticketId, 'da utente:', userEmail)
 
     // Trova l'utente corrente
     const user = await ctx.db
@@ -1034,7 +996,6 @@ export const assignToMe = mutation({
 
     // Verifica che il ticket non sia già assegnato all'utente
     if (ticket.assigneeId === user._id) {
-      console.log('⚠️ Ticket già assegnato a questo utente')
       return { success: true, alreadyAssigned: true }
     }
 
@@ -1044,7 +1005,6 @@ export const assignToMe = mutation({
       lastActivityAt: Date.now(),
     })
 
-    console.log('✅ Ticket assegnato con successo a:', userEmail)
 
     return { 
       success: true, 
@@ -1790,7 +1750,6 @@ export const getByTicketNumber = query({
 
     const targetClinicId = clinicId || user.clinicId
     
-    console.log(`🔍 Cercando ticket #${ticketNumber} nella clinica ${targetClinicId}`)
 
     const ticket = await ctx.db
       .query("tickets")
@@ -1809,7 +1768,6 @@ export const getByTicketNumber = query({
       ticket.assigneeId ? ctx.db.get(ticket.assigneeId) : null,
     ])
 
-    console.log(`✅ Ticket #${ticketNumber} trovato:`, { id: ticket._id, title: ticket.title })
 
     return {
       ...ticket,
@@ -1823,13 +1781,11 @@ export const getByTicketNumber = query({
 export const addTicketNumbersToExistingTickets = internalMutation({
   args: {},
   handler: async (ctx) => {
-    console.log('🔧 Inizio migration: aggiunta ticketNumber GLOBALI ai ticket esistenti...')
     
     // Trova tutti i ticket senza ticketNumber
     const allTickets = await ctx.db.query("tickets").collect()
     const ticketsWithoutNumber = allTickets.filter(ticket => !ticket.ticketNumber)
     
-    console.log(`📊 Trovati ${ticketsWithoutNumber.length} ticket da aggiornare`)
     
     if (ticketsWithoutNumber.length === 0) {
       return { message: "Nessun ticket da aggiornare", updated: 0 }
@@ -1848,7 +1804,6 @@ export const addTicketNumbersToExistingTickets = internalMutation({
         ticketNumber: globalTicketNumber
       })
       
-      console.log(`✅ Ticket ${ticket._id} aggiornato con numero GLOBALE #${globalTicketNumber}`)
       globalTicketNumber++
       totalUpdated++
     }
@@ -1861,7 +1816,6 @@ export const addTicketNumbersToExistingTickets = internalMutation({
     
     for (const oldCounter of oldCounters) {
       await ctx.db.delete(oldCounter._id)
-      console.log(`🗑️ Rimosso contatore per-clinica obsoleto: ${oldCounter.clinicId}`)
     }
     
     // Crea/aggiorna il contatore GLOBALE unico
@@ -1876,15 +1830,12 @@ export const addTicketNumbersToExistingTickets = internalMutation({
         clinicId: undefined as any, // Contatore globale
         currentValue: globalTicketNumber - 1, // L'ultimo numero usato
       })
-      console.log(`📝 Contatore GLOBALE creato con valore: ${globalTicketNumber - 1}`)
     } else {
       await ctx.db.patch(globalCounter._id, {
         currentValue: globalTicketNumber - 1,
       })
-      console.log(`🔄 Contatore GLOBALE aggiornato a: ${globalTicketNumber - 1}`)
     }
     
-    console.log(`✅ Migration GLOBALE completata! ${totalUpdated} ticket con numeri globali`)
     
     return { 
       message: `Migration GLOBALE completata! ${totalUpdated} ticket con numeri globali unici`, 
@@ -1897,7 +1848,6 @@ export const addTicketNumbersToExistingTickets = internalMutation({
 export const resetAndMigrateToGlobalNumbers: any = mutation({
   args: {},
   handler: async (ctx): Promise<any> => {
-    console.log('🔄 RESET e migration verso numeri GLOBALI...')
     
     // STEP 1: Rimuovi ticketNumber da tutti i ticket
     const allTickets = await ctx.db.query("tickets").collect()
@@ -1908,19 +1858,16 @@ export const resetAndMigrateToGlobalNumbers: any = mutation({
         })
       }
     }
-    console.log(`🗑️ Rimossi ticketNumber da ${allTickets.length} ticket`)
     
     // STEP 2: Rimuovi tutti i contatori esistenti
     const allCounters = await ctx.db.query("counters").collect()
     for (const counter of allCounters) {
       await ctx.db.delete(counter._id)
     }
-    console.log(`🗑️ Rimossi ${allCounters.length} contatori esistenti`)
     
     // STEP 3: Esegui la migration globale
     const result: any = await ctx.runMutation(internal.tickets.addTicketNumbersToExistingTickets, {})
     
-    console.log('✅ Reset e migration GLOBALE completata!')
     return result
   },
 })
@@ -1930,7 +1877,6 @@ export const runTicketNumberMigration: any = mutation({
   args: {},
   handler: async (ctx): Promise<any> => {
     // Per ora nessun controllo admin, poi aggiungeremo
-    console.log('🚀 Avvio migration ticket numbers via API...')
     
     const result: any = await ctx.runMutation(internal.tickets.addTicketNumbersToExistingTickets, {})
     

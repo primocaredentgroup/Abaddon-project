@@ -11,7 +11,6 @@ export const getByTicketId = query({
     userEmail: v.optional(v.string()) // Per test temporaneo
   },
   handler: async (ctx, { ticketId, userEmail }) => {
-    console.log(`💬 getTicketComments chiamata per ticket ${ticketId}`)
     
     // TEMPORARY: Per ora prendo l'utente con la tua email
     const user = await ctx.db
@@ -63,7 +62,6 @@ export const getByTicketId = query({
       })
     )
 
-    console.log(`✅ Trovati ${commentsWithAuthor.length} commenti per ticket ${ticketId}`)
     return commentsWithAuthor
   },
 })
@@ -77,7 +75,6 @@ export const add = mutation({
     userEmail: v.optional(v.string()) // Per test temporaneo
   },
   handler: async (ctx, { ticketId, content, isInternal, userEmail }) => {
-    console.log(`💬 addComment chiamata per ticket ${ticketId}:`, { content: content.substring(0, 50) + '...' })
     
     // TEMPORARY: Per ora prendo l'utente con la tua email
     const user = await ctx.db
@@ -118,7 +115,6 @@ export const add = mutation({
       lastActivityAt: Date.now(),
     })
 
-    console.log(`✅ Commento aggiunto con ID: ${commentId}`)
     return commentId
   },
 })
@@ -130,7 +126,6 @@ export const nudge = mutation({
     userEmail: v.optional(v.string()) // Per test temporaneo
   },
   handler: async (ctx, { ticketId, userEmail }) => {
-    console.log(`🔔 nudgeTicket chiamata per ticket ${ticketId}`)
     
     // TEMPORARY: Per ora prendo l'utente con la tua email
     const user = await ctx.db
@@ -175,7 +170,6 @@ export const nudge = mutation({
       isInternal: false,
     })
 
-    console.log(`✅ Ticket ${ticketId} sollecitato! Conteggio: ${(ticket.nudgeCount || 0) + 1}`)
     return { 
       success: true, 
       nudgeCount: (ticket.nudgeCount || 0) + 1 
@@ -189,7 +183,6 @@ export const getNudgedTickets = query({
     userEmail: v.optional(v.string()) // Per test temporaneo
   },
   handler: async (ctx, { userEmail }) => {
-    console.log(`🔔 getNudgedTickets chiamata`)
     
     // TEMPORARY: Per ora prendo l'utente con la tua email
     const user = await ctx.db
@@ -237,7 +230,6 @@ export const getNudgedTickets = query({
       })
     )
 
-    console.log(`✅ Trovati ${ticketsWithData.length} ticket sollecitati`)
     return ticketsWithData
   },
 })

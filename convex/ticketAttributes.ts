@@ -10,7 +10,6 @@ export const create = mutation({
     value: v.any(),
   },
   handler: async (ctx, { ticketId, attributeId, value }) => {
-    console.log(`💾 [ticketAttributes.create] Creating attribute for ticket ${ticketId}`);
     
     // Verifica se esiste già un attributo per questo ticket e attributeId
     const existing = await ctx.db
@@ -23,7 +22,6 @@ export const create = mutation({
     if (existing) {
       // Update existing
       await ctx.db.patch(existing._id, { value });
-      console.log(`✅ [ticketAttributes.create] Updated existing attribute`);
       return existing._id;
     } else {
       // Create new
@@ -32,7 +30,6 @@ export const create = mutation({
         attributeId,
         value,
       });
-      console.log(`✅ [ticketAttributes.create] Created new attribute`);
       return id;
     }
   },
@@ -44,14 +41,12 @@ export const getByTicket = query({
     ticketId: v.id("tickets"),
   },
   handler: async (ctx, { ticketId }) => {
-    console.log(`📋 [ticketAttributes.getByTicket] Getting attributes for ticket ${ticketId}`);
     
     const ticketAttributes = await ctx.db
       .query("ticketAttributes")
       .withIndex("by_ticket", (q) => q.eq("ticketId", ticketId))
       .collect();
 
-    console.log(`✅ [ticketAttributes.getByTicket] Found ${ticketAttributes.length} attributes`);
 
     // Ottieni i dettagli degli attributi
     const attributesWithDetails = await Promise.all(
@@ -75,11 +70,9 @@ export const update = mutation({
     value: v.any(),
   },
   handler: async (ctx, { ticketAttributeId, value }) => {
-    console.log(`📝 [ticketAttributes.update] Updating attribute ${ticketAttributeId}`);
     
     await ctx.db.patch(ticketAttributeId, { value });
     
-    console.log(`✅ [ticketAttributes.update] Attribute updated`);
     return ticketAttributeId;
   },
 });
@@ -90,11 +83,9 @@ export const remove = mutation({
     ticketAttributeId: v.id("ticketAttributes"),
   },
   handler: async (ctx, { ticketAttributeId }) => {
-    console.log(`🗑️ [ticketAttributes.remove] Removing attribute ${ticketAttributeId}`);
     
     await ctx.db.delete(ticketAttributeId);
     
-    console.log(`✅ [ticketAttributes.remove] Attribute removed`);
     return ticketAttributeId;
   },
 });

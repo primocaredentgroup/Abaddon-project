@@ -15,36 +15,10 @@ export default function Home() {
   const { user: auth0User, isAuthenticated: auth0IsAuthenticated, isLoading: auth0IsLoading } = useAuth0()
   const router = useRouter()
 
-  // Debug dettagliato
-  useEffect(() => {
-    console.log('🔍 Home state:', { 
-      // Convex auth state
-      convexIsAuthenticated: isAuthenticated, 
-      convexAuthLoading, 
-      // Auth0 auth state
-      auth0IsAuthenticated,
-      auth0IsLoading,
-      auth0HasUser: !!auth0User,
-      // Our custom hook state
-      userLoading, 
-      hasUser: !!user,
-      userRole: user?.ruolo,
-      url: typeof window !== 'undefined' ? window.location.href : 'N/A'
-    })
-  }, [isAuthenticated, convexAuthLoading, userLoading, user, auth0IsAuthenticated, auth0IsLoading, auth0User])
-
-  // Debug specifico per vedere quando Auth0 ha completato
-  useEffect(() => {
-    const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
-    if (params.has('code')) {
-      console.log('✅ Auth0 callback ricevuto con code:', params.get('code')?.substring(0, 10) + '...')
-    }
-  }, [])
 
   // Redirect quando l'utente è autenticato con Convex e i dati sono caricati
   useEffect(() => {
     if (!convexAuthLoading && isAuthenticated && !userLoading && user) {
-      console.log('🚀 Redirect: utente pronto', user.ruolo)
       
       // Redirect basato sul ruolo
       if (user.ruolo === 'agent' || user.roleName === 'Agente') {

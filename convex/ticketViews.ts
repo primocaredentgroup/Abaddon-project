@@ -9,7 +9,6 @@ export const getViewsByClinic = query({
     clinicId: v.id("clinics"),
   },
   handler: async (ctx, { clinicId }) => {
-    console.log(`👁️ getViewsByClinic chiamata per clinica ${clinicId}`)
     
     const views = await ctx.db
       .query("ticketViews")
@@ -24,7 +23,6 @@ export const getViewsByClinic = query({
       })
     )
     
-    console.log(`✅ Trovate ${viewsWithCreators.length} viste per la clinica`)
     return viewsWithCreators
   }
 })
@@ -36,7 +34,6 @@ export const getAvailableViewsForUser = query({
     clinicId: v.id("clinics"),
   },
   handler: async (ctx, { userEmail, clinicId }) => {
-    console.log(`👁️ getAvailableViewsForUser chiamata per ${userEmail}`)
     
     // Trova l'utente
     const user = await ctx.db
@@ -84,7 +81,6 @@ export const getAvailableViewsForUser = query({
       })
     )
     
-    console.log(`✅ Trovate ${viewsWithCreators.length} viste disponibili per l'utente`)
     return viewsWithCreators
   }
 })
@@ -131,7 +127,6 @@ export const createView = mutation({
     assignedToRoles: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
-    console.log(`🆕 createView chiamata`)
     
     // Trova l'utente creatore
     const creator = await ctx.db
@@ -169,7 +164,6 @@ export const createView = mutation({
       isActive: true,
     })
     
-    console.log(`✅ Vista ${viewId} creata`)
     return viewId
   }
 })
@@ -201,7 +195,6 @@ export const updateView = mutation({
     isActive: v.optional(v.boolean()),
   },
   handler: async (ctx, { viewId, userEmail, ...updates }) => {
-    console.log(`🔄 updateView chiamata per ${viewId}`)
     
     // Trova l'utente
     const user = await ctx.db
@@ -228,7 +221,6 @@ export const updateView = mutation({
     // Aggiorna la vista
     await ctx.db.patch(viewId, updates)
     
-    console.log(`✅ Vista ${viewId} aggiornata`)
     return viewId
   }
 })
@@ -240,7 +232,6 @@ export const deleteView = mutation({
     userEmail: v.string(),
   },
   handler: async (ctx, { viewId, userEmail }) => {
-    console.log(`🗑️ deleteView chiamata per ${viewId}`)
     
     // Trova l'utente
     const user = await ctx.db
@@ -267,7 +258,6 @@ export const deleteView = mutation({
     // Elimina la vista
     await ctx.db.delete(viewId)
     
-    console.log(`✅ Vista ${viewId} eliminata`)
     return { success: true }
   }
 })
@@ -279,7 +269,6 @@ export const getTicketsByView = query({
     userEmail: v.string(),
   },
   handler: async (ctx, { viewId, userEmail }) => {
-    console.log(`🎫 getTicketsByView chiamata per vista ${viewId}`)
     
     // Trova l'utente
     const user = await ctx.db
@@ -352,7 +341,6 @@ export const getTicketsByView = query({
       }
     }
     
-    console.log(`✅ Trovati ${tickets.length} ticket per la vista`)
     return tickets
   }
 })

@@ -18,8 +18,6 @@ export const getTicketsToManage = query({
     userEmail: v.string(),
   },
   handler: async (ctx, { userEmail }) => {
-    console.log('🎯 getTicketsToManage chiamata per:', userEmail)
-
     // Trova l'utente
     const user = await ctx.db
       .query("users")
@@ -33,21 +31,17 @@ export const getTicketsToManage = query({
     // Verifica che sia un agente (controllo basato su permessi)
     const role = await ctx.db.get(user.roleId)
     if (!role || !canManageAllTickets(role)) {
-      console.log('⚠️  Utente non ha permessi di gestione ticket')
       return []
     }
 
     // Ottieni le competenze dell'utente
     const userCompetencies = user.categoryCompetencies || []
-    console.log('📚 Competenze utente:', userCompetencies.length)
 
     // Trova tutti i ticket della clinica
     const allTickets = await ctx.db
       .query("tickets")
       .withIndex("by_clinic", (q) => q.eq("clinicId", user.clinicId))
       .collect()
-
-    console.log('📊 Totale ticket nella clinica:', allTickets.length)
 
     // Filtra i ticket secondo le regole
     const ticketsToManage = allTickets.filter(ticket => {
@@ -78,8 +72,6 @@ export const getTicketsToManage = query({
 
       return false
     })
-
-    console.log('✅ Ticket da gestire:', ticketsToManage.length)
 
     // Popola i dettagli
     const populatedTickets = await Promise.all(

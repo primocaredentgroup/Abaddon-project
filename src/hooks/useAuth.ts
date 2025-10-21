@@ -34,14 +34,12 @@ export function useAuth() {
     async function syncAuth0Id() {
       if (auth0User && auth0User.sub && auth0User.email && !hasSynced) {
         try {
-          console.log('🔄 [useAuth] Sincronizzazione auth0Id...');
           await syncUser({
             auth0Id: auth0User.sub,
             email: auth0User.email,
             name: auth0User.name
           });
           setHasSynced(true);
-          console.log('✅ [useAuth] Sincronizzazione completata');
         } catch (error) {
           console.error('❌ [useAuth] Errore sync:', error);
         }
@@ -66,8 +64,6 @@ export function useAuth() {
   // Sync Auth0 user with Convex user data
   useEffect(() => {
     if (auth0User && convexUser) {
-      console.log('✅ Utente autenticato:', convexUser);
-      
       setUser({
         id: convexUser._id,
         nome: auth0User.email?.split('@')[0] || 'Utente',
@@ -107,7 +103,6 @@ export function useAuth() {
 
   const refreshUser = () => {
     // Convex query will auto-refresh
-    console.log('🔄 User data will refresh automatically via Convex');
   };
 
   return {

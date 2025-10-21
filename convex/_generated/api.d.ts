@@ -45,6 +45,7 @@ import type * as ticketsToManage from "../ticketsToManage.js";
 import type * as triggers from "../triggers.js";
 import type * as userClinics from "../userClinics.js";
 import type * as userCompetencies from "../userCompetencies.js";
+import type * as userSocieties from "../userSocieties.js";
 import type * as users from "../users.js";
 
 /**
@@ -88,6 +89,7 @@ declare const fullApi: ApiFromModules<{
   triggers: typeof triggers;
   userClinics: typeof userClinics;
   userCompetencies: typeof userCompetencies;
+  userSocieties: typeof userSocieties;
   users: typeof users;
 }>;
 export declare const api: FilterApi<

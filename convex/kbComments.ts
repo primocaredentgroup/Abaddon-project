@@ -99,7 +99,6 @@ export const addComment = mutation({
       }
     }
 
-    console.log(`💬 Commento aggiunto da ${args.userEmail} su articolo ${args.articleId}`)
     return { commentId }
   }
 })
@@ -139,7 +138,6 @@ export const editComment = mutation({
       editedAt: Date.now(),
     })
 
-    console.log(`✏️ Commento modificato da ${args.userEmail}`)
     return { success: true }
   }
 })
@@ -187,7 +185,6 @@ export const deleteComment = mutation({
 
     await ctx.db.delete(args.commentId)
 
-    console.log(`🗑️ Commento eliminato da ${args.userEmail}`)
     return { success: true }
   }
 })

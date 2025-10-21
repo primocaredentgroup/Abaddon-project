@@ -9,7 +9,6 @@ export const getSLARulesByClinic = query({
     clinicId: v.id("clinics"),
   },
   handler: async (ctx, { clinicId }) => {
-    console.log(`🎯 getSLARulesByClinic chiamata per clinica ${clinicId}`)
     
     const rules = await ctx.db
       .query("slaRules")
@@ -27,7 +26,6 @@ export const getSLARulesByClinic = query({
       })
     )
     
-    console.log(`✅ Trovate ${rulesWithCreators.length} SLA rules per la clinica`)
     return rulesWithCreators
   }
 })
@@ -57,7 +55,6 @@ export const createSLARule = mutation({
     creatorEmail: v.string(),
   },
   handler: async (ctx, args) => {
-    console.log(`🆕 createSLARule chiamata`)
     
     // Trova l'utente creatore
     const creator = await ctx.db
@@ -86,7 +83,6 @@ export const createSLARule = mutation({
       createdBy: creator._id,
     })
     
-    console.log(`✅ SLA rule ${ruleId} creata`)
     return ruleId
   }
 })
@@ -101,7 +97,6 @@ export const updateSLARule = mutation({
     isActive: v.optional(v.boolean()),
   },
   handler: async (ctx, { ruleId, ...updates }) => {
-    console.log(`🔄 updateSLARule chiamata per ${ruleId}`)
     
     // Verifica che la rule esista
     const rule = await ctx.db.get(ruleId)
@@ -112,7 +107,6 @@ export const updateSLARule = mutation({
     // Aggiorna la rule
     await ctx.db.patch(ruleId, updates)
     
-    console.log(`✅ SLA rule ${ruleId} aggiornata`)
     return ruleId
   }
 })
@@ -123,7 +117,6 @@ export const deleteSLARule = mutation({
     ruleId: v.id("slaRules"),
   },
   handler: async (ctx, { ruleId }) => {
-    console.log(`🗑️ deleteSLARule chiamata per ${ruleId}`)
     
     // Verifica che la rule esista
     const rule = await ctx.db.get(ruleId)
@@ -134,7 +127,6 @@ export const deleteSLARule = mutation({
     // Elimina la rule
     await ctx.db.delete(ruleId)
     
-    console.log(`✅ SLA rule ${ruleId} eliminata`)
     return { success: true }
   }
 })
@@ -181,7 +173,6 @@ export const approveSLARule = mutation({
       isActive: true // Attiva automaticamente la rule approvata
     })
     
-    console.log(`✅ SLA rule ${ruleId} approvata da ${approverEmail}`)
     return ruleId
   }
 })
@@ -225,7 +216,6 @@ export const rejectSLARule = mutation({
       isActive: false // Disattiva la rule rifiutata
     })
     
-    console.log(`❌ SLA rule ${ruleId} rifiutata da ${approverEmail}`)
     return ruleId
   }
 })

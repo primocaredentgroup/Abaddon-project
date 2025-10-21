@@ -32,7 +32,7 @@ export default function NewTicketPage() {
   
   // Estrai clinicId e userId in modo sicuro
   const clinicId = (authUser as any)?.clinicId || (authUser as any)?.clinic?._id
-  const userId = (authUser as any)?._id
+  const userId = (authUser as any)?.id // 🔥 FIX: useAuth ritorna "id" invece di "_id"
   
   // Query per ottenere le categorie pubbliche filtrate per società dell'utente
   const categoriesData = useQuery(
@@ -72,6 +72,7 @@ export default function NewTicketPage() {
   
   // Actions & Mutations
   const suggestCategory = useAction(api.agent.suggestCategory);
+  const saveAgentFeedback = useMutation(api.agent.saveAgentFeedback); // 🆕 Feedback agent
   const createTicketAttribute = useMutation(api.ticketAttributes.create);
   
   // Debounced description for agent analysis
@@ -89,20 +90,19 @@ export default function NewTicketPage() {
   // 🤖 Effect: Analizza la descrizione con l'Agent AI
   useEffect(() => {
     const analyzeDescription = async () => {
-      if (!debouncedDescription || debouncedDescription.length < 10 || !clinicId || !formData.title) {
+      if (!debouncedDescription || debouncedDescription.length < 10 || !clinicId || !userId || !formData.title) {
         return;
       }
       
       setIsAnalyzing(true);
       try {
-        console.log('🤖 Agent analyzing description...');
         const suggestion = await suggestCategory({
           title: formData.title,
           description: debouncedDescription,
-          clinicId: clinicId as any
+          clinicId: clinicId as any,
+          userId: userId as any // 🆕 Passa userId per filtro società
         });
         
-        console.log('✅ Agent suggestion:', suggestion);
         setAgentSuggestion(suggestion);
         setShowSuggestion(true);
       } catch (error) {
@@ -113,7 +113,7 @@ export default function NewTicketPage() {
     };
     
     analyzeDescription();
-  }, [debouncedDescription, formData.title, clinicId, suggestCategory]);
+  }, [debouncedDescription, formData.title, clinicId, userId, suggestCategory]);
   
   // 📝 Effect: Carica attributi obbligatori quando cambia la categoria
   useEffect(() => {
@@ -160,6 +160,34 @@ export default function NewTicketPage() {
       setShowSuggestion(false);
     }
   };
+  
+  // 🚫 Handler: Rifiuta suggerimento dell'agent
+  const handleRejectSuggestion = async () => {
+    if (agentSuggestion?.recommendedCategory && userId && clinicId) {
+      try {
+        // Salva feedback negativo
+        await saveAgentFeedback({
+          userId: userId as any,
+          clinicId: clinicId as any,
+          suggestedCategoryId: agentSuggestion.recommendedCategory._id,
+          suggestedCategoryName: agentSuggestion.recommendedCategory.name,
+          ticketTitle: formData.title,
+          ticketDescription: formData.description,
+          feedbackType: "wrong_category" as const,
+          confidence: agentSuggestion.confidence,
+        });
+        
+        setShowSuggestion(false);
+        setAgentSuggestion(null);
+      } catch (error) {
+        console.error('❌ Errore salvataggio feedback:', error);
+      }
+    } else {
+      // Se non ci sono dati sufficienti, chiudi semplicemente il suggerimento
+      setShowSuggestion(false);
+      setAgentSuggestion(null);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -201,13 +229,6 @@ export default function NewTicketPage() {
         return;
       }
       
-      console.log('🎫 Creando ticket con dati:', {
-        title: formData.title,
-        description: formData.description,
-        categoryId: formData.category,
-        attributes: attributeValues
-      });
-      
       // Crea il ticket su Convex con autenticazione
       const result = await createTicket({
         title: formData.title.trim(),
@@ -217,11 +238,9 @@ export default function NewTicketPage() {
         userEmail: currentUserEmail, // Email utente autenticato (validato sopra)
       });
       
-      console.log('✅ Ticket creato:', result);
       
       // 💾 Salva gli attributi
       if (requiredAttributes.length > 0) {
-        console.log('💾 Salvando attributi...');
         for (const attr of requiredAttributes) {
           const value = attributeValues[attr.slug];
           if (value) {
@@ -232,7 +251,6 @@ export default function NewTicketPage() {
             });
           }
         }
-        console.log('✅ Attributi salvati!');
       }
       
       // Mostra messaggio di successo con numero ticket
@@ -338,16 +356,28 @@ export default function NewTicketPage() {
                           </div>
                         </div>
                         
-                        <Button
-                          type="button"
-                          onClick={handleApplySuggestion}
-                          variant="primary"
-                          size="sm"
-                          className="flex items-center space-x-1"
-                        >
-                          <Check className="h-4 w-4" />
-                          <span>Applica</span>
-                        </Button>
+                        <div className="flex space-x-2">
+                          <Button
+                            type="button"
+                            onClick={handleRejectSuggestion}
+                            variant="outline"
+                            size="sm"
+                            className="flex items-center space-x-1"
+                          >
+                            <X className="h-4 w-4" />
+                            <span>Rifiuta</span>
+                          </Button>
+                          <Button
+                            type="button"
+                            onClick={handleApplySuggestion}
+                            variant="primary"
+                            size="sm"
+                            className="flex items-center space-x-1"
+                          >
+                            <Check className="h-4 w-4" />
+                            <span>Applica</span>
+                          </Button>
+                        </div>
                       </div>
                       
                       {agentSuggestion.reasoning && (
@@ -372,6 +402,13 @@ export default function NewTicketPage() {
                     required
                     disabled={isLoadingCategories}
                   />
+                  
+                  {/* 💡 Messaggio quando suggerimento è rifiutato */}
+                  {agentSuggestion === null && formData.description.length > 10 && !formData.category && (
+                    <p className="text-sm text-gray-600 italic mt-2">
+                      💡 Seleziona manualmente la categoria più appropriata per la tua richiesta
+                    </p>
+                  )}
                   
                   {/* 📝 Dynamic Required Attributes */}
                   {requiredAttributes.length > 0 && (

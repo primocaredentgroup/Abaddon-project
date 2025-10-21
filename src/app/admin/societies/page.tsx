@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
+import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
@@ -17,7 +18,7 @@ interface Society {
   code: string;
   description?: string;
   isActive: boolean;
-  createdBy: string;
+  createdBy?: string;
   createdAt: number;
 }
 
@@ -112,7 +113,8 @@ export default function SocietiesPage() {
   const inactiveSocieties = societies.filter(s => !s.isActive);
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
+    <AppLayout>
+      <div className="container mx-auto p-6 space-y-6">
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold">Gestione Società</h1>
@@ -309,6 +311,7 @@ export default function SocietiesPage() {
           </CardContent>
         </Card>
       )}
-    </div>
+      </div>
+    </AppLayout>
   );
 }

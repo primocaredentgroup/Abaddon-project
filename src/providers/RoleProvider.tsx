@@ -43,7 +43,6 @@ export function RoleProvider({ children }: RoleProviderProps) {
 
   const setRole = (newRole: UserRole) => {
     // Per ora non implementiamo il cambio ruolo dinamico
-    console.log('Cambio ruolo non implementato:', newRole);
   };
 
   const value = {

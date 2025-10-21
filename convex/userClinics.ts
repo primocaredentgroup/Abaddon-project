@@ -134,7 +134,6 @@ export const addUserToClinic = mutation({
       joinedAt: Date.now(),
     })
 
-    console.log(`✅ Utente ${user.email} aggiunto alla clinica ${clinic.name} come ${role}`)
     return relationId
   },
 })
@@ -165,7 +164,6 @@ export const removeUserFromClinic = mutation({
       isActive: false,
     })
 
-    console.log(`✅ Utente rimosso dalla clinica`)
     return relation._id
   },
 })
@@ -215,7 +213,6 @@ export const getUserRoleInClinic = query({
 export const migrateExistingUsersToMultiClinic = mutation({
   args: {},
   handler: async (ctx) => {
-    console.log('🔄 Migrazione utenti verso sistema multi-clinica...')
 
     // Ottieni tutti gli utenti
     const allUsers = await ctx.db.query("users").collect()
@@ -243,11 +240,9 @@ export const migrateExistingUsersToMultiClinic = mutation({
         })
 
         migrated++
-        console.log(`✅ Utente ${user.email} migrato con ruolo ${clinicRole}`)
       }
     }
 
-    console.log(`✅ Migrazione completata: ${migrated} utenti migrati`)
     return { migrated }
   },
 })

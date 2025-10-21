@@ -695,7 +695,6 @@ export const getPendingCategories = query({
 // 🔧 Mutation per fixare categorie esistenti senza defaultTicketVisibility
 export const fixExistingCategoriesVisibility = mutation({
   handler: async (ctx) => {
-    console.log("🔧 [fixExistingCategoriesVisibility] Starting fix for existing categories...");
     
     const allCategories = await ctx.db.query("categories").collect();
     
@@ -708,7 +707,6 @@ export const fixExistingCategoriesVisibility = mutation({
         await ctx.db.patch(category._id, {
           defaultTicketVisibility: "public", // Default a public per categorie esistenti
         });
-        console.log(`✅ Fixed category: ${category.name} -> defaultTicketVisibility: public`);
         fixed++;
       } else {
         alreadyOk++;

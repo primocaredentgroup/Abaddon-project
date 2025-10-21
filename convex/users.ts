@@ -294,8 +294,6 @@ export const syncUserFromAuth0 = mutation({
     name: v.optional(v.string()),
   },
   handler: async (ctx, { auth0Id, email, name }) => {
-    console.log('🔄 [syncUserFromAuth0] Inizio sync per:', { auth0Id, email })
-    
     // 1. Cerca per auth0Id
     let user = await ctx.db
       .query("users")
@@ -303,7 +301,6 @@ export const syncUserFromAuth0 = mutation({
       .unique()
     
     if (user) {
-      console.log('✅ [syncUserFromAuth0] Utente trovato per auth0Id, aggiorno lastLogin')
       // Trovato per auth0Id corretto, aggiorna solo lastLogin
       await ctx.db.patch(user._id, { 
         lastLoginAt: Date.now(),
@@ -319,10 +316,6 @@ export const syncUserFromAuth0 = mutation({
       .unique()
     
     if (user) {
-      console.log('⚠️ [syncUserFromAuth0] Utente trovato per email ma con auth0Id diverso!')
-      console.log('   Vecchio auth0Id:', user.auth0Id)
-      console.log('   Nuovo auth0Id:', auth0Id)
-      
       // Trovato per email ma con auth0Id diverso → AGGIORNA!
       await ctx.db.patch(user._id, { 
         auth0Id,  // 🔑 Aggiorna con l'ID corretto da Auth0
@@ -330,12 +323,10 @@ export const syncUserFromAuth0 = mutation({
         name: name || user.name
       })
       
-      console.log('✅ [syncUserFromAuth0] auth0Id aggiornato con successo!')
       return user._id
     }
     
     // 3. Se non esiste proprio, ritorna null (o crea se vuoi)
-    console.log('❌ [syncUserFromAuth0] Utente non trovato né per auth0Id né per email')
     return null
   }
 })
@@ -464,8 +455,6 @@ export const getAvailableAgents = query({
     userEmail: v.optional(v.string()) // Per test temporaneo
   },
   handler: async (ctx, { clinicId, userEmail }) => {
-    console.log(`👥 getAvailableAgents chiamata per clinica ${clinicId}`)
-    
     // TEMPORARY: Per ora prendo l'utente con la tua email per controlli permessi
     const currentUser = await ctx.db
       .query("users")
@@ -526,7 +515,6 @@ export const getAvailableAgents = query({
       })
     )
 
-    console.log(`✅ Trovati ${agentsWithDetails.length} agenti disponibili`)
     return agentsWithDetails
   },
 });

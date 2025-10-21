@@ -189,6 +189,56 @@ export const updateAgentConfig = mutation({
   },
 });
 
+// Salva feedback negativo sull'agent (quando l'utente rifiuta un suggerimento)
+export const saveAgentFeedback = mutation({
+  args: {
+    userId: v.id("users"),
+    clinicId: v.id("clinics"),
+    suggestedCategoryId: v.id("categories"),
+    suggestedCategoryName: v.string(),
+    ticketTitle: v.string(),
+    ticketDescription: v.string(),
+    feedbackType: v.union(
+      v.literal("wrong_category"),
+      v.literal("general_error"),
+      v.literal("positive")
+    ),
+    confidence: v.optional(v.number()),
+    correctCategoryId: v.optional(v.id("categories")),
+    correctCategoryName: v.optional(v.string()),
+    userComment: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    // Crea thread fittizio per il feedback (o usa threadId se disponibile)
+    const threadId = await ctx.db.insert("agentThreads", {
+      userId: args.userId,
+      clinicId: args.clinicId,
+      title: `Feedback: ${args.ticketTitle}`,
+      isActive: true,
+      messageCount: 0,
+      lastMessageAt: Date.now(),
+    });
+
+    const feedbackId = await ctx.db.insert("agentFeedback", {
+      threadId,
+      userId: args.userId,
+      clinicId: args.clinicId,
+      suggestedCategoryId: args.suggestedCategoryId,
+      suggestedCategoryName: args.suggestedCategoryName,
+      correctCategoryId: args.correctCategoryId,
+      correctCategoryName: args.correctCategoryName,
+      ticketTitle: args.ticketTitle,
+      ticketDescription: args.ticketDescription,
+      feedbackType: args.feedbackType,
+      userComment: args.userComment,
+      confidence: args.confidence,
+      wasResolved: false,
+    });
+
+    return feedbackId;
+  }
+});
+
 // =================== ACTIONS (AI) ===================
 
 // Cerca ticket
@@ -252,8 +302,9 @@ export const suggestCategory = action({
     title: v.string(),
     description: v.string(),
     clinicId: v.id("clinics"),
+    userId: v.id("users"), // 🆕 Aggiungi userId per filtrare per società
   },
-  handler: async (ctx, { title, description, clinicId }): Promise<{
+  handler: async (ctx, { title, description, clinicId, userId }): Promise<{
     recommendedCategory: any;
     confidence: number;
     explanation: string;
@@ -267,7 +318,21 @@ export const suggestCategory = action({
     }
 
     // Ottieni categorie della clinica
-    const categories = await ctx.runQuery(api.categories.getCategoriesByClinic, { clinicId });
+    const allCategories = await ctx.runQuery(api.categories.getCategoriesByClinic, { clinicId });
+    
+    // 🆕 Ottieni società dell'utente per filtrare categorie
+    const userSocieties = await ctx.runQuery(api.userSocieties.getUserSocieties, { userId });
+    const userSocietyIds = userSocieties?.map((us: any) => us.societyId) || [];
+    
+    // 🆕 Filtra categorie per società
+    const categories = allCategories.filter((cat: any) => {
+      // Se categoria non ha società, è pubblica per tutti
+      if (!cat.societyIds || cat.societyIds.length === 0) {
+        return true;
+      }
+      // Se categoria ha società, verifica che l'utente ne faccia parte
+      return cat.societyIds.some((societyId: any) => userSocietyIds.includes(societyId));
+    });
     
     // Ottieni esempi di ticket precedenti per apprendimento (usando query interna)
     const recentTickets = await ctx.runQuery(internal.tickets.getByClinicInternal, {
@@ -380,7 +445,6 @@ export const createTicketWithSuggestion = action({
     success: boolean;
     url: string;
   }> => {
-    console.log("🎫 [createTicketWithSuggestion] Creating ticket with attributes:", attributes);
     
     // Ottieni config agent
     const config = await ctx.runQuery(api.agent.getAgentConfig, { clinicId });
@@ -397,18 +461,15 @@ export const createTicketWithSuggestion = action({
       visibility: "private", // default
     });
 
-    console.log("✅ [createTicketWithSuggestion] Ticket created:", result.ticketId);
 
     // 🆕 Se ci sono attributi, salvali nella tabella ticketAttributes
     if (attributes && Object.keys(attributes).length > 0) {
-      console.log("💾 [createTicketWithSuggestion] Saving attributes to database...");
       
       // Ottieni gli attributi della categoria per recuperare gli ID
       const categoryAttributes = await ctx.runQuery(api.categoryAttributes.getByCategory, {
         categoryId,
       });
       
-      console.log("📋 [createTicketWithSuggestion] Category attributes:", categoryAttributes);
       
       // Per ogni attributo raccolto, salvalo
       for (const [slug, value] of Object.entries(attributes)) {
@@ -419,13 +480,10 @@ export const createTicketWithSuggestion = action({
             attributeId: attr._id,
             value,
           });
-          console.log(`✅ Saved attribute ${slug}: ${value}`);
         } else {
-          console.log(`⚠️ Attribute ${slug} not found in category`);
         }
       }
       
-      console.log("✅ [createTicketWithSuggestion] All attributes saved!");
     }
 
     return {
@@ -452,7 +510,6 @@ export const chatWithAgent = action({
     success: boolean;
     error?: string;
   }> => {
-    console.log("🚀 [chatWithAgent] START - userMessage:", userMessage);
     
     // Ottieni configurazione
     const config = await ctx.runQuery(api.agent.getAgentConfig, { clinicId });
@@ -476,13 +533,11 @@ export const chatWithAgent = action({
       .filter(m => m.role === "assistant")
       .sort((a, b) => b._creationTime - a._creationTime)[0];
     
-    console.log("🔍 [chatWithAgent] Last assistant metadata:", lastAssistantMessage?.metadata);
     
     let intent: any;
     
     // Se stiamo aspettando attributi, NON analizzare l'intento con AI
     if (lastAssistantMessage?.metadata?.awaitingAttributes === true) {
-      console.log("📝 [chatWithAgent] DETECTED awaiting attributes! Parsing user message as attribute values...");
       intent = {
         type: "provide_attributes" as const,
         attributeValues: userMessage, // Il messaggio dell'utente contiene i valori
@@ -499,7 +554,6 @@ export const chatWithAgent = action({
       switch (intent.type) {
         case "correction":
           // 🆕 L'utente dice che l'agent ha sbagliato
-          console.log("❌ [correction] User says agent was wrong!");
           
           const lastSuggestion = lastAssistantMessage?.metadata?.suggestedCategory;
           const lastTicketInfo = lastAssistantMessage?.metadata?.suggestedTicket;
@@ -522,7 +576,6 @@ export const chatWithAgent = action({
 
         case "fallback_help":
           // 🆕 L'utente non sa cosa fare
-          console.log("🆘 [fallback_help] User needs guidance!");
           
           responseContent = `😅 Ops! Non ho capito bene cosa intendi.\n\n`;
           responseContent += `Posso aiutarti con:\n`;
@@ -551,9 +604,9 @@ export const chatWithAgent = action({
             title: intent.title!,
             description: intent.description!,
             clinicId,
+            userId, // 🆕 Aggiungi userId per filtro società
           });
           
-          console.log("📝 [suggest_category] Attributi obbligatori ricevuti:", suggestion.requiredAttributes);
           
           responseContent = formatCategorySuggestion(suggestion);
           metadata.suggestedCategory = suggestion.recommendedCategory?._id;
@@ -564,28 +617,18 @@ export const chatWithAgent = action({
           // 🆕 SE CI SONO ATTRIBUTI OBBLIGATORI, SETTA IL FLAG!
           if (suggestion.requiredAttributes && suggestion.requiredAttributes.length > 0) {
             metadata.awaitingAttributes = true;
-            console.log("📝 [suggest_category] ✅ SET awaitingAttributes = true");
           }
           
-          console.log("📝 [suggest_category] Metadata salvato:", {
-            category: metadata.suggestedCategory,
-            requiredAttrsCount: metadata.requiredAttributes.length,
-            awaitingAttributes: metadata.awaitingAttributes
-          });
           break;
 
         case "provide_attributes":
           // 🆕 L'utente sta fornendo i valori degli attributi obbligatori
-          console.log("📥 [provide_attributes] User provided attribute values:", intent.attributeValues);
           
           const attrMetadata = lastAssistantMessage?.metadata;
           const requiredAttrs = attrMetadata?.requiredAttributes || [];
           const attrCategoryId = attrMetadata?.suggestedCategory;
           const attrTicket = attrMetadata?.suggestedTicket;
           
-          console.log("📥 [provide_attributes] Required attributes:", requiredAttrs);
-          console.log("📥 [provide_attributes] Category:", attrCategoryId);
-          console.log("📥 [provide_attributes] Ticket info:", attrTicket);
           
           if (!attrCategoryId || !attrTicket || requiredAttrs.length === 0) {
             responseContent = "😅 Mi dispiace, qualcosa è andato storto. Non riesco a recuperare le informazioni necessarie. Ricominciamo?";
@@ -606,7 +649,6 @@ export const chatWithAgent = action({
             }
           });
           
-          console.log("📥 [provide_attributes] Collected attributes:", collectedAttrs);
           
           // Crea il ticket con gli attributi
           const attrTicketResult = await ctx.runAction(api.agent.createTicketWithSuggestion, {
@@ -637,17 +679,11 @@ export const chatWithAgent = action({
             .filter(m => m.role === "assistant")
             .sort((a, b) => b._creationTime - a._creationTime)[0];
           
-          console.log("🎫 [create_ticket] Last assistant message metadata:", lastAssistantMessageForTicket?.metadata);
           
           const categoryId = intent.categoryId || lastAssistantMessageForTicket?.metadata?.suggestedCategory;
           const title = intent.title || lastAssistantMessageForTicket?.metadata?.suggestedTicket?.title;
           const description = intent.description || lastAssistantMessageForTicket?.metadata?.suggestedTicket?.description;
           const requiredAttributes = (lastAssistantMessageForTicket?.metadata as any)?.requiredAttributes || [];
-          
-          console.log("🎫 [create_ticket] Attributi obbligatori recuperati:", {
-            count: requiredAttributes.length,
-            attributes: requiredAttributes
-          });
           
           // 🆕 Se ci sono attributi obbligatori, chiediamoli
           if (requiredAttributes.length > 0 && categoryId && title && description) {
@@ -752,13 +788,11 @@ async function analyzeUserIntent(message: string): Promise<{
   correctionType?: "wrong_category" | "general_error";
   userFeedback?: string;
 }> {
-  console.log("🔍 [analyzeUserIntent] START - Message:", message);
   const messageLower = message.toLowerCase();
 
   // 🆕 CORREZIONE: L'utente sta dicendo che l'agent ha sbagliato
   const correctionKeywords = /\b(no|sbagliato|non è corretto|non è questa|errato|non va bene|è sbagliato)\b/i;
   if (correctionKeywords.test(messageLower) && messageLower.length < 30) {
-    console.log("✅ [analyzeUserIntent] Matched: correction (user says agent is wrong)");
     return {
       type: "correction",
       correctionType: "wrong_category", // assume categoria sbagliata per ora
@@ -769,7 +803,6 @@ async function analyzeUserIntent(message: string): Promise<{
   // 🆕 RICHIESTA DI AIUTO: L'utente non sa cosa fare
   const helpKeywords = /\b(non capisco|aiuto|non so|cosa posso fare|come funziona|help)\b/i;
   if (helpKeywords.test(messageLower)) {
-    console.log("✅ [analyzeUserIntent] Matched: fallback_help (user needs guidance)");
     return {
       type: "fallback_help",
     };
@@ -777,7 +810,6 @@ async function analyzeUserIntent(message: string): Promise<{
 
   // Keyword semplici per azioni esplicite (veloci, senza AI)
   if (messageLower.includes("cerca ticket") || messageLower.includes("trova ticket")) {
-    console.log("✅ [analyzeUserIntent] Matched: search_ticket (keyword)");
 
     const queryMatch = message.match(/cerca|trova\s+ticket\s+(.+)/i);
     return {
@@ -792,17 +824,14 @@ async function analyzeUserIntent(message: string): Promise<{
   
   if (confirmWords.test(messageLower) && messageLower.length < 15) {
     // Solo se il messaggio è breve (conferma secca)
-    console.log("✅ [analyzeUserIntent] Matched: create_ticket (keyword)");
     return { type: "create_ticket" };
   }
   
   if (createTicketPhrase.test(messageLower)) {
-    console.log("✅ [analyzeUserIntent] Matched: create_ticket (explicit phrase)");
     return { type: "create_ticket" };
   }
 
   // Per tutto il resto, usa l'AI per capire l'intento
-  console.log("🤖 [analyzeUserIntent] Using AI to analyze intent...");
   try {
     const intentPrompt = `Analizza questo messaggio di un utente di una clinica dentistica e determina l'intento.
 
@@ -825,16 +854,12 @@ RISPONDI SOLO con un JSON in questo formato:
   }
 }`;
 
-    console.log("🤖 Analyzing intent for message:", message);
     const aiResponse = await call_llm(intentPrompt);
-    console.log("🤖 AI Response:", aiResponse);
     
     const parsed = JSON.parse(aiResponse.replace(/```json\n?|\n?```/g, '').trim());
-    console.log("🤖 Parsed intent:", parsed);
 
     // Se l'utente sta segnalando un problema → suggerisci categoria
     if (parsed.intent === "report_problem") {
-      console.log("✅ Detected report_problem, suggesting category");
       return {
         type: "suggest_category",
         title: message.substring(0, 100), // Prime 100 caratteri come titolo
@@ -844,14 +869,12 @@ RISPONDI SOLO con un JSON in questo formato:
 
     // Se vuole cercare ticket
     if (parsed.intent === "search_ticket") {
-      console.log("✅ Detected search_ticket");
       return {
         type: "search_ticket",
         query: message,
       };
     }
     
-    console.log("ℹ️ Intent is general, using general conversation");
 
   } catch (error) {
     console.error("❌ [analyzeUserIntent] Errore analisi intento AI:", error);
@@ -859,7 +882,6 @@ RISPONDI SOLO con un JSON in questo formato:
   }
 
   // Fallback: conversazione generale
-  console.log("ℹ️ [analyzeUserIntent] Returning GENERAL (fallback)");
   return { type: "general" };
 }
 

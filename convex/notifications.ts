@@ -132,7 +132,6 @@ export const markAllAsRead = mutation({
       })
     }
 
-    console.log(`📬 ${unreadNotifications.length} notifiche segnate come lette per ${args.userEmail}`)
     return { count: unreadNotifications.length }
   }
 })
@@ -192,7 +191,6 @@ export const createNotification = mutation({
       isRead: false,
     })
 
-    console.log(`🔔 Notifica creata per utente ${args.userId}: ${args.title}`)
     return { notificationId }
   }
 })

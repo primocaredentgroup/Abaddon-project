@@ -87,25 +87,18 @@ export default function TicketDetailPage() {
 
   // Debug log
   React.useEffect(() => {
-    console.log('🔍 DEBUG MACRO - ticket:', ticket);
-    console.log('🔍 DEBUG MACRO - user:', user);
-    console.log('🔍 DEBUG MACRO - clinicId:', clinicId);
-    console.log('🔍 DEBUG MACRO - canManage:', user?.roleName === 'Agente' || user?.roleName === 'Amministratore');
     
     if (ticket?.category && clinicId) {
-      console.log('✅ Ricerca macro per:', {
         clinicId,
         categorySlug: ticket.category.slug,
         categoryName: ticket.category.name
       });
     } else {
-      console.log('❌ Non cerco macro perché:', {
         hasTicketCategory: !!ticket?.category,
         hasClinicId: !!clinicId
       });
     }
     if (macros !== undefined) {
-      console.log('📋 Macro trovate:', macros?.length || 0, macros);
     }
   }, [ticket, clinicId, macros, user]);
 
@@ -230,7 +223,6 @@ export default function TicketDetailPage() {
         status: newStatus,
         userEmail: user?.email || ""
       });
-      console.log("✅ Stato aggiornato:", newStatus);
     } catch (error: any) {
       console.error("❌ Errore:", error.message);
     }
@@ -244,7 +236,6 @@ export default function TicketDetailPage() {
         assigneeId: (newAssigneeId && newAssigneeId.trim() !== "") ? newAssigneeId as any : undefined,
         userEmail: user?.email || ""
       });
-      console.log("✅ Assegnatario aggiornato:", newAssigneeId);
     } catch (error: any) {
       console.error("❌ Errore:", error.message);
     }
@@ -257,7 +248,6 @@ export default function TicketDetailPage() {
         categoryId: newCategoryId as any,
         userEmail: user?.email || ""
       });
-      console.log("✅ Categoria aggiornata");
     } catch (error: any) {
       console.error("❌ Errore:", error.message);
     }
@@ -270,7 +260,6 @@ export default function TicketDetailPage() {
         clinicId: newClinicId as any,
         userEmail: user?.email || ""
       });
-      console.log("✅ Clinica aggiornata");
     } catch (error: any) {
       console.error("❌ Errore:", error.message);
     }

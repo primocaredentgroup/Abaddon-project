@@ -9,7 +9,6 @@ export const getMacrosByClinic = query({
     clinicId: v.id("clinics"),
   },
   handler: async (ctx, { clinicId }) => {
-    console.log(`🎬 getMacrosByClinic chiamata per clinica ${clinicId}`)
     
     const macros = await ctx.db
       .query("macros")
@@ -24,7 +23,6 @@ export const getMacrosByClinic = query({
       })
     )
     
-    console.log(`✅ Trovate ${macrosWithCreators.length} macro per la clinica`)
     return macrosWithCreators
   }
 })
@@ -36,7 +34,6 @@ export const getMacrosByCategory = query({
     categorySlug: v.string(),
   },
   handler: async (ctx, { clinicId, categorySlug }) => {
-    console.log(`🎬 getMacrosByCategory chiamata per clinica ${clinicId}, categoria ${categorySlug}`)
     
     const macros = await ctx.db
       .query("macros")
@@ -54,7 +51,6 @@ export const getMacrosByCategory = query({
       })
     )
     
-    console.log(`✅ Trovate ${macrosWithCreators.length} macro attive per categoria ${categorySlug}`)
     return macrosWithCreators
   }
 })
@@ -67,7 +63,6 @@ export const executeMacro = mutation({
     userEmail: v.string(),
   },
   handler: async (ctx, { macroId, ticketId, userEmail }) => {
-    console.log(`🎬 executeMacro chiamata: macro ${macroId} su ticket ${ticketId}`)
     
     // Verifica che l'utente esista
     const user = await ctx.db
@@ -95,11 +90,9 @@ export const executeMacro = mutation({
       throw new ConvexError("Ticket non trovato")
     }
     
-    console.log(`✅ Esecuzione macro "${macro.name}" con ${macro.actions.length} azioni`)
     
     // Esegui tutte le azioni della macro
     for (const action of macro.actions) {
-      console.log(`  ↳ Eseguo azione: ${action.type}`)
       
       if (action.type === 'add_comment') {
         // Aggiungi commento al ticket
@@ -109,7 +102,6 @@ export const executeMacro = mutation({
           content: action.value,
           isInternal: false,
         })
-        console.log(`    ✅ Commento aggiunto`)
       } 
       else if (action.type === 'change_status') {
         // Cambia lo stato del ticket
@@ -117,7 +109,6 @@ export const executeMacro = mutation({
           status: action.value,
           lastActivityAt: Date.now()
         })
-        console.log(`    ✅ Stato cambiato in ${action.value}`)
       }
       // Aggiungi altri tipi di azioni quando necessario
     }
@@ -127,7 +118,6 @@ export const executeMacro = mutation({
       lastActivityAt: Date.now()
     })
     
-    console.log(`🎉 Macro "${macro.name}" eseguita con successo`)
     return { success: true, macroName: macro.name }
   }
 })
@@ -147,7 +137,6 @@ export const createMacro = mutation({
     userEmail: v.string(),
   },
   handler: async (ctx, args) => {
-    console.log(`🎬 createMacro chiamata: ${args.name}`)
     
     // Trova l'utente
     const user = await ctx.db
@@ -171,7 +160,6 @@ export const createMacro = mutation({
       requiresApproval: false,
     })
     
-    console.log(`✅ Macro creata con ID ${macroId}`)
     return macroId
   }
 })
@@ -192,7 +180,6 @@ export const updateMacro = mutation({
     userEmail: v.string(),
   },
   handler: async (ctx, args) => {
-    console.log(`🎬 updateMacro chiamata per macro ${args.macroId}`)
     
     // Verifica che l'utente esista
     const user = await ctx.db
@@ -221,7 +208,6 @@ export const updateMacro = mutation({
     // Aggiorna la macro
     await ctx.db.patch(args.macroId, updates)
     
-    console.log(`✅ Macro ${args.macroId} aggiornata`)
     return args.macroId
   }
 })
@@ -233,7 +219,6 @@ export const deleteMacro = mutation({
     userEmail: v.string(),
   },
   handler: async (ctx, args) => {
-    console.log(`🎬 deleteMacro chiamata per macro ${args.macroId}`)
     
     // Verifica che l'utente esista
     const user = await ctx.db
@@ -254,7 +239,6 @@ export const deleteMacro = mutation({
     // Elimina la macro
     await ctx.db.delete(args.macroId)
     
-    console.log(`✅ Macro ${args.macroId} eliminata`)
     return { success: true }
   }
 })
@@ -301,7 +285,6 @@ export const approveMacro = mutation({
       isActive: true // Attiva automaticamente la macro approvata
     })
     
-    console.log(`✅ Macro ${macroId} approvata da ${approverEmail}`)
     return macroId
   }
 })
@@ -345,7 +328,6 @@ export const rejectMacro = mutation({
       isActive: false // Disattiva la macro rifiutata
     })
     
-    console.log(`❌ Macro ${macroId} rifiutata da ${approverEmail}`)
     return macroId
   }
 })

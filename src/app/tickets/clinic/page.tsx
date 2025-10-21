@@ -205,7 +205,6 @@ export default function ClinicTicketsPage() {
   };
 
   const updateTicketStatus = (id: string, newStatus: string) => {
-    console.log(`🔄 Aggiornamento status ticket ${id} a ${newStatus}`);
     // TODO: Implementare con mutation Convex
     setEditingStatusId(null);
   };
