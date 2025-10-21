@@ -5,6 +5,7 @@ import { useQuery, useMutation } from 'convex/react'
 import { api } from '../../../../convex/_generated/api'
 import { useAuth } from '@/hooks/useAuth'
 import { AppLayout } from '@/components/layout/AppLayout'
+import { hasFullAccess } from '@/lib/permissions'
 import { Button } from '@/components/ui/Button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
@@ -51,8 +52,8 @@ export default function ApprovalsPage() {
   
   // Mutations
   // NOTA: Usando versioni Simple per sviluppo (senza controllo autenticazione)
-  const approveTrigger = useMutation(api.triggers.approveTriggerSimple)
-  const rejectTrigger = useMutation(api.triggers.rejectTriggerSimple)
+  const approveTrigger = useMutation(api.triggers.approveTrigger)
+  const rejectTrigger = useMutation(api.triggers.rejectTrigger)
   const approveMacro = useMutation(api.macros.approveMacro)
   const rejectMacro = useMutation(api.macros.rejectMacro)
   const approveSLARule = useMutation(api.slaRules.approveSLARule)
@@ -158,7 +159,8 @@ export default function ApprovalsPage() {
     )
   }
   
-  if (user.role?.name !== 'Amministratore') {
+  // Controlla i permessi di amministratore
+  if (!hasFullAccess(user.role)) {
     return (
       <AppLayout>
         <div className="flex items-center justify-center min-h-screen">

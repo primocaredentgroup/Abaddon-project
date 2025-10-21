@@ -117,6 +117,9 @@ export default defineSchema({
     
     // Soft delete
     deletedAt: v.optional(v.number()),        // timestamp per soft delete
+    
+    // 🆕 Società support - se null, la categoria è visibile a tutte le società
+    societyIds: v.optional(v.array(v.id("societies"))), // Array di società per cui questa categoria è visibile
   })
     .index("by_clinic", ["clinicId"])
     .index("by_department", ["departmentId"])
@@ -352,6 +355,9 @@ export default defineSchema({
     rejectedAt: v.optional(v.number()), // Quando è stato rifiutato
     rejectionReason: v.optional(v.string()), // Motivo del rifiuto
     createdBy: v.id("users"),
+    
+    // 🆕 Società support - se null, il trigger si applica a tutte le società
+    societyIds: v.optional(v.array(v.id("societies"))), // Array di società per cui questo trigger è applicabile
   })
     .index("by_clinic", ["clinicId"])
     .index("by_creator", ["createdBy"])
@@ -569,5 +575,31 @@ export default defineSchema({
     .index("by_clinic", ["clinicId"])
     .index("by_public", ["isPublic"])
     .index("by_personal", ["isPersonal"])
+    .index("by_active", ["isActive"]),
+
+  // Societies table - Nuova tabella per gestire le società
+  societies: defineTable({
+    name: v.string(),
+    code: v.string(), // Codice univoco società
+    description: v.optional(v.string()),
+    isActive: v.boolean(),
+    createdBy: v.optional(v.id("users")), // Optional per supportare creazione senza auth
+    createdAt: v.number(),
+  })
+    .index("by_code", ["code"])
+    .index("by_active", ["isActive"])
+    .index("by_creator", ["createdBy"]),
+
+  // User-Society relationships (many-to-many) - Tabella di collegamento
+  userSocieties: defineTable({
+    userId: v.id("users"),
+    societyId: v.id("societies"),
+    assignedBy: v.id("users"), // Chi ha assegnato la società all'utente
+    assignedAt: v.number(),
+    isActive: v.boolean(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_society", ["societyId"])
+    .index("by_user_society", ["userId", "societyId"])
     .index("by_active", ["isActive"]),
 })

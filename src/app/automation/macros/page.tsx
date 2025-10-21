@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/Textarea'
 import { useQuery, useMutation } from 'convex/react'
 import { api } from '../../../../convex/_generated/api'
 import { useAuth } from '@/hooks/useAuth'
+import { canManageAllTickets } from '@/lib/permissions'
 import { 
   Zap,
   Plus,
@@ -219,8 +220,8 @@ export default function MacrosPage() {
     return <div>Caricamento...</div>
   }
 
-  // Controllo permessi: solo agenti e admin possono gestire le macro
-  if (user.role?.name !== 'Agente' && user.role?.name !== 'Amministratore') {
+  // Controllo permessi: basato sui permessi del ruolo
+  if (!canManageAllTickets(user.role)) {
     return (
       <AppLayout>
         <div className="flex items-center justify-center min-h-screen">
@@ -228,7 +229,7 @@ export default function MacrosPage() {
             <AlertTriangle className="h-16 w-16 text-red-500 mx-auto mb-4" />
             <h1 className="text-2xl font-bold text-gray-900 mb-2">Accesso Negato</h1>
             <p className="text-gray-600">Non hai i permessi per gestire le macro.</p>
-            <p className="text-sm text-gray-500 mt-2">Richiesti ruoli: Agente o Amministratore</p>
+            <p className="text-sm text-gray-500 mt-2">Richiesti permessi: gestione ticket</p>
           </div>
         </div>
       </AppLayout>

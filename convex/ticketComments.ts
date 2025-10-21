@@ -2,6 +2,7 @@ import { v } from "convex/values"
 import { mutation, query, internalMutation } from "./_generated/server"
 import { ConvexError } from "convex/values"
 import type { Id } from "./_generated/dataModel"
+import { canManageAllTickets } from "./lib/permissions"
 
 // Query per ottenere tutti i commenti di un ticket
 export const getByTicketId = query({
@@ -200,9 +201,9 @@ export const getNudgedTickets = query({
       throw new ConvexError("Utente non trovato")
     }
 
-    // Solo agenti/admin possono vedere i solleciti
+    // Solo agenti/admin possono vedere i solleciti (controllo basato su permessi)
     const role = await ctx.db.get(user.roleId)
-    if (role?.name !== 'agent' && role?.name !== 'admin') {
+    if (!canManageAllTickets(role)) {
       return [] // Utenti normali non vedono solleciti
     }
 

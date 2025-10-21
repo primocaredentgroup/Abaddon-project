@@ -4,6 +4,7 @@ import { ConvexError } from "convex/values"
 import { getCurrentUser } from "./lib/utils"
 import { GoogleGenerativeAI } from "@google/generative-ai"
 import { api, internal } from "./_generated/api"
+import { hasFullAccess, isAdminOrAgent } from "./lib/permissions"
 
 // Initialize Google Gemini
 const gemini = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY!);
@@ -161,8 +162,8 @@ export const updateAgentConfig = mutation({
     const role = await ctx.db.get(currentUser.roleId);
     const userWithRole = { ...currentUser, role };
 
-    // Verifica che sia admin
-    if (userWithRole.role?.name !== "Amministratore") {
+    // Verifica che sia admin (controllo basato su permessi)
+    if (!hasFullAccess(userWithRole.role)) {
       throw new ConvexError("Solo gli amministratori possono configurare l'agent");
     }
 
@@ -320,7 +321,7 @@ Formato di risposta JSON:
       // Ottieni attributi obbligatori per la categoria suggerita
       let requiredAttributes: any[] = [];
       if (recommendedCategory) {
-        requiredAttributes = await ctx.runQuery(api.categoryAttributes.getByCategorySimple, {
+        requiredAttributes = await ctx.runQuery(api.categoryAttributes.getByCategory, {
           categoryId: recommendedCategory._id,
           showInCreation: true,
         }).then((attrs: any[]) => attrs.filter(attr => attr.required));
@@ -343,7 +344,7 @@ Formato di risposta JSON:
       let requiredAttributes: any[] = [];
       if (mostUsedCategory) {
         try {
-          requiredAttributes = await ctx.runQuery(api.categoryAttributes.getByCategorySimple, {
+          requiredAttributes = await ctx.runQuery(api.categoryAttributes.getByCategory, {
             categoryId: mostUsedCategory._id,
             showInCreation: true,
           }).then((attrs: any[]) => attrs.filter(attr => attr.required));
@@ -403,7 +404,7 @@ export const createTicketWithSuggestion = action({
       console.log("💾 [createTicketWithSuggestion] Saving attributes to database...");
       
       // Ottieni gli attributi della categoria per recuperare gli ID
-      const categoryAttributes = await ctx.runQuery(api.categoryAttributes.getByCategorySimple, {
+      const categoryAttributes = await ctx.runQuery(api.categoryAttributes.getByCategory, {
         categoryId,
       });
       
@@ -960,46 +961,5 @@ Sono qui per rendere il tuo lavoro più semplice ed efficiente! Rispondi sempre 
     }
 
     return existing._id;
-  },
-});
-
-// Mutation semplificata per aggiornamento senza autenticazione (per sviluppo)
-// NOTA: Questa è una versione temporanea per lo sviluppo
-// In produzione, usare updateAgentConfig che richiede autenticazione admin
-export const updateAgentConfigSimple = mutation({
-  args: {
-    clinicId: v.id("clinics"),
-    userId: v.id("users"),
-    settings: v.object({
-      canSearchTickets: v.boolean(),
-      canSuggestCategories: v.boolean(),
-      canCreateTickets: v.boolean(),
-      canAccessUserData: v.boolean(),
-      canAccessClinicsData: v.boolean(),
-      temperature: v.number(),
-      maxTokens: v.number(),
-      systemPrompt: v.string(),
-    }),
-  },
-  handler: async (ctx, { clinicId, userId, settings }) => {
-    const existingConfig = await ctx.db
-      .query("agentConfig")
-      .withIndex("by_clinic", (q) => q.eq("clinicId", clinicId))
-      .unique();
-
-    if (existingConfig) {
-      await ctx.db.patch(existingConfig._id, {
-        settings,
-        lastUpdatedBy: userId,
-      });
-      return existingConfig._id;
-    } else {
-      return await ctx.db.insert("agentConfig", {
-        clinicId,
-        isEnabled: true,
-        settings,
-        lastUpdatedBy: userId,
-      });
-    }
   },
 });

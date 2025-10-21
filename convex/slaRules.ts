@@ -1,6 +1,7 @@
 import { v } from "convex/values"
 import { query, mutation } from "./_generated/server"
 import { ConvexError } from "convex/values"
+import { hasFullAccess } from "./lib/permissions"
 
 // Query per ottenere tutte le SLA rules di una clinica
 export const getSLARulesByClinic = query({
@@ -155,9 +156,9 @@ export const approveSLARule = mutation({
       throw new ConvexError("Approvatore non trovato")
     }
     
-    // Verifica che l'utente sia admin
+    // Verifica che l'utente sia admin (controllo basato su permessi)
     const role = await ctx.db.get(approver.roleId)
-    if (!role || role.name !== 'Amministratore') {
+    if (!role || !hasFullAccess(role)) {
       throw new ConvexError("Solo gli amministratori possono approvare le SLA rules")
     }
     
@@ -203,9 +204,9 @@ export const rejectSLARule = mutation({
       throw new ConvexError("Approvatore non trovato")
     }
     
-    // Verifica che l'utente sia admin
+    // Verifica che l'utente sia admin (controllo basato su permessi)
     const role = await ctx.db.get(approver.roleId)
-    if (!role || role.name !== 'Amministratore') {
+    if (!role || !hasFullAccess(role)) {
       throw new ConvexError("Solo gli amministratori possono rifiutare le SLA rules")
     }
     

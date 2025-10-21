@@ -1,6 +1,7 @@
 import { v } from "convex/values"
 import { query } from "./_generated/server"
 import { ConvexError } from "convex/values"
+import { canManageAllTickets } from "./lib/permissions"
 
 /**
  * Query "Ticket da Gestire" per agenti
@@ -29,10 +30,10 @@ export const getTicketsToManage = query({
       throw new ConvexError("Utente non trovato")
     }
 
-    // Verifica che sia un agente
+    // Verifica che sia un agente (controllo basato su permessi)
     const role = await ctx.db.get(user.roleId)
-    if (!role || (role.name !== "Agente" && role.name !== "Amministratore")) {
-      console.log('⚠️  Utente non è agente o admin')
+    if (!role || !canManageAllTickets(role)) {
+      console.log('⚠️  Utente non ha permessi di gestione ticket')
       return []
     }
 

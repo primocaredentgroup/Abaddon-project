@@ -30,13 +30,14 @@ export default function NewTicketPage() {
   // Ottieni l'email dell'utente corrente (necessario per le mutation)
   const currentUserEmail = authUser?.email || user?.email;
   
-  // Estrai clinicId in modo sicuro (potrebbe essere authUser.clinicId o authUser.clinic._id)
+  // Estrai clinicId e userId in modo sicuro
   const clinicId = (authUser as any)?.clinicId || (authUser as any)?.clinic?._id
+  const userId = (authUser as any)?._id
   
-  // Query per ottenere le categorie pubbliche da Convex
+  // Query per ottenere le categorie pubbliche filtrate per società dell'utente
   const categoriesData = useQuery(
-    api.categories.getPublicCategories,
-    clinicId ? { clinicId } : "skip"
+    api.categories.getPublicCategoriesByUserSocieties,
+    (clinicId && userId) ? { clinicId, userId } : "skip"
   );
   
   // Trasforma le categorie nel formato atteso dal Select
@@ -78,7 +79,7 @@ export default function NewTicketPage() {
   
   // Query per attributi obbligatori della categoria selezionata
   const categoryAttributes = useQuery(
-    api.categoryAttributes.getByCategorySimple,
+    api.categoryAttributes.getByCategory,
     formData.category ? { 
       categoryId: formData.category as any,
       showInCreation: true 

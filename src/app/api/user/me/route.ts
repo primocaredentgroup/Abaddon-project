@@ -65,26 +65,13 @@ export async function GET(request: NextRequest) {
       email: userEmail
     });
 
-    if (!user) {
-      // Crea nuovo utente in Convex
-      console.log('🆕 Creando nuovo utente in Convex');
-      
-      const userId = await convex.mutation(api.users.createUserSimple, {
-        email: userEmail,
-        nome: userName.split(' ')[0] || 'Utente',
-        cognome: userName.split(' ').slice(1).join(' ') || 'Auth0',
-        ruolo: 'user' // Ruolo di default
-      });
-
-      user = await convex.query(api.users.getUserById, { userId });
-      console.log('✅ Utente creato in Convex con ID:', userId);
-    } else {
-      // Aggiorna ultimo accesso
-      console.log('👋 Utente esistente trovato, aggiornando ultimo accesso');
-      await convex.mutation(api.users.updateLastAccess, { 
-        userId: user._id 
-      });
-    }
+    // Ottieni o crea utente usando la mutation auth
+    console.log('🔍 Recupero/creazione utente in Convex');
+    user = await convex.mutation(api.auth.getOrCreateUser, {
+      auth0Id: userId,
+      email: userEmail,
+      name: userName
+    });
 
     // Ottieni i dati completi dell'utente (inclusi clinic e role)
     const fullUser = await convex.query(api.users.getUserById, { 

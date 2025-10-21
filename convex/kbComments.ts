@@ -1,6 +1,7 @@
 import { v } from "convex/values"
 import { mutation, query } from "./_generated/server"
 import { ConvexError } from "convex/values"
+import { isAdminOrAgent } from "./lib/permissions"
 
 // Get commenti per articolo
 export const getCommentsByArticle = query({
@@ -168,9 +169,9 @@ export const deleteComment = mutation({
 
     const role = await ctx.db.get(user.roleId)
     const isAuthor = comment.authorId === user._id
-    const isAdmin = role?.name === 'Amministratore' || role?.name === 'Agente'
+    const hasAdminPermissions = isAdminOrAgent(role)
 
-    if (!isAuthor && !isAdmin) {
+    if (!isAuthor && !hasAdminPermissions) {
       throw new ConvexError("Non hai i permessi per eliminare questo commento")
     }
 

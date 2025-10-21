@@ -1,6 +1,7 @@
 import { v } from "convex/values"
 import { mutation, query } from "./_generated/server"
 import { ConvexError } from "convex/values"
+import { isAdminOrAgent, canManageAllTickets, getRoleType } from "./lib/permissions"
 
 // ========================
 // QUERIES - Articoli KB
@@ -215,9 +216,9 @@ export const createArticle = mutation({
       throw new ConvexError("Utente non trovato")
     }
 
-    // Verifica permessi (solo agenti/admin)
+    // Verifica permessi (solo agenti/admin, controllo basato su permessi)
     const role = await ctx.db.get(user.roleId)
-    if (role?.name !== 'Agente' && role?.name !== 'Amministratore') {
+    if (!canManageAllTickets(role)) {
       throw new ConvexError("Solo agenti e amministratori possono creare articoli")
     }
 
@@ -276,9 +277,9 @@ export const updateArticle = mutation({
       throw new ConvexError("Utente non trovato")
     }
 
-    // Verifica permessi
+    // Verifica permessi (controllo basato su permessi)
     const role = await ctx.db.get(user.roleId)
-    if (role?.name !== 'Agente' && role?.name !== 'Amministratore') {
+    if (!canManageAllTickets(role)) {
       throw new ConvexError("Solo agenti e amministratori possono modificare articoli")
     }
 
@@ -327,9 +328,9 @@ export const deleteArticle = mutation({
       throw new ConvexError("Utente non trovato")
     }
 
-    // Verifica permessi
+    // Verifica permessi (controllo basato su permessi)
     const role = await ctx.db.get(user.roleId)
-    if (role?.name !== 'Agente' && role?.name !== 'Amministratore') {
+    if (!canManageAllTickets(role)) {
       throw new ConvexError("Solo agenti e amministratori possono eliminare articoli")
     }
 
@@ -384,7 +385,7 @@ export const createSuggestion = mutation({
 
     for (const agent of agentsAndAdmins) {
       const role = await ctx.db.get(agent.roleId)
-      if (role?.name === 'Agente' || role?.name === 'Amministratore') {
+      if (isAdminOrAgent(role)) {
         await ctx.db.insert("notifications", {
           userId: agent._id,
           type: "kb_suggestion",
@@ -420,9 +421,9 @@ export const getSuggestionsByClinic = query({
       throw new ConvexError("Utente non trovato")
     }
 
-    // Verifica permessi
+    // Verifica permessi (controllo basato su permessi)
     const role = await ctx.db.get(user.roleId)
-    if (role?.name !== 'Agente' && role?.name !== 'Amministratore') {
+    if (!canManageAllTickets(role)) {
       throw new ConvexError("Solo agenti e amministratori possono vedere i suggerimenti")
     }
 
@@ -481,9 +482,9 @@ export const reviewSuggestion = mutation({
       throw new ConvexError("Utente non trovato")
     }
 
-    // Verifica permessi
+    // Verifica permessi (controllo basato su permessi)
     const role = await ctx.db.get(user.roleId)
-    if (role?.name !== 'Agente' && role?.name !== 'Amministratore') {
+    if (!canManageAllTickets(role)) {
       throw new ConvexError("Solo agenti e amministratori possono revisionare suggerimenti")
     }
 

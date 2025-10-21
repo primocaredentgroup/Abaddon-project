@@ -56,14 +56,7 @@ export default function DashboardPage() {
     user?.email ? { userEmail: user.email } : "skip"
   )
 
-  // Controllo autenticazione: reindirizza al login se non autenticato
-  useEffect(() => {
-    if (!isLoading && !authUser) {
-      console.log('🚫 Accesso negato alla dashboard: utente non autenticato')
-      router.push('/')
-      return
-    }
-  }, [authUser, isLoading, router])
+  // Rimosso redirect automatico - gestito da Authenticated component nella home
 
   // Redirect agenti alla loro pagina principale: ticket assegnati
   useEffect(() => {

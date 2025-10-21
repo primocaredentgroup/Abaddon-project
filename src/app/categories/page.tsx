@@ -11,6 +11,7 @@ import { useQuery, useMutation } from 'convex/react'
 import { api } from '../../../convex/_generated/api'
 import { useAuth } from '@/hooks/useAuth'
 import { AttributeBuilder } from '@/components/admin/AttributeBuilder'
+import { canManageAllTickets } from '@/lib/permissions'
 import { 
   Tags,
   Plus,
@@ -48,7 +49,8 @@ export default function AdminCategoriesPage() {
     description: '',
     visibility: 'public' as 'public' | 'private',
     defaultTicketVisibility: 'public' as 'public' | 'private', // 🆕 Visibilità di default per i ticket
-    synonyms: ''
+    synonyms: '',
+    societyIds: [] as string[] // 🆕 Supporto società
   })
 
   // Estrai clinicId in modo sicuro (potrebbe essere user.clinicId o user.clinic._id)
@@ -61,22 +63,23 @@ export default function AdminCategoriesPage() {
   const deletedCategories = useQuery(api.categories.getDeletedCategories, 
     clinicId ? { clinicId } : "skip"
   )
+  const societies = useQuery(api.societies.getAllSocieties, { activeOnly: true })
   const categoryAttributes = useQuery(
-    api.categoryAttributes.getByCategorySimple, // 🔓 Uso versione Simple per sviluppo
+    api.categoryAttributes.getByCategory,
     managingAttributesCategory ? { categoryId: managingAttributesCategory._id } : "skip"
   )
   
-  // Mutations (usando versioni semplici senza autenticazione)
-  const createCategory = useMutation(api.categories.createCategorySimple)
-  const updateCategory = useMutation(api.categories.updateCategorySimple)
-  const softDeleteCategory = useMutation(api.categories.softDeleteCategorySimple)
-  const restoreCategory = useMutation(api.categories.restoreCategorySimple)
-  const hardDeleteCategory = useMutation(api.categories.hardDeleteCategorySimple)
+  // Mutations (usando versioni con autenticazione)
+  const createCategory = useMutation(api.categories.createCategory)
+  const updateCategory = useMutation(api.categories.updateCategory)
+  const softDeleteCategory = useMutation(api.categories.softDeleteCategory)
+  const restoreCategory = useMutation(api.categories.restoreCategory)
+  const hardDeleteCategory = useMutation(api.categories.deleteCategory)
   
-  // 🆕 Mutations per attributi (usando versioni Simple senza autenticazione)
-  const createAttribute = useMutation(api.categoryAttributes.createSimple)
-  const updateAttribute = useMutation(api.categoryAttributes.updateSimple)
-  const deleteAttribute = useMutation(api.categoryAttributes.removeSimple)
+  // 🆕 Mutations per attributi (usando versioni con autenticazione)
+  const createAttribute = useMutation(api.categoryAttributes.create)
+  const updateAttribute = useMutation(api.categoryAttributes.update)
+  const deleteAttribute = useMutation(api.categoryAttributes.remove)
 
   // Filter categories based on search
   const filteredCategories = categories?.filter(cat =>
@@ -110,7 +113,8 @@ export default function AdminCategoriesPage() {
           name: formData.name,
           description: formData.description || undefined,
           visibility: formData.visibility,
-          defaultTicketVisibility: formData.defaultTicketVisibility // 🆕
+          defaultTicketVisibility: formData.defaultTicketVisibility, // 🆕
+          societyIds: formData.societyIds.length > 0 ? formData.societyIds : undefined // 🆕 Società
         })
       } else {
         // Create new category
@@ -120,12 +124,13 @@ export default function AdminCategoriesPage() {
           clinicId,
           visibility: formData.visibility,
           defaultTicketVisibility: formData.defaultTicketVisibility, // 🆕
-          synonyms: synonymsArray
+          synonyms: synonymsArray,
+          societyIds: formData.societyIds.length > 0 ? formData.societyIds : undefined // 🆕 Società
         })
       }
       
       // Reset form
-      setFormData({ name: '', description: '', visibility: 'public', defaultTicketVisibility: 'public', synonyms: '' })
+      setFormData({ name: '', description: '', visibility: 'public', defaultTicketVisibility: 'public', synonyms: '', societyIds: [] })
       setShowCreateForm(false)
       setEditingCategory(null)
     } catch (error) {
@@ -142,7 +147,8 @@ export default function AdminCategoriesPage() {
       description: category.description || '',
       visibility: category.visibility,
       defaultTicketVisibility: category.defaultTicketVisibility || 'public', // 🆕 Default a public se non impostato
-      synonyms: category.synonyms.join(', ')
+      synonyms: category.synonyms.join(', '),
+      societyIds: category.societyIds || []
     })
     setShowCreateForm(true)
   }
@@ -185,8 +191,8 @@ export default function AdminCategoriesPage() {
     return <div>Caricamento...</div>
   }
 
-  // Controllo permessi: solo agenti e admin possono gestire le categorie
-  if (user.role?.name !== 'Agente' && user.role?.name !== 'Amministratore') {
+  // Controllo permessi: basato sui permessi del ruolo
+  if (!canManageAllTickets(user.role)) {
     return (
       <AppLayout>
         <div className="flex items-center justify-center min-h-screen">
@@ -194,7 +200,7 @@ export default function AdminCategoriesPage() {
             <AlertTriangle className="h-16 w-16 text-red-500 mx-auto mb-4" />
             <h1 className="text-2xl font-bold text-gray-900 mb-2">Accesso Negato</h1>
             <p className="text-gray-600">Non hai i permessi per gestire le categorie.</p>
-            <p className="text-sm text-gray-500 mt-2">Richiesti ruoli: Agente o Amministratore</p>
+            <p className="text-sm text-gray-500 mt-2">Richiesti permessi: gestione ticket</p>
           </div>
         </div>
       </AppLayout>
@@ -281,7 +287,7 @@ export default function AdminCategoriesPage() {
             <Button 
               onClick={() => {
                 setEditingCategory(null)
-                setFormData({ name: '', description: '', visibility: 'public', defaultTicketVisibility: 'public', synonyms: '' })
+                setFormData({ name: '', description: '', visibility: 'public', defaultTicketVisibility: 'public', synonyms: '', societyIds: [] })
                 setShowCreateForm(true)
               }}
             >
@@ -444,6 +450,20 @@ export default function AdminCategoriesPage() {
                     {category.department && (
                       <div className="text-sm text-gray-600">
                         📁 Dipartimento: {category.department.name}
+                      </div>
+                    )}
+                    
+                    {/* Societies */}
+                    {category.societyIds && category.societyIds.length > 0 && (
+                      <div>
+                        <p className="text-xs font-medium text-gray-500 mb-2">🏢 Società:</p>
+                        <div className="flex flex-wrap gap-1">
+                          {societies?.filter(s => category.societyIds.includes(s._id)).map((society) => (
+                            <Badge key={society._id} variant="outline" size="sm" className="bg-blue-50">
+                              {society.name}
+                            </Badge>
+                          ))}
+                        </div>
                       </div>
                     )}
                     
@@ -672,6 +692,51 @@ export default function AdminCategoriesPage() {
                     <p className="text-xs text-gray-500 mt-1">
                       I sinonimi aiutano nella ricerca automatica delle categorie
                     </p>
+                  </div>
+
+                  {/* 🆕 Selezione Società */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Società
+                    </label>
+                    <p className="text-xs text-gray-500 mb-2">
+                      Seleziona le società per cui questa categoria è visibile. Se non selezioni nessuna, sarà visibile a tutte.
+                    </p>
+                    {societies && societies.length > 0 ? (
+                      <div className="space-y-2 max-h-32 overflow-y-auto border rounded-md p-2">
+                        {societies.map((society) => (
+                          <label key={society._id} className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-1 rounded">
+                            <input
+                              type="checkbox"
+                              checked={formData.societyIds.includes(society._id)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setFormData(prev => ({ 
+                                    ...prev, 
+                                    societyIds: [...prev.societyIds, society._id] 
+                                  }))
+                                } else {
+                                  setFormData(prev => ({ 
+                                    ...prev, 
+                                    societyIds: prev.societyIds.filter(id => id !== society._id) 
+                                  }))
+                                }
+                              }}
+                              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <span className="text-sm text-gray-700">{society.name}</span>
+                            <Badge variant="outline" size="sm">{society.code}</Badge>
+                          </label>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-sm text-gray-500 italic">
+                        Nessuna società disponibile. 
+                        <a href="/admin/societies" className="text-blue-600 hover:underline ml-1">
+                          Crea nuove società
+                        </a>
+                      </div>
+                    )}
                   </div>
                   
                   <div className="flex justify-end space-x-2 pt-4">

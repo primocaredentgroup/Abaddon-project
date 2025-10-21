@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/Button";
 import { LogIn, LogOut, User } from "lucide-react";
 
 export function AuthButton() {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, login, logout } = useAuth();
 
   if (isLoading) {
     return (
@@ -21,7 +21,7 @@ export function AuthButton() {
         {/* User Info */}
         <div className="flex flex-col text-right">
           <span className="text-sm font-medium text-gray-900">
-            {user.name}
+            {user.nome} {user.cognome}
           </span>
           <span className="text-xs text-gray-500">
             {user.email}
@@ -34,22 +34,18 @@ export function AuthButton() {
         </div>
 
         {/* Logout Button */}
-        <a href="/api/auth/logout">
-          <Button variant="outline" size="sm">
-            <LogOut className="w-4 h-4 mr-2" />
-            Logout
-          </Button>
-        </a>
+        <Button variant="outline" size="sm" onClick={logout}>
+          <LogOut className="w-4 h-4 mr-2" />
+          Logout
+        </Button>
       </div>
     );
   }
 
   return (
-    <a href="/api/auth/login">
-      <Button className="bg-blue-600 hover:bg-blue-700">
-        <LogIn className="w-4 h-4 mr-2" />
-        Login con Auth0
-      </Button>
-    </a>
+    <Button className="bg-blue-600 hover:bg-blue-700" onClick={login}>
+      <LogIn className="w-4 h-4 mr-2" />
+      Login con Auth0
+    </Button>
   );
 }

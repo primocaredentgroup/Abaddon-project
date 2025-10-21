@@ -1,6 +1,7 @@
 import { v } from "convex/values"
 import { mutation, query } from "./_generated/server"
 import { ConvexError } from "convex/values"
+import { hasFullAccess } from "./lib/permissions"
 import { getCurrentUser } from "./lib/utils"
 
 // Query per ottenere tutti i trigger di una clinica
@@ -61,6 +62,58 @@ export const getActiveTriggers = query({
   }
 })
 
+// 🆕 Query per ottenere trigger filtrati per società dell'utente
+export const getTriggersByUserSocieties = query({
+  args: { 
+    userId: v.id("users"),
+    clinicId: v.id("clinics"),
+    isActive: v.optional(v.boolean())
+  },
+  handler: async (ctx, { userId, clinicId, isActive }) => {
+    // Ottieni le società dell'utente
+    const userSocieties = await ctx.db
+      .query("userSocieties")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .filter((q) => q.eq(q.field("isActive"), true))
+      .collect();
+
+    const societyIds = userSocieties.map(us => us.societyId);
+
+    // Ottieni tutti i trigger della clinica
+    let triggers = await ctx.db
+      .query("triggers")
+      .withIndex("by_clinic", (q) => q.eq("clinicId", clinicId))
+      .collect();
+
+    // Applica filtro per stato attivo se specificato
+    let filteredTriggers = isActive !== undefined 
+      ? triggers.filter(trigger => trigger.isActive === isActive)
+      : triggers;
+
+    // Filtra per società: mostra trigger che sono per le società dell'utente 
+    // o che non hanno restrizioni di società (societyIds = null)
+    filteredTriggers = filteredTriggers.filter(trigger => {
+      // Se il trigger non ha societyIds, è visibile a tutti
+      if (!trigger.societyIds || trigger.societyIds.length === 0) {
+        return true;
+      }
+      
+      // Altrimenti, controlla se l'utente ha accesso a almeno una delle società del trigger
+      return trigger.societyIds.some(societyId => societyIds.includes(societyId));
+    });
+
+    // Popola i dati del creatore
+    const triggersWithCreators = await Promise.all(
+      filteredTriggers.map(async (trigger) => {
+        const creator = await ctx.db.get(trigger.createdBy);
+        return { ...trigger, creator };
+      })
+    );
+
+    return triggersWithCreators;
+  }
+});
+
 // Mutation per creare un nuovo trigger
 export const createTrigger = mutation({
   args: {
@@ -69,6 +122,7 @@ export const createTrigger = mutation({
     conditions: v.any(),
     actions: v.any(),
     requiresApproval: v.optional(v.boolean()),
+    societyIds: v.optional(v.array(v.id("societies"))), // 🆕 Supporto società
   },
   handler: async (ctx, args) => {
     // Verifica autenticazione
@@ -94,6 +148,7 @@ export const createTrigger = mutation({
       isActive: true,
       requiresApproval: args.requiresApproval || false,
       createdBy: currentUser._id,
+      societyIds: args.societyIds || undefined, // 🆕 Supporto società
     })
     
     return triggerId
@@ -109,6 +164,7 @@ export const updateTrigger = mutation({
     actions: v.optional(v.any()),
     isActive: v.optional(v.boolean()),
     requiresApproval: v.optional(v.boolean()),
+    societyIds: v.optional(v.array(v.id("societies"))), // 🆕 Supporto società
   },
   handler: async (ctx, { triggerId, ...updates }) => {
     // Verifica autenticazione
@@ -175,86 +231,6 @@ export const toggleTrigger = mutation({
   }
 })
 
-// Mutations semplici senza autenticazione per lo sviluppo
-export const createTriggerSimple = mutation({
-  args: {
-    name: v.string(),
-    clinicId: v.id("clinics"),
-    conditions: v.any(),
-    actions: v.any(),
-    requiresApproval: v.optional(v.boolean()),
-    userEmail: v.string(),
-  },
-  handler: async (ctx, args) => {
-    // Verifica che la clinica esista
-    const clinic = await ctx.db.get(args.clinicId)
-    if (!clinic) {
-      throw new ConvexError("Clinic not found")
-    }
-    
-    const defaultUser = await ctx.db
-      .query("users")
-      .filter((q) => q.eq(q.field("email"), args.userEmail))
-      .first()
-    
-    if (!defaultUser) {
-      throw new ConvexError("User not found")
-    }
-    
-    // Crea il trigger
-    const triggerId = await ctx.db.insert("triggers", {
-      name: args.name,
-      clinicId: args.clinicId,
-      conditions: args.conditions,
-      actions: args.actions,
-      isActive: true,
-      requiresApproval: args.requiresApproval || false,
-      createdBy: defaultUser._id,
-    })
-    
-    return triggerId
-  }
-})
-
-export const updateTriggerSimple = mutation({
-  args: {
-    triggerId: v.id("triggers"),
-    name: v.optional(v.string()),
-    conditions: v.optional(v.any()),
-    actions: v.optional(v.any()),
-    isActive: v.optional(v.boolean()),
-    requiresApproval: v.optional(v.boolean()),
-  },
-  handler: async (ctx, { triggerId, ...updates }) => {
-    // Verifica che il trigger esista
-    const trigger = await ctx.db.get(triggerId)
-    if (!trigger) {
-      throw new ConvexError("Trigger not found")
-    }
-    
-    // Aggiorna il trigger
-    await ctx.db.patch(triggerId, updates)
-    
-    return triggerId
-  }
-})
-
-export const deleteTriggerSimple = mutation({
-  args: { triggerId: v.id("triggers") },
-  handler: async (ctx, { triggerId }) => {
-    // Verifica che il trigger esista
-    const trigger = await ctx.db.get(triggerId)
-    if (!trigger) {
-      throw new ConvexError("Trigger not found")
-    }
-    
-    // Elimina il trigger
-    await ctx.db.delete(triggerId)
-    
-    return triggerId
-  }
-})
-
 // Query per ottenere statistiche sui trigger
 export const getTriggerStats = query({
   args: { clinicId: v.optional(v.id("clinics")) },
@@ -292,9 +268,9 @@ export const approveTrigger = mutation({
     // Verifica autenticazione
     const currentUser = await getCurrentUser(ctx)
     
-    // Verifica che l'utente sia admin
+    // Verifica che l'utente sia admin (controllo basato su permessi)
     const role = await ctx.db.get(currentUser.roleId)
-    if (!role || role.name !== 'Amministratore') {
+    if (!role || !hasFullAccess(role)) {
       throw new ConvexError("Solo gli amministratori possono approvare i trigger")
     }
     
@@ -331,9 +307,9 @@ export const rejectTrigger = mutation({
     // Verifica autenticazione
     const currentUser = await getCurrentUser(ctx)
     
-    // Verifica che l'utente sia admin
+    // Verifica che l'utente sia admin (controllo basato su permessi)
     const role = await ctx.db.get(currentUser.roleId)
-    if (!role || role.name !== 'Amministratore') {
+    if (!role || !hasFullAccess(role)) {
       throw new ConvexError("Solo gli amministratori possono rifiutare i trigger")
     }
     
@@ -350,60 +326,6 @@ export const rejectTrigger = mutation({
       rejectedAt: Date.now(),
       rejectionReason: reason || 'Trigger rifiutato dall\'amministratore',
       isActive: false // Disattiva il trigger rifiutato
-    })
-    
-    return triggerId
-  }
-})
-
-// =================== MUTATIONS SIMPLE (per sviluppo) ===================
-// NOTA: Queste sono versioni temporanee per lo sviluppo
-// In produzione, usare le versioni normali con autenticazione
-
-export const approveTriggerSimple = mutation({
-  args: { 
-    triggerId: v.id("triggers"),
-    userId: v.id("users")
-  },
-  handler: async (ctx, { triggerId, userId }) => {
-    // Verifica che il trigger esista
-    const trigger = await ctx.db.get(triggerId)
-    if (!trigger) {
-      throw new ConvexError("Trigger not found")
-    }
-    
-    // Approva il trigger
-    await ctx.db.patch(triggerId, {
-      isApproved: true,
-      approvedBy: userId,
-      approvedAt: Date.now(),
-      isActive: true
-    })
-    
-    return triggerId
-  }
-})
-
-export const rejectTriggerSimple = mutation({
-  args: { 
-    triggerId: v.id("triggers"),
-    userId: v.id("users"),
-    reason: v.optional(v.string())
-  },
-  handler: async (ctx, { triggerId, userId, reason }) => {
-    // Verifica che il trigger esista
-    const trigger = await ctx.db.get(triggerId)
-    if (!trigger) {
-      throw new ConvexError("Trigger not found")
-    }
-    
-    // Rifiuta il trigger
-    await ctx.db.patch(triggerId, {
-      isApproved: false,
-      rejectedBy: userId,
-      rejectedAt: Date.now(),
-      rejectionReason: reason || 'Trigger rifiutato dall\'amministratore',
-      isActive: false
     })
     
     return triggerId

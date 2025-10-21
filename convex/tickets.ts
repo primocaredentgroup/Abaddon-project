@@ -3,6 +3,7 @@ import { mutation, query, internalMutation, internalQuery } from "./_generated/s
 import { ConvexError } from "convex/values"
 // import { getCurrentUser } from "./lib/utils" // Non usato al momento
 import { internal } from "./_generated/api"
+import { canManageAllTickets } from "./lib/permissions"
 
 // Query to get tickets for current user's clinic with filters
 export const getByClinic = query({
@@ -168,9 +169,9 @@ export const getNudgedTickets = query({
       throw new ConvexError("Utente non trovato")
     }
 
-    // Verifica che l'utente sia un agente o admin (nomi in ITALIANO)
+    // Verifica che l'utente sia un agente o admin (controllo basato su permessi)
     const role = await ctx.db.get(user.roleId)
-    if (!role || (role.name !== 'Agente' && role.name !== 'Amministratore')) {
+    if (!role || !canManageAllTickets(role)) {
       throw new ConvexError("Solo agenti e admin possono vedere i ticket sollecitati")
     }
 
@@ -262,11 +263,11 @@ export const update: any = mutation({
 
     // Verifica permessi
     const role = await ctx.db.get(user.roleId)
+    // Controllo permessi basato su ruolo
     const canEdit = 
       ticket.creatorId === user._id || 
       ticket.assigneeId === user._id ||
-      role?.name === 'agent' ||
-      role?.name === 'admin'
+      canManageAllTickets(role)
 
     if (!canEdit) {
       throw new ConvexError("Non hai permessi per modificare questo ticket")
@@ -1015,9 +1016,9 @@ export const assignToMe = mutation({
       throw new ConvexError("Utente non trovato")
     }
 
-    // Verifica che sia un agente o admin
+    // Verifica che sia un agente o admin (controllo basato su permessi)
     const role = await ctx.db.get(user.roleId)
-    if (!role || (role.name !== 'Agente' && role.name !== 'Amministratore')) {
+    if (!role || !canManageAllTickets(role)) {
       throw new ConvexError("Solo agenti e admin possono assegnarsi ticket")
     }
 

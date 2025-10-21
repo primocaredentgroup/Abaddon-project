@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, ReactNode } from 'react';
 import { useAuth } from '@/hooks/useAuth';
+import { getRoleType } from '@/lib/permissions';
 
 export type UserRole = 'user' | 'agent' | 'admin';
 
@@ -37,11 +38,8 @@ export function RoleProvider({ children }: RoleProviderProps) {
     roleName: authUser.role?.name || 'Utente'
   } : null;
 
-  // Mappa il ruolo dal formato Convex al formato del RoleProvider
-  // IMPORTANTE: Mantieni 'user' come default SOLO se i dati sono caricati, altrimenti aspetta
-  const role: UserRole = !authUser && isLoading ? 'user' :
-                        authUser?.role?.name === 'Amministratore' ? 'admin' :
-                        authUser?.role?.name === 'Agente' ? 'agent' : 'user';
+  // Mappa il ruolo basandosi sui permessi invece che sul nome
+  const role: UserRole = !authUser && isLoading ? 'user' : getRoleType(authUser?.role);
 
   const setRole = (newRole: UserRole) => {
     // Per ora non implementiamo il cambio ruolo dinamico

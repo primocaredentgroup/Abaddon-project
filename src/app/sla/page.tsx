@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/Textarea'
 import { useQuery, useMutation } from 'convex/react'
 import { api } from '../../../convex/_generated/api'
 import { useAuth } from '@/hooks/useAuth'
+import { canEditSLA as checkCanEditSLA } from '@/lib/permissions'
 import { 
   Clock,
   Plus,
@@ -286,9 +287,9 @@ export default function SLAMonitorPage() {
   }
 
   // Controllo permessi: la pagina è visibile a tutti gli utenti autenticati
-  // ma solo agenti e admin possono modificare le regole
-  const canEdit = user.role?.name === 'Agente' || user.role?.name === 'Amministratore'
-
+  // Basato sui permessi del ruolo invece che sul nome
+  const canEdit = checkCanEditSLA(user.role)
+  
   // Se non c'è clinicId, mostra messaggio di errore
   if (!clinicId) {
     return (

@@ -39,3 +39,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Backup e documentazione temporanea
+AUTH_FIX_PLAN.md
+AUTH_IMPLEMENTATION_SUMMARY.md
+*.backup

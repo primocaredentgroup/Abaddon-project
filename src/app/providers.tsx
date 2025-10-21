@@ -1,10 +1,13 @@
 "use client";
 import { ReactNode } from "react";
-import { ConvexProvider, ConvexReactClient } from "convex/react";
+import { ConvexReactClient } from "convex/react";
+import { ConvexProviderWithAuth0 } from "convex/react-auth0";
+import { Auth0Provider } from "@auth0/auth0-react";
 import { RoleProvider } from "@/providers/RoleProvider";
-import { UserProvider } from "@auth0/nextjs-auth0/client";
 
-const convex = new ConvexReactClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+const convex = new ConvexReactClient(process.env.NEXT_PUBLIC_CONVEX_URL!, {
+  unsavedChangesWarning: false,
+});
 
 type ProvidersProps = {
   children: ReactNode;
@@ -12,12 +15,22 @@ type ProvidersProps = {
 
 export function Providers({ children }: ProvidersProps) {
   return (
-    <UserProvider>
-      <ConvexProvider client={convex}>
+    <Auth0Provider
+      domain={process.env.NEXT_PUBLIC_AUTH0_DOMAIN!}
+      clientId={process.env.NEXT_PUBLIC_AUTH0_CLIENT_ID!}
+      authorizationParams={{
+        redirect_uri: typeof window !== "undefined" ? window.location.origin : undefined,
+      }}
+      useRefreshTokens={true}
+      cacheLocation="localstorage"
+      // Skippa il check del token JWT iniziale
+      skipRedirectCallback={false}
+    >
+      <ConvexProviderWithAuth0 client={convex}>
         <RoleProvider>
           {children}
         </RoleProvider>
-      </ConvexProvider>
-    </UserProvider>
+      </ConvexProviderWithAuth0>
+    </Auth0Provider>
   );
 }

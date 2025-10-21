@@ -5,6 +5,7 @@ import { useQuery, useMutation } from 'convex/react'
 import { api } from '../../../../convex/_generated/api'
 import { useAuth } from '@/hooks/useAuth'
 import { AppLayout } from '@/components/layout/AppLayout'
+import { hasFullAccess } from '@/lib/permissions'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Textarea } from '@/components/ui/Textarea'
@@ -205,7 +206,8 @@ export default function AdminViewsPage() {
     )
   }
   
-  if (user.role?.name !== 'Amministratore') {
+  // Controlla i permessi di amministratore
+  if (!hasFullAccess(user.role)) {
     return (
       <AppLayout>
         <div className="flex items-center justify-center min-h-screen">

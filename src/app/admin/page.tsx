@@ -8,6 +8,7 @@ import { AppLayout } from '@/components/layout/AppLayout'
 import { Button } from '@/components/ui/Button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
+import { hasFullAccess } from '@/lib/permissions'
 import { 
   Shield,
   Users,
@@ -117,7 +118,8 @@ export default function AdminDashboard() {
     )
   }
   
-  if (user.role?.name !== 'Amministratore') {
+  // Controlla i permessi di amministratore
+  if (!hasFullAccess(user.role)) {
     return (
       <AppLayout>
         <div className="flex items-center justify-center min-h-screen">

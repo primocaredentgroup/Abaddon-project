@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
 import { useRole } from '@/providers/RoleProvider';
+import { useAuth } from '@/hooks/useAuth';
 import { useQuery } from 'convex/react';
 import { api } from '@/../convex/_generated/api';
 import Link from 'next/link';
@@ -25,6 +26,7 @@ interface HeaderProps {
 
 export function Header({ onMenuClick, user }: HeaderProps) {
   const { role, user: roleUser } = useRole();
+  const { login, logout } = useAuth();
   
   // Usa i dati da useRole invece della prop user
   const displayUser = roleUser || user;
@@ -143,13 +145,13 @@ export function Header({ onMenuClick, user }: HeaderProps) {
                 
                 <div className="py-1">
                   {displayUser ? (
-                    <a href="/api/auth/logout-local" className="block px-4 py-2 text-sm text-red-600 hover:bg-gray-100">
+                    <button onClick={logout} className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100">
                       Disconnetti
-                    </a>
+                    </button>
                   ) : (
-                    <a href="/api/auth/login" className="block px-4 py-2 text-sm text-blue-600 hover:bg-gray-100">
+                    <button onClick={login} className="block w-full text-left px-4 py-2 text-sm text-blue-600 hover:bg-gray-100">
                       Login
-                    </a>
+                    </button>
                   )}
                 </div>
               </div>
