@@ -85,22 +85,6 @@ export default function TicketDetailPage() {
     } : "skip"
   );
 
-  // Debug log
-  React.useEffect(() => {
-    
-    if (ticket?.category && clinicId) {
-        clinicId,
-        categorySlug: ticket.category.slug,
-        categoryName: ticket.category.name
-      });
-    } else {
-        hasTicketCategory: !!ticket?.category,
-        hasClinicId: !!clinicId
-      });
-    }
-    if (macros !== undefined) {
-    }
-  }, [ticket, clinicId, macros, user]);
 
   // Mutations
   const addComment = useMutation(api.ticketComments.add);
