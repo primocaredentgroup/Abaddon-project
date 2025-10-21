@@ -218,7 +218,21 @@ export const updateUser = mutation({
   },
   handler: async (ctx, { userId, ...updates }) => {
     // Verifica autenticazione
+    console.log('🔐 [updateUser] Verifica autenticazione...')
     const currentUser = await getCurrentUser(ctx)
+    console.log('✅ [updateUser] Utente autenticato:', { id: currentUser._id, email: currentUser.email })
+    
+    // Verifica permessi: solo gli admin possono modificare gli utenti
+    console.log('🔍 [updateUser] Caricamento ruolo:', currentUser.roleId)
+    const currentUserRole = await ctx.db.get(currentUser.roleId)
+    console.log('📋 [updateUser] Ruolo caricato:', { name: currentUserRole?.name, permissions: currentUserRole?.permissions })
+    
+    if (!currentUserRole?.permissions?.includes("full_access")) {
+      console.error('❌ [updateUser] Permessi insufficienti - richiesto full_access')
+      throw new ConvexError("Solo gli amministratori possono modificare gli utenti")
+    }
+    
+    console.log('✅ [updateUser] Permessi verificati con successo')
     
     // Verifica che l'utente esista
     const user = await ctx.db.get(userId)
