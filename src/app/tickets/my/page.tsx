@@ -14,7 +14,6 @@ import { useToast } from '@/components/ui/use-toast';
 import {
   Search,
   Filter,
-  Eye,
   ChevronLeft,
   ChevronRight,
   Ticket as TicketIcon,
@@ -339,15 +338,14 @@ export default function MyTicketsPage() {
               <div className="overflow-hidden">
                 <table className="w-full table-fixed">
                   <colgroup>
-                    <col style={{ width: '7%' }} />
-                    <col style={{ width: '20%' }} />
-                    <col style={{ width: '12%' }} />
-                    <col style={{ width: '12%' }} />
-                    <col style={{ width: '10%' }} />
-                    <col style={{ width: '10%' }} />
-                    <col style={{ width: '10%' }} />
-                    <col style={{ width: '9%' }} />
-                    <col style={{ width: '10%' }} />
+                    <col style={{ width: '8%' }} />
+                    <col style={{ width: '22%' }} />
+                    <col style={{ width: '13%' }} />
+                    <col style={{ width: '13%' }} />
+                    <col style={{ width: '11%' }} />
+                    <col style={{ width: '11%' }} />
+                    <col style={{ width: '11%' }} />
+                    <col style={{ width: '11%' }} />
                   </colgroup>
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
@@ -393,14 +391,15 @@ export default function MyTicketsPage() {
                       <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Solleciti
                       </th>
-                      <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Azioni
-                      </th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {paginatedTickets.map((ticket) => (
-                      <tr key={ticket.id} className="hover:bg-gray-50">
+                      <tr 
+                        key={ticket.id} 
+                        className="hover:bg-blue-50 cursor-pointer transition-colors"
+                        onClick={() => window.location.href = `/tickets/${ticket._id}`}
+                      >
                         <td className="px-3 py-3 text-sm font-medium text-blue-600">
                           {ticket.id}
                         </td>
@@ -459,24 +458,20 @@ export default function MyTicketsPage() {
                         <td className="px-3 py-3 text-center text-xs text-gray-500">
                           {ticket.createdAt}
                         </td>
-                        <td className="px-3 py-3 text-center">
+                        <td className="px-3 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                           <Button 
                             size="sm" 
                             variant="ghost" 
                             className="h-7 px-2"
-                            onClick={() => handleNudge(ticket._id || '', ticket.title)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleNudge(ticket._id || '', ticket.title);
+                            }}
                             disabled={ticket.status === 'closed'}
                             title={ticket.status === 'closed' ? 'Non puoi sollecitare un ticket chiuso' : 'Sollecita questo ticket'}
                           >
                             <Bell className={`h-3 w-3 ${ticket.status === 'closed' ? 'text-gray-400' : 'text-orange-600'}`} />
                           </Button>
-                        </td>
-                        <td className="px-3 py-3 text-center">
-                          <Link href={`/tickets/${ticket._id}`}>
-                            <Button size="sm" variant="ghost" className="h-7 px-2">
-                              <Eye className="h-3 w-3" />
-                            </Button>
-                          </Link>
                         </td>
                       </tr>
                     ))}

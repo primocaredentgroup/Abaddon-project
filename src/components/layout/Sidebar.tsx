@@ -22,7 +22,8 @@ import {
   Shield, // Icon for admin dashboard
   CheckSquare, // Icon for approvals
   Eye, // Icon for views
-  Briefcase // Icon for societies
+  Briefcase, // Icon for societies
+  Globe // Icon for domain societies
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
@@ -64,6 +65,7 @@ const adminNavigation: NavItem[] = [
   { name: 'Gestione Utenti', href: '/users', icon: Users, roles: ['admin'] },
   { name: 'Gestione Viste', href: '/admin/views', icon: Eye, roles: ['admin'] },
   { name: 'Società', href: '/admin/societies', icon: Briefcase, roles: ['admin'] },
+  { name: 'Domini Società', href: '/admin/domain-societies', icon: Globe, roles: ['admin'] },
   { name: 'Config. Ermes AI', href: '/admin/agent-config', icon: Bot, roles: ['admin'] },
   { name: 'Ruoli e Permessi', href: '/roles', icon: UserCog, roles: ['admin'] },
 ]

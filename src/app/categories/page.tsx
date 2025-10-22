@@ -219,10 +219,18 @@ export default function AdminCategoriesPage() {
   }
 
   // 🆕 Handler per salvare gli attributi
-  const handleSaveAttributes = async (attributes: any[]) => {
+  const handleSaveAttributes = async (attributes: any[], deletedIds: string[] = []) => {
     if (!managingAttributesCategory) return
     
     try {
+      // 1. Elimina gli attributi rimossi
+      for (const deletedId of deletedIds) {
+        await deleteAttribute({
+          attributeId: deletedId as any,
+        })
+      }
+      
+      // 2. Crea o aggiorna gli attributi
       for (const attr of attributes) {
         if (attr.isNew) {
           // Crea nuovo attributo
@@ -234,6 +242,7 @@ export default function AdminCategoriesPage() {
             required: attr.required || false,
             showInCreation: attr.showInCreation !== false,
             showInList: attr.showInList || false,
+            agentOnly: attr.agentOnly || false,
             order: attr.order || 0,
             config: attr.config || {},
             conditions: attr.conditions,
@@ -248,6 +257,7 @@ export default function AdminCategoriesPage() {
             required: attr.required,
             showInCreation: attr.showInCreation,
             showInList: attr.showInList,
+            agentOnly: attr.agentOnly,
             order: attr.order,
             config: attr.config,
             conditions: attr.conditions,

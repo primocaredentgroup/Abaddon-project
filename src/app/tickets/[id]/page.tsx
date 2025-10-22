@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { AppLayout } from '@/components/layout/AppLayout';
@@ -30,7 +30,8 @@ import {
   Tag,
   Building,
   UserCheck,
-  Zap
+  Zap,
+  Pencil
 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
@@ -68,10 +69,47 @@ export default function TicketDetailPage() {
   );
   
   // 🆕 Fetch ticket attributes
-  const ticketAttributes = useQuery(
+  const allTicketAttributes = useQuery(
     api.ticketAttributes.getByTicket,
     ticketId ? { ticketId: ticketId as any } : "skip"
   );
+  
+  // 🆕 Mutation per assicurarsi che gli attributi agentOnly esistano (per ticket vecchi)
+  const ensureAgentOnlyAttributes = useMutation(api.ticketAttributes.ensureAgentOnlyAttributes);
+  
+  // 🆕 Effetto per creare attributi mancanti su ticket vecchi (una sola volta)
+  const [hasCheckedAttributes, setHasCheckedAttributes] = useState(false);
+  useEffect(() => {
+    // Confronto case-insensitive con versioni italiane e inglesi
+    const roleLower = user?.roleName?.toLowerCase();
+    const isAgent = roleLower === 'agent' || roleLower === 'agente' || roleLower === 'admin' || roleLower === 'amministratore';
+    
+    if (ticketId && isAgent && allTicketAttributes !== undefined && !hasCheckedAttributes) {
+      // Chiama la mutation per assicurarsi che tutti gli attributi agentOnly esistano
+      ensureAgentOnlyAttributes({ ticketId: ticketId as any })
+        .then(() => {
+          setHasCheckedAttributes(true);
+        })
+        .catch(() => {
+          setHasCheckedAttributes(true);
+        });
+    }
+  }, [ticketId, user?.roleName, allTicketAttributes, hasCheckedAttributes]);
+
+  // Filtra gli attributi in base al ruolo: rimuovi agentOnly se l'utente NON è agente
+  const ticketAttributes = useMemo(() => {
+    if (!allTicketAttributes) return allTicketAttributes;
+    
+    // Confronto case-insensitive con versioni italiane e inglesi
+    const roleLower = user?.roleName?.toLowerCase();
+    const isAgent = roleLower === 'agent' || roleLower === 'agente' || roleLower === 'admin' || roleLower === 'amministratore';
+    
+    // Se è agente, mostra tutti gli attributi
+    if (isAgent) return allTicketAttributes;
+    
+    // Se è utente normale, rimuovi gli attributi agentOnly
+    return allTicketAttributes.filter((attr: any) => !attr.attribute?.agentOnly);
+  }, [allTicketAttributes, user?.roleName]);
   
   // Usa clinicId dall'utente (ora disponibile in useRole)
   const clinicId = user?.clinicId;
@@ -91,6 +129,7 @@ export default function TicketDetailPage() {
   const nudgeTicket = useMutation(api.ticketComments.nudge);
   const updateTicket = useMutation(api.tickets.update);
   const executeMacro = useMutation(api.macros.executeMacro);
+  const updateTicketAttribute = useMutation(api.ticketAttributes.update);
 
   // Imposta i valori di editing quando il ticket viene caricato
   useEffect(() => {
@@ -249,9 +288,12 @@ export default function TicketDetailPage() {
     }
   };
 
-  const canEdit = ticket.creatorId === user?.id || user?.roleName === 'Agente' || user?.roleName === 'Amministratore';
+  // Confronto case-insensitive per i ruoli (italiano e inglese)
+  const roleLowerForPermissions = user?.roleName?.toLowerCase();
+  const isAgentRole = roleLowerForPermissions === 'agente' || roleLowerForPermissions === 'agent' || roleLowerForPermissions === 'amministratore' || roleLowerForPermissions === 'admin';
+  const canEdit = ticket.creatorId === user?.id || isAgentRole;
   const canNudge = ticket.creatorId === user?.id && ticket.status !== 'closed';
-  const canManage = user?.roleName === 'Agente' || user?.roleName === 'Amministratore';
+  const canManage = isAgentRole;
   const isCreator = ticket.creatorId === user?.id;
   const isAssignee = ticket.assigneeId === user?.id;
 
@@ -558,16 +600,22 @@ export default function TicketDetailPage() {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {ticketAttributes.map((attr) => (
-                    <div key={attr._id} className="flex items-start justify-between p-3 bg-white rounded-lg border border-blue-200">
-                      <div className="flex-1">
-                        <p className="text-sm font-medium text-gray-700">
-                          {attr.attribute?.name || 'N/A'}
-                        </p>
-                        <p className="text-base text-gray-900 mt-1">
-                          {typeof attr.value === 'object' ? JSON.stringify(attr.value) : attr.value}
-                        </p>
-                      </div>
-                    </div>
+                    <EditableAttribute
+                      key={attr._id}
+                      attribute={attr}
+                      isAgent={canManage}
+                      onSave={async (newValue) => {
+                        try {
+                          await updateTicketAttribute({
+                            ticketAttributeId: attr._id as any,
+                            value: newValue
+                          });
+                          toast({ title: 'Attributo aggiornato!', variant: 'default' });
+                        } catch (error: any) {
+                          toast({ title: 'Errore', description: error.message, variant: 'destructive' });
+                        }
+                      }}
+                    />
                   ))}
                 </CardContent>
               </Card>
@@ -634,5 +682,143 @@ export default function TicketDetailPage() {
         </div>
       </div>
     </AppLayout>
+  );
+}
+
+// Componente per rendere gli attributi modificabili dagli agenti
+function EditableAttribute({ 
+  attribute, 
+  isAgent, 
+  onSave 
+}: { 
+  attribute: any; 
+  isAgent: boolean; 
+  onSave: (value: any) => Promise<void>;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState(attribute.value || '');
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      await onSave(editValue);
+      setIsEditing(false);
+    } catch (error) {
+      console.error('Error saving attribute:', error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setEditValue(attribute.value || '');
+    setIsEditing(false);
+  };
+
+  // Se l'attributo è agentOnly e l'utente è un agente, mostra sempre come modificabile
+  const canEdit = isAgent && attribute.attribute?.agentOnly;
+  const displayValue = typeof attribute.value === 'object' 
+    ? JSON.stringify(attribute.value) 
+    : attribute.value || (canEdit ? '(Non compilato)' : '');
+
+  return (
+    <div className="flex items-start justify-between p-3 bg-white rounded-lg border border-blue-200">
+      <div className="flex-1">
+        <div className="flex items-center gap-2 mb-1">
+          <p className="text-sm font-medium text-gray-700">
+            {attribute.attribute?.name || 'N/A'}
+          </p>
+          {attribute.attribute?.agentOnly && (
+            <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded">
+              👤 Solo Agenti
+            </span>
+          )}
+        </div>
+
+        {isEditing ? (
+          <div className="mt-2 space-y-2">
+            {attribute.attribute?.type === 'boolean' ? (
+              <select
+                value={editValue === true || editValue === 'true' ? 'true' : 'false'}
+                onChange={(e) => setEditValue(e.target.value === 'true')}
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="true">Sì</option>
+                <option value="false">No</option>
+              </select>
+            ) : attribute.attribute?.type === 'select' && attribute.attribute?.config?.options ? (
+              <select
+                value={editValue}
+                onChange={(e) => setEditValue(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Seleziona...</option>
+                {attribute.attribute.config.options.map((option: string) => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </select>
+            ) : attribute.attribute?.type === 'number' ? (
+              <input
+                type="number"
+                value={editValue}
+                onChange={(e) => setEditValue(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            ) : attribute.attribute?.type === 'date' ? (
+              <input
+                type="date"
+                value={editValue}
+                onChange={(e) => setEditValue(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            ) : (
+              <input
+                type="text"
+                value={editValue}
+                onChange={(e) => setEditValue(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder={attribute.attribute?.config?.placeholder || 'Inserisci valore...'}
+              />
+            )}
+
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                onClick={handleSave}
+                disabled={isSaving}
+              >
+                {isSaving ? 'Salvataggio...' : 'Salva'}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={handleCancel}
+                disabled={isSaving}
+              >
+                Annulla
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between mt-1">
+            <p className="text-base text-gray-900">
+              {displayValue}
+            </p>
+            {canEdit && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setIsEditing(true)}
+                className="ml-2"
+              >
+                <Pencil className="h-3 w-3 mr-1" />
+                Modifica
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

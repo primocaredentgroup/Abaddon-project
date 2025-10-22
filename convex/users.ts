@@ -34,6 +34,9 @@ export const getCurrentUserProfile = query({
   }
 })
 
+// Alias per currentUser (per compatibilità)
+export const currentUser = getCurrentUserProfile
+
 // Query per ottenere tutti gli utenti di una clinica
 export const getUsersByClinic = query({
   args: { 

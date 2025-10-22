@@ -4,6 +4,7 @@ import { ConvexReactClient } from "convex/react";
 import { ConvexProviderWithAuth0 } from "convex/react-auth0";
 import { Auth0Provider } from "@auth0/auth0-react";
 import { RoleProvider } from "@/providers/RoleProvider";
+import { AutoAssignSociety } from "@/components/AutoAssignSociety";
 
 const convex = new ConvexReactClient(process.env.NEXT_PUBLIC_CONVEX_URL!, {
   unsavedChangesWarning: false,
@@ -28,6 +29,7 @@ export function Providers({ children }: ProvidersProps) {
     >
       <ConvexProviderWithAuth0 client={convex}>
         <RoleProvider>
+          <AutoAssignSociety />
           {children}
         </RoleProvider>
       </ConvexProviderWithAuth0>

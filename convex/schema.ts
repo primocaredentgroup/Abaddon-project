@@ -248,6 +248,7 @@ export default defineSchema({
     showInCreation: v.boolean(),
     showInList: v.boolean(),
     order: v.number(),
+    agentOnly: v.optional(v.boolean()), // Se true, l'attributo è visibile solo agli agenti
     
     // Type-specific configuration
     config: v.object({
@@ -644,4 +645,18 @@ export default defineSchema({
     .index("by_society", ["societyId"])
     .index("by_user_society", ["userId", "societyId"])
     .index("by_active", ["isActive"]),
+
+  // Domain-Society mappings - Assegnazione automatica società basata sul dominio email
+  domainSocieties: defineTable({
+    domain: v.string(), // es. "primogroup.it", "centriprimo.it"
+    societyId: v.id("societies"), // Società da assegnare
+    isActive: v.boolean(), // Per abilitare/disabilitare la regola
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    createdBy: v.id("users"), // Chi ha creato la regola
+  })
+    .index("by_domain", ["domain"])
+    .index("by_society", ["societyId"])
+    .index("by_active", ["isActive"])
+    .index("by_domain_active", ["domain", "isActive"]),
 })

@@ -24,7 +24,8 @@ import {
   UserPlus,
   Eye,
   Check,
-  X
+  X,
+  Building2
 } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from 'next/link'
@@ -549,6 +550,12 @@ export default function AdminDashboard() {
                 <Button variant="outline" className="w-full h-20 flex flex-col items-center justify-center gap-2">
                   <Zap className="h-6 w-6" />
                   <span className="text-sm">Gestisci Trigger</span>
+                </Button>
+              </Link>
+              <Link href="/admin/domain-societies">
+                <Button variant="outline" className="w-full h-20 flex flex-col items-center justify-center gap-2">
+                  <Building2 className="h-6 w-6" />
+                  <span className="text-sm">Domini Società</span>
                 </Button>
               </Link>
             </div>

@@ -117,6 +117,11 @@ export const AttributeCard: React.FC<AttributeCardProps> = ({
                     Obbligatorio
                   </Badge>
                 )}
+                {(attribute as any).agentOnly && (
+                  <Badge variant="outline" className="text-purple-600 border-purple-600">
+                    Solo Agenti
+                  </Badge>
+                )}
                 {hasCondition && (
                   <Badge variant="outline" className="text-blue-600 border-blue-600">
                     Condizionale
@@ -138,7 +143,7 @@ export const AttributeCard: React.FC<AttributeCardProps> = ({
                 )}
               </div>
 
-              {(attribute.showInCreation || attribute.showInList) && (
+              {(attribute.showInCreation || attribute.showInList || (attribute as any).agentOnly) && (
                 <div className="flex items-center space-x-2 mt-2 text-xs text-gray-500">
                   {attribute.showInCreation && (
                     <span className="bg-green-100 text-green-700 px-2 py-1 rounded">
@@ -148,6 +153,11 @@ export const AttributeCard: React.FC<AttributeCardProps> = ({
                   {attribute.showInList && (
                     <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded">
                       Lista
+                    </span>
+                  )}
+                  {(attribute as any).agentOnly && (
+                    <span className="bg-purple-100 text-purple-700 px-2 py-1 rounded">
+                      👤 Solo Agenti
                     </span>
                   )}
                 </div>
@@ -173,7 +183,10 @@ export const AttributeCard: React.FC<AttributeCardProps> = ({
             <Button
               variant="outline"
               size="sm"
-              onClick={() => onDelete(attribute.id)}
+              onClick={(e) => {
+                e.stopPropagation()
+                onDelete(attribute.id)
+              }}
               className="text-red-600 hover:text-red-700 hover:border-red-300"
             >
               Elimina

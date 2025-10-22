@@ -29,7 +29,7 @@ interface AttributeBuilderProps {
   categoryId: string
   categoryName?: string
   initialAttributes?: CategoryAttribute[]
-  onSave: (attributes: (Partial<CategoryAttribute> & { id: string })[]) => Promise<void>
+  onSave: (attributes: (Partial<CategoryAttribute> & { id: string })[], deletedIds?: string[]) => Promise<void>
 }
 
 type EditingAttribute = Partial<CategoryAttribute> & {
@@ -56,6 +56,7 @@ export const AttributeBuilder: React.FC<AttributeBuilderProps> = ({
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [previewMode, setPreviewMode] = useState(false)
+  const [deletedAttributeIds, setDeletedAttributeIds] = useState<string[]>([])
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -105,9 +106,15 @@ export const AttributeBuilder: React.FC<AttributeBuilderProps> = ({
   }
 
   const handleDeleteAttribute = (id: string) => {
-    if (confirm('Sei sicuro di voler eliminare questo attributo?')) {
-      setAttributes(prev => prev.filter(attr => attr.id !== id))
+    // Se l'attributo ha un _id (esiste nel DB), aggiungerlo alla lista degli eliminati
+    const attrToDelete = attributes.find(attr => attr.id === id)
+    
+    if (attrToDelete?._id && !id.startsWith('new-')) {
+      setDeletedAttributeIds(prev => [...prev, id])
     }
+    
+    // Rimuovere dall'interfaccia
+    setAttributes(prev => prev.filter(attr => attr.id !== id))
   }
 
   const handleSaveAttribute = (updatedAttribute: EditingAttribute) => {
@@ -137,9 +144,11 @@ export const AttributeBuilder: React.FC<AttributeBuilderProps> = ({
         isNew: attr.isNew || attr.id.startsWith('new-'), // Marca come nuovo se è un ID temporaneo
       }))
       
-      console.log('💾 Salvataggio attributi:', attributesToSave)
-      await onSave(attributesToSave)
-      console.log('✅ Attributi salvati con successo!')
+      // Passa anche gli ID degli attributi da eliminare
+      await onSave(attributesToSave, deletedAttributeIds)
+      
+      // Reset della lista degli eliminati dopo il salvataggio
+      setDeletedAttributeIds([])
     } catch (error) {
       console.error('Error saving attributes:', error)
       alert('Errore nel salvataggio degli attributi')
@@ -411,7 +420,7 @@ const AttributeEditModal: React.FC<AttributeEditModalProps> = ({
           </div>
 
           {/* Options */}
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <label className="flex items-center space-x-2">
               <input
                 type="checkbox"
@@ -437,6 +446,15 @@ const AttributeEditModal: React.FC<AttributeEditModalProps> = ({
                 onChange={(e) => handleFieldChange('showInList', e.target.checked)}
               />
               <span className="text-sm">Mostra in lista</span>
+            </label>
+
+            <label className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={(formData as any).agentOnly || false}
+                onChange={(e) => handleFieldChange('agentOnly' as any, e.target.checked)}
+              />
+              <span className="text-sm">Solo per agenti</span>
             </label>
           </div>
 

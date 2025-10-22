@@ -1,6 +1,65 @@
 import { v } from "convex/values"
 import { mutation, query } from "./_generated/server"
 import { ConvexError } from "convex/values"
+import { Id } from "./_generated/dataModel"
+
+// Funzione helper per assegnare automaticamente la società basata sul dominio email
+async function autoAssignSocietyByEmail(
+  ctx: any,
+  userId: Id<"users">,
+  email: string
+) {
+  try {
+    // Controllo se l'utente ha già una società assegnata
+    const existingUserSociety = await ctx.db
+      .query("userSocieties")
+      .withIndex("by_user", (q: any) => q.eq("userId", userId))
+      .filter((q: any) => q.eq(q.field("isActive"), true))
+      .first();
+
+    // Se ha già una società, non faccio nulla
+    if (existingUserSociety) {
+      return;
+    }
+
+    // Estraggo il dominio dall'email (es. mario@primogroup.it → primogroup.it)
+    const emailParts = email.toLowerCase().split("@");
+    if (emailParts.length !== 2) {
+      return;
+    }
+
+    const domain = emailParts[1];
+
+    // Cerco un mapping attivo per questo dominio
+    const domainMapping = await ctx.db
+      .query("domainSocieties")
+      .withIndex("by_domain_active", (q: any) =>
+        q.eq("domain", domain).eq("isActive", true)
+      )
+      .first();
+
+    if (!domainMapping) {
+      return;
+    }
+
+    // Verifico che la società esista e sia attiva
+    const society: any = await ctx.db.get(domainMapping.societyId);
+    if (!society || !society.isActive) {
+      return;
+    }
+
+    // Assegno automaticamente la società all'utente
+    await ctx.db.insert("userSocieties", {
+      userId: userId,
+      societyId: society._id,
+      assignedBy: userId, // Auto-assegnato
+      assignedAt: Date.now(),
+      isActive: true,
+    });
+  } catch (error) {
+    // Non voglio che l'assegnazione della società blocchi il login
+  }
+}
 
 // Query per ottenere o creare un utente da Auth0
 export const getOrCreateUser = mutation({
@@ -21,6 +80,10 @@ export const getOrCreateUser = mutation({
       await ctx.db.patch(existingUser._id, { 
         lastLoginAt: Date.now() 
       })
+      
+      // 🆕 Controllo se deve essere assegnata una società
+      await autoAssignSocietyByEmail(ctx, existingUser._id, email)
+      
       return existingUser
     }
 
@@ -36,6 +99,10 @@ export const getOrCreateUser = mutation({
         name: userByEmail.name || name,
         lastLoginAt: Date.now(),
       })
+      
+      // 🆕 Controllo se deve essere assegnata una società
+      await autoAssignSocietyByEmail(ctx, userByEmail._id, email)
+      
       const patched = await ctx.db.get(userByEmail._id)
       return patched
     }
@@ -81,6 +148,9 @@ export const getOrCreateUser = mutation({
         },
       },
     })
+    
+    // 🆕 Assegnazione automatica società basata sul dominio email
+    await autoAssignSocietyByEmail(ctx, userId, email)
     
     const newUser = await ctx.db.get(userId)
     return newUser

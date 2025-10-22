@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useAction } from 'convex/react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/convex/_generated/api';
@@ -78,14 +78,37 @@ export default function NewTicketPage() {
   // Debounced description for agent analysis
   const debouncedDescription = useDebounce(formData.description, 2000);
   
-  // Query per attributi obbligatori della categoria selezionata
-  const categoryAttributes = useQuery(
+  // Query per TUTTI gli attributi della categoria (per salvarli nel DB)
+  const allCategoryAttributesForSaving = useQuery(
+    api.categoryAttributes.getByCategory,
+    formData.category ? { 
+      categoryId: formData.category as any,
+    } : "skip"
+  );
+
+  // Query per attributi da mostrare nel form (solo showInCreation: true)
+  const allCategoryAttributes = useQuery(
     api.categoryAttributes.getByCategory,
     formData.category ? { 
       categoryId: formData.category as any,
       showInCreation: true 
     } : "skip"
   );
+
+  // Filtra gli attributi in base al ruolo: rimuovi agentOnly se l'utente NON è agente
+  const categoryAttributes = useMemo(() => {
+    if (!allCategoryAttributes) return allCategoryAttributes;
+    
+    // Confronto case-insensitive con versioni italiane e inglesi
+    const roleLower = user?.roleName?.toLowerCase();
+    const isAgent = roleLower === 'agent' || roleLower === 'agente' || roleLower === 'admin' || roleLower === 'amministratore';
+    
+    // Se è agente, mostra tutti gli attributi
+    if (isAgent) return allCategoryAttributes;
+    
+    // Se è utente normale, rimuovi gli attributi agentOnly
+    return allCategoryAttributes.filter((attr: any) => !attr.agentOnly);
+  }, [allCategoryAttributes, user?.roleName]);
 
   // 🤖 Effect: Analizza la descrizione con l'Agent AI
   useEffect(() => {
@@ -239,17 +262,17 @@ export default function NewTicketPage() {
       });
       
       
-      // 💾 Salva gli attributi
-      if (requiredAttributes.length > 0) {
-        for (const attr of requiredAttributes) {
-          const value = attributeValues[attr.slug];
-          if (value) {
-            await createTicketAttribute({
-              ticketId: result.ticketId as any,
-              attributeId: attr._id,
-              value: value
-            });
-          }
+      // 💾 Salva TUTTI gli attributi della categoria (inclusi agentOnly con valore null)
+      if (allCategoryAttributesForSaving && allCategoryAttributesForSaving.length > 0) {
+        for (const attr of allCategoryAttributesForSaving) {
+          // Prendi il valore dall'utente, oppure null se non compilato
+          const value = attributeValues[attr.slug] !== undefined ? attributeValues[attr.slug] : null;
+          
+          await createTicketAttribute({
+            ticketId: result.ticketId as any,
+            attributeId: attr._id,
+            value: value
+          });
         }
       }
       

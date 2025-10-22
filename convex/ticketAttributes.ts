@@ -89,3 +89,50 @@ export const remove = mutation({
     return ticketAttributeId;
   },
 });
+
+// 🆕 Mutation per assicurarsi che tutti gli attributi agentOnly esistano per un ticket
+export const ensureAgentOnlyAttributes = mutation({
+  args: {
+    ticketId: v.id("tickets"),
+  },
+  handler: async (ctx, { ticketId }) => {
+    // Ottieni il ticket per sapere la categoria
+    const ticket = await ctx.db.get(ticketId);
+    if (!ticket) {
+      throw new ConvexError("Ticket non trovato");
+    }
+
+    // Ottieni tutti gli attributi della categoria
+    const categoryAttributes = await ctx.db
+      .query("categoryAttributes")
+      .withIndex("by_category", (q) => q.eq("categoryId", ticket.categoryId))
+      .filter((q) => q.eq(q.field("isActive"), true))
+      .collect();
+
+    // Filtra solo gli attributi agentOnly
+    const agentOnlyAttributes = categoryAttributes.filter((attr: any) => attr.agentOnly);
+
+    // Per ogni attributo agentOnly, verifica se esiste già in ticketAttributes
+    const createdCount = [];
+    for (const attr of agentOnlyAttributes) {
+      const existing = await ctx.db
+        .query("ticketAttributes")
+        .withIndex("by_ticket_attribute", (q) => 
+          q.eq("ticketId", ticketId).eq("attributeId", attr._id)
+        )
+        .first();
+
+      // Se non esiste, crealo con valore null
+      if (!existing) {
+        await ctx.db.insert("ticketAttributes", {
+          ticketId,
+          attributeId: attr._id,
+          value: null,
+        });
+        createdCount.push(attr.name);
+      }
+    }
+
+    return { created: createdCount.length, attributes: createdCount };
+  },
+});
