@@ -1,7 +1,8 @@
 "use client";
 import { useState, useEffect } from 'react';
 import { useAuth0 } from '@auth0/auth0-react';
-import { useQuery, useMutation } from 'convex/react';
+import { useMutation } from 'convex/react';
+import { useConvexAuth } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 
 interface ExtendedUser {
@@ -9,6 +10,7 @@ interface ExtendedUser {
   cognome: string;
   email: string;
   ruolo: string;
+  roleName?: string;
   id: string;
   clinicId?: string;
   clinic?: {
@@ -21,69 +23,54 @@ interface ExtendedUser {
 }
 
 export function useAuth() {
-  const { user: auth0User, error: auth0Error, isLoading: auth0Loading, loginWithRedirect, logout: auth0Logout } = useAuth0();
-  const [user, setUser] = useState<ExtendedUser | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [hasSynced, setHasSynced] = useState(false);
+  const { loginWithRedirect, logout: auth0Logout } = useAuth0();
+  const { isLoading, isAuthenticated } = useConvexAuth();
+  const [convexUser, setConvexUser] = useState<ExtendedUser | null>(null);
+  const [isLoadingUser, setIsLoadingUser] = useState(false);
   
-  // Mutation per sincronizzare auth0Id
-  const syncUser = useMutation(api.users.syncUserFromAuth0);
+  // Mutation per ottenere/creare utente (segue Convex rules: mutations write)
+  const getCurrentUserMutation = useMutation(api.auth.getCurrentUser);
 
-  // Sync automatico quando l'utente fa login
+  // Carica utente quando autenticato
   useEffect(() => {
-    async function syncAuth0Id() {
-      if (auth0User && auth0User.sub && auth0User.email && !hasSynced) {
+    async function loadUser() {
+      if (isAuthenticated && !convexUser && !isLoadingUser) {
+        setIsLoadingUser(true);
         try {
-          await syncUser({
-            auth0Id: auth0User.sub,
-            email: auth0User.email,
-            name: auth0User.name
-          });
-          setHasSynced(true);
+          const userData = await getCurrentUserMutation({});
+          if (userData) {
+            const mappedUser: ExtendedUser = {
+              id: userData._id,
+              nome: userData.name.split(' ')[0] || 'Utente',
+              cognome: userData.name.split(' ').slice(1).join(' ') || '',
+              email: userData.email,
+              ruolo: userData.role?.name || 'user',
+              roleName: userData.role?.name,
+              clinicId: userData.clinicId,
+              clinic: userData.clinic,
+              role: userData.role,
+            };
+            setConvexUser(mappedUser);
+          }
         } catch (error) {
-          console.error('❌ [useAuth] Errore sync:', error);
+          console.error('Errore caricamento utente:', error);
+        } finally {
+          setIsLoadingUser(false);
         }
       }
     }
     
-    syncAuth0Id();
-  }, [auth0User, hasSynced, syncUser]);
+    loadUser();
+  }, [isAuthenticated, convexUser, isLoadingUser, getCurrentUserMutation]);
 
-  // Get basic user first (dopo la sync)
-  const basicUser = useQuery(
-    api.users.getUserByEmail,
-    auth0User?.email && hasSynced ? { email: auth0User.email } : "skip"
-  );
-
-  // Get full user data with populated fields
-  const convexUser = useQuery(
-    api.users.getUserById,
-    basicUser?._id ? { userId: basicUser._id } : "skip"
-  );
-
-  // Sync Auth0 user with Convex user data
+  // Reset user on logout
   useEffect(() => {
-    if (auth0User && convexUser) {
-      setUser({
-        id: convexUser._id,
-        nome: auth0User.email?.split('@')[0] || 'Utente',
-        cognome: '',
-        email: convexUser.email || '',
-        ruolo: convexUser.role?.name || 'user',
-        clinicId: convexUser.clinicId,
-        clinic: convexUser.clinic,
-        role: convexUser.role
-      });
-      setError(null);
-    } else if (!auth0User && !auth0Loading) {
-      setUser(null);
-      setHasSynced(false); // Reset sync quando si fa logout
+    if (!isAuthenticated) {
+      setConvexUser(null);
     }
+  }, [isAuthenticated]);
 
-    if (auth0Error) {
-      setError(auth0Error.message);
-    }
-  }, [auth0User, convexUser, auth0Loading, auth0Error]);
+  const user: ExtendedUser | null = convexUser;
 
   const login = () => {
     loginWithRedirect({
@@ -92,8 +79,7 @@ export function useAuth() {
   };
 
   const logout = () => {
-    setUser(null);
-    setError(null);
+    setConvexUser(null);
     auth0Logout({ 
       logoutParams: { 
         returnTo: window.location.origin 
@@ -101,16 +87,28 @@ export function useAuth() {
     });
   };
 
-  const refreshUser = () => {
-    // Convex query will auto-refresh
-  };
-
   return {
     user,
-    isLoading: auth0Loading || (auth0User && !convexUser),
-    error,
+    isLoading: isLoading || (isAuthenticated && !convexUser) || isLoadingUser,
+    error: null,
     login,
     logout,
-    refreshUser
+    refreshUser: async () => {
+      const userData = await getCurrentUserMutation({});
+      if (userData) {
+        const mappedUser: ExtendedUser = {
+          id: userData._id,
+          nome: userData.name.split(' ')[0] || 'Utente',
+          cognome: userData.name.split(' ').slice(1).join(' ') || '',
+          email: userData.email,
+          ruolo: userData.role?.name || 'user',
+          roleName: userData.role?.name,
+          clinicId: userData.clinicId,
+          clinic: userData.clinic,
+          role: userData.role,
+        };
+        setConvexUser(mappedUser);
+      }
+    },
   };
 }

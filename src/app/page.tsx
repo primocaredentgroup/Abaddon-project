@@ -2,54 +2,37 @@
 
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
+import { useConvexAuth } from 'convex/react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { LogIn } from 'lucide-react'
 import { useEffect } from 'react'
-import { useConvexAuth } from 'convex/react'
-import { useAuth0 } from '@auth0/auth0-react'
 
 export default function Home() {
   const { user, isLoading: userLoading, login } = useAuth()
   const { isAuthenticated, isLoading: convexAuthLoading } = useConvexAuth()
-  const { user: auth0User, isAuthenticated: auth0IsAuthenticated, isLoading: auth0IsLoading } = useAuth0()
   const router = useRouter()
 
-
-  // Redirect quando l'utente è autenticato con Convex e i dati sono caricati
+  // Redirect quando autenticato e dati caricati
   useEffect(() => {
-    if (!convexAuthLoading && isAuthenticated && !userLoading && user) {
-      
-      // Redirect basato sul ruolo
-      if (user.ruolo === 'agent' || user.roleName === 'Agente') {
+    if (isAuthenticated && user && !convexAuthLoading && !userLoading) {
+      if (user.roleName === 'Agente') {
         router.replace('/tickets/assigned')
       } else {
         router.replace('/dashboard')
       }
     }
-  }, [isAuthenticated, convexAuthLoading, userLoading, user, router])
+  }, [isAuthenticated, user, convexAuthLoading, userLoading, router])
 
-  // Mostra loading durante autenticazione o caricamento dati
-  if (convexAuthLoading || (isAuthenticated && userLoading)) {
+  // Loading durante autenticazione
+  if (convexAuthLoading || userLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <div className="w-8 h-8 animate-spin rounded-full border-2 border-primary border-t-transparent mx-auto mb-4" />
           <p className="text-muted-foreground">
-            {convexAuthLoading ? 'Autenticazione Convex...' : 'Caricamento dati utente...'}
+            {convexAuthLoading ? 'Autenticazione in corso...' : 'Caricamento profilo...'}
           </p>
-        </div>
-      </div>
-    )
-  }
-
-  // Mostra loading durante redirect
-  if (isAuthenticated && user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-8 h-8 animate-spin rounded-full border-2 border-primary border-t-transparent mx-auto mb-4" />
-          <p className="text-muted-foreground">Reindirizzamento...</p>
         </div>
       </div>
     )
