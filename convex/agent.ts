@@ -4,7 +4,8 @@ import { ConvexError } from "convex/values"
 import { getCurrentUser } from "./lib/utils"
 import { GoogleGenerativeAI } from "@google/generative-ai"
 import { api, internal } from "./_generated/api"
-import { hasFullAccess, isAdminOrAgent } from "./lib/permissions"
+import { hasFullAccess } from "./lib/permissions"
+import { Doc, Id } from "./_generated/dataModel"
 
 // Initialize Google Gemini
 const gemini = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY!);
@@ -20,6 +21,16 @@ async function call_llm(prompt: string) {
 // Ottieni thread attivi dell'utente
 export const getUserThreads = query({
   args: { userId: v.id("users") },
+  returns: v.array(v.object({
+    _id: v.id("agentThreads"),
+    _creationTime: v.number(),
+    userId: v.id("users"),
+    clinicId: v.id("clinics"),
+    title: v.optional(v.string()),
+    isActive: v.boolean(),
+    lastMessageAt: v.number(),
+    messageCount: v.number(),
+  })),
   handler: async (ctx, { userId }) => {
     return await ctx.db
       .query("agentThreads")
@@ -32,6 +43,14 @@ export const getUserThreads = query({
 // Ottieni messaggi di un thread
 export const getThreadMessages = query({
   args: { threadId: v.id("agentThreads") },
+  returns: v.array(v.object({
+    _id: v.id("agentMessages"),
+    _creationTime: v.number(),
+    threadId: v.id("agentThreads"),
+    role: v.union(v.literal("user"), v.literal("assistant")),
+    content: v.string(),
+    metadata: v.optional(v.any()),
+  })),
   handler: async (ctx, { threadId }) => {
     return await ctx.db
       .query("agentMessages")
@@ -44,6 +63,20 @@ export const getThreadMessages = query({
 // Ottieni configurazione agent per clinica
 export const getAgentConfig = query({
   args: { clinicId: v.id("clinics") },
+  returns: v.object({
+    clinicId: v.id("clinics"),
+    isEnabled: v.boolean(),
+    settings: v.object({
+      canSearchTickets: v.boolean(),
+      canSuggestCategories: v.boolean(),
+      canCreateTickets: v.boolean(),
+      canAccessUserData: v.boolean(),
+      canAccessClinicsData: v.boolean(),
+      temperature: v.number(),
+      maxTokens: v.number(),
+      systemPrompt: v.string(),
+    }),
+  }),
   handler: async (ctx, { clinicId }) => {
     const config = await ctx.db
       .query("agentConfig")
@@ -76,7 +109,11 @@ Sono qui per rendere il tuo lavoro più semplice ed efficiente! Rispondi sempre 
       };
     }
 
-    return config;
+    return {
+      clinicId: config.clinicId,
+      isEnabled: config.isEnabled,
+      settings: config.settings,
+    };
   },
 });
 
@@ -85,6 +122,7 @@ Sono qui per rendere il tuo lavoro più semplice ed efficiente! Rispondi sempre 
 // Crea o ottieni thread per l'utente
 export const createOrGetThread = mutation({
   args: { userId: v.id("users"), clinicId: v.id("clinics") },
+  returns: v.id("agentThreads"),
   handler: async (ctx, { userId, clinicId }) => {
     // Cerca thread attivo esistente
     const existingThread = await ctx.db
@@ -117,6 +155,7 @@ export const addMessage = mutation({
     content: v.string(),
     metadata: v.optional(v.any()),
   },
+  returns: v.id("agentMessages"),
   handler: async (ctx, { threadId, role, content, metadata }) => {
     // Inserisci messaggio
     const messageId = await ctx.db.insert("agentMessages", {
@@ -155,6 +194,7 @@ export const updateAgentConfig = mutation({
       systemPrompt: v.string(),
     }),
   },
+  returns: v.id("agentConfig"),
   handler: async (ctx, { clinicId, settings }) => {
     const currentUser = await getCurrentUser(ctx);
 
@@ -208,6 +248,7 @@ export const saveAgentFeedback = mutation({
     correctCategoryName: v.optional(v.string()),
     userComment: v.optional(v.string()),
   },
+  returns: v.id("agentFeedback"),
   handler: async (ctx, args) => {
     // Crea thread fittizio per il feedback (o usa threadId se disponibile)
     const threadId = await ctx.db.insert("agentThreads", {
@@ -248,18 +289,19 @@ export const searchTickets = action({
     clinicId: v.id("clinics"),
     userId: v.id("users"),
   },
-  handler: async (ctx, { query, clinicId, userId }): Promise<{
-    query: string;
-    results: Array<{
-      id: string;
-      title: string;
-      description: string;
-      status: string;
-      category: string;
-      url: string;
-    }>;
-    totalFound: number;
-  }> => {
+  returns: v.object({
+    query: v.string(),
+    results: v.array(v.object({
+      id: v.string(),
+      title: v.string(),
+      description: v.string(),
+      status: v.string(),
+      category: v.string(),
+      url: v.string(),
+    })),
+    totalFound: v.number(),
+  }),
+  handler: async (ctx, { query, clinicId }) => {
     // Ottieni config agent
     const config = await ctx.runQuery(api.agent.getAgentConfig, { clinicId });
     if (!config.settings.canSearchTickets) {
@@ -273,17 +315,17 @@ export const searchTickets = action({
 
     // Cerca nei ticket dell'utente e della clinica
     const ticketsResult = await ctx.runQuery(api.tickets.getByClinic, {});
-    const tickets = ticketsResult.tickets;
+    const tickets: Array<Doc<"tickets">> = ticketsResult.tickets;
     
     // Filtra i risultati in base alla query (titolo, descrizione)
-    const results = tickets.filter((ticket: any) => 
+    const results: Array<Doc<"tickets">> = tickets.filter((ticket) => 
       ticket.title.toLowerCase().includes(query.toLowerCase()) ||
       ticket.description.toLowerCase().includes(query.toLowerCase())
     ).slice(0, 10); // Max 10 risultati
 
     return {
       query,
-      results: results.map((ticket: any) => ({
+      results: results.map((ticket) => ({
         id: ticket._id,
         title: ticket.title,
         description: ticket.description.substring(0, 100) + "...",
@@ -304,13 +346,34 @@ export const suggestCategory = action({
     clinicId: v.id("clinics"),
     userId: v.id("users"), // 🆕 Aggiungi userId per filtrare per società
   },
-  handler: async (ctx, { title, description, clinicId, userId }): Promise<{
-    recommendedCategory: any;
-    confidence: number;
-    explanation: string;
-    alternativeCategory: any;
-    requiredAttributes?: any[]; // 🆕 Attributi obbligatori
-  }> => {
+  returns: v.object({
+    recommendedCategory: v.union(v.null(), v.object({
+      _id: v.id("categories"),
+      name: v.string(),
+    })),
+    confidence: v.number(),
+    explanation: v.string(),
+    alternativeCategory: v.union(v.null(), v.object({
+      _id: v.id("categories"),
+      name: v.string(),
+    })),
+    requiredAttributes: v.array(v.object({
+      _id: v.id("categoryAttributes"),
+      name: v.string(),
+      slug: v.string(),
+      type: v.union(
+        v.literal("text"),
+        v.literal("number"),
+        v.literal("date"),
+        v.literal("select"),
+        v.literal("multiselect"),
+        v.literal("boolean")
+      ),
+      required: v.boolean(),
+      config: v.any(),
+    })),
+  }),
+  handler: async (ctx, { title, description, clinicId, userId }) => {
     // Ottieni config agent
     const config = await ctx.runQuery(api.agent.getAgentConfig, { clinicId });
     if (!config.settings.canSuggestCategories) {
@@ -322,16 +385,16 @@ export const suggestCategory = action({
     
     // 🆕 Ottieni società dell'utente per filtrare categorie
     const userSocieties = await ctx.runQuery(api.userSocieties.getUserSocieties, { userId });
-    const userSocietyIds = userSocieties?.map((us: any) => us.societyId) || [];
+    const userSocietyIds: Array<Id<"societies">> = userSocieties?.map((us: Doc<"userSocieties">) => us.societyId) || [];
     
     // 🆕 Filtra categorie per società
-    const categories = allCategories.filter((cat: any) => {
+    const categories: Array<Doc<"categories">> = allCategories.filter((cat: Doc<"categories">) => {
       // Se categoria non ha società, è pubblica per tutti
       if (!cat.societyIds || cat.societyIds.length === 0) {
         return true;
       }
       // Se categoria ha società, verifica che l'utente ne faccia parte
-      return cat.societyIds.some((societyId: any) => userSocietyIds.includes(societyId));
+      return cat.societyIds.some((societyId: Id<"societies">) => userSocietyIds.includes(societyId));
     });
     
     // Ottieni esempi di ticket precedenti per apprendimento (usando query interna)
@@ -339,7 +402,14 @@ export const suggestCategory = action({
       clinicId,
       limit: 20,
     });
-    const ticketExamples = recentTickets.map((t: any) => ({
+    
+    interface TicketExample {
+      title: string;
+      description: string;
+      categoryId: Id<"categories">;
+    }
+    
+    const ticketExamples: Array<TicketExample> = recentTickets.map((t: Doc<"tickets">) => ({
       title: t.title,
       description: t.description.substring(0, 200),
       categoryId: t.categoryId,
@@ -354,10 +424,10 @@ Titolo: ${title}
 Descrizione: ${description}
 
 CATEGORIE DISPONIBILI:
-${categories.map((cat: any) => `- ID: ${cat._id}, Nome: ${cat.name}, Descrizione: ${cat.description || 'N/A'}, Sinonimi: ${cat.synonyms.join(', ')}`).join('\n')}
+${categories.map((cat) => `- ID: ${cat._id}, Nome: ${cat.name}, Descrizione: ${cat.description || 'N/A'}, Sinonimi: ${cat.synonyms.join(', ')}`).join('\n')}
 
 ESEMPI DI CLASSIFICAZIONI PRECEDENTI:
-${ticketExamples.map((ex: any) => `Titolo: "${ex.title}" → Categoria: ${ex.categoryId}`).join('\n')}
+${ticketExamples.map((ex) => `Titolo: "${ex.title}" → Categoria: ${ex.categoryId}`).join('\n')}
 
 Analizza il contenuto del ticket e restituisci:
 1. L'ID della categoria più appropriata
@@ -381,45 +451,96 @@ Formato di risposta JSON:
       const parsed = JSON.parse(cleanedResponse);
       
       // Valida che la categoria esista
-      const recommendedCategory = categories.find((c: any) => c._id === parsed.recommendedCategoryId);
+      const recommendedCategory = categories.find((c) => c._id === parsed.recommendedCategoryId);
       
       // Ottieni attributi obbligatori per la categoria suggerita
-      let requiredAttributes: any[] = [];
+      interface RequiredAttribute {
+        _id: Id<"categoryAttributes">;
+        name: string;
+        slug: string;
+        type: "text" | "number" | "date" | "select" | "multiselect" | "boolean";
+        required: boolean;
+        config: Record<string, unknown>;
+      }
+      
+      const requiredAttributes: Array<RequiredAttribute> = [];
       if (recommendedCategory) {
-        requiredAttributes = await ctx.runQuery(api.categoryAttributes.getByCategory, {
+        const attrs = await ctx.runQuery(api.categoryAttributes.getByCategory, {
           categoryId: recommendedCategory._id,
           showInCreation: true,
-        }).then((attrs: any[]) => attrs.filter(attr => attr.required));
+        });
+        for (const attr of attrs) {
+          if (attr.required) {
+            requiredAttributes.push({
+              _id: attr._id,
+              name: attr.name,
+              slug: attr.slug,
+              type: attr.type,
+              required: attr.required,
+              config: attr.config as Record<string, unknown>,
+            });
+          }
+        }
       }
       
       return {
-        recommendedCategory: recommendedCategory || null,
+        recommendedCategory: recommendedCategory ? {
+          _id: recommendedCategory._id,
+          name: recommendedCategory.name,
+        } : null,
         confidence: parsed.confidence || 0,
         explanation: parsed.explanation || "Categoria suggerita basata sul contenuto",
-        alternativeCategory: categories.find((c: any) => c._id === parsed.alternativeCategory) || null,
+        alternativeCategory: categories.find((c) => c._id === parsed.alternativeCategory) ? {
+          _id: categories.find((c) => c._id === parsed.alternativeCategory)!._id,
+          name: categories.find((c) => c._id === parsed.alternativeCategory)!.name,
+        } : null,
         requiredAttributes, // 🆕 AGGIUNGO ATTRIBUTI OBBLIGATORI
       };
     } catch (error) {
       console.error("Errore AI suggerimento categoria:", error);
       
       // Fallback: suggerisci categoria più comune
-      const mostUsedCategory = categories.find((c: any) => c.name.toLowerCase().includes('generale')) || categories[0];
+      const mostUsedCategory = categories.find((c) => c.name.toLowerCase().includes('generale')) || categories[0];
+      
+      interface RequiredAttribute {
+        _id: Id<"categoryAttributes">;
+        name: string;
+        slug: string;
+        type: "text" | "number" | "date" | "select" | "multiselect" | "boolean";
+        required: boolean;
+        config: Record<string, unknown>;
+      }
       
       // Ottieni attributi obbligatori anche per fallback
-      let requiredAttributes: any[] = [];
+      const requiredAttributes: Array<RequiredAttribute> = [];
       if (mostUsedCategory) {
         try {
-          requiredAttributes = await ctx.runQuery(api.categoryAttributes.getByCategory, {
+          const attrs = await ctx.runQuery(api.categoryAttributes.getByCategory, {
             categoryId: mostUsedCategory._id,
             showInCreation: true,
-          }).then((attrs: any[]) => attrs.filter(attr => attr.required));
+          });
+          for (const attr of attrs) {
+            if (attr.required) {
+              requiredAttributes.push({
+                _id: attr._id,
+                name: attr.name,
+                slug: attr.slug,
+                type: attr.type,
+                required: attr.required,
+                config: attr.config as Record<string, unknown>,
+              });
+            }
+          }
         } catch (e) {
           console.error("Errore recupero attributi fallback:", e);
         }
       }
       
       return {
-        recommendedCategory: mostUsedCategory || null,
+        recommendedCategory: mostUsedCategory ? {
+          _id: mostUsedCategory._id,
+          name: mostUsedCategory.name,
+        } : null,
         confidence: 20,
         explanation: "Suggerimento automatico: categoria generale",
         alternativeCategory: null,
@@ -437,14 +558,15 @@ export const createTicketWithSuggestion = action({
     categoryId: v.id("categories"),
     clinicId: v.id("clinics"),
     userEmail: v.string(), // 🆕 Passo direttamente l'email invece dell'ID
-    attributes: v.optional(v.any()), // 🆕 Attributi raccolti {slug: value}
+    attributes: v.optional(v.record(v.string(), v.any())), // 🆕 Attributi raccolti {slug: value}
   },
-  handler: async (ctx, { title, description, categoryId, clinicId, userEmail, attributes }): Promise<{
-    ticketId: string;
-    ticketNumber: number; // 🆕 Aggiungo ticketNumber
-    success: boolean;
-    url: string;
-  }> => {
+  returns: v.object({
+    ticketId: v.string(),
+    ticketNumber: v.number(),
+    success: v.boolean(),
+    url: v.string(),
+  }),
+  handler: async (ctx, { title, description, categoryId, clinicId, userEmail, attributes }) => {
     
     // Ottieni config agent
     const config = await ctx.runQuery(api.agent.getAgentConfig, { clinicId });
@@ -453,7 +575,7 @@ export const createTicketWithSuggestion = action({
     }
 
     // Crea il ticket usando createWithAuth (senza Auth0)
-    const result = await ctx.runMutation(api.tickets.createWithAuth, {
+    const result: { ticketId: string; ticketNumber: number } = await ctx.runMutation(api.tickets.createWithAuth, {
       title,
       description,
       categoryId,
@@ -466,21 +588,21 @@ export const createTicketWithSuggestion = action({
     if (attributes && Object.keys(attributes).length > 0) {
       
       // Ottieni gli attributi della categoria per recuperare gli ID
-      const categoryAttributes = await ctx.runQuery(api.categoryAttributes.getByCategory, {
+      const categoryAttributes: Array<Doc<"categoryAttributes">> = await ctx.runQuery(api.categoryAttributes.getByCategory, {
         categoryId,
       });
       
       
       // Per ogni attributo raccolto, salvalo
-      for (const [slug, value] of Object.entries(attributes)) {
-        const attr = categoryAttributes?.find((a: any) => a.slug === slug);
+      const attributeEntries: Array<[string, unknown]> = Object.entries(attributes);
+      for (const [slug, value] of attributeEntries) {
+        const attr = categoryAttributes?.find((a: Doc<"categoryAttributes">) => a.slug === slug);
         if (attr) {
           await ctx.runMutation(api.ticketAttributes.create, {
-            ticketId: result.ticketId as any,
+            ticketId: result.ticketId as Id<"tickets">,
             attributeId: attr._id,
             value,
           });
-        } else {
         }
       }
       
@@ -504,12 +626,13 @@ export const chatWithAgent = action({
     userEmail: v.string(), // 🆕 Aggiungo email per creazione ticket
     clinicId: v.id("clinics"),
   },
-  handler: async (ctx, { threadId, userMessage, userId, userEmail, clinicId }): Promise<{
-    response: string;
-    metadata: any;
-    success: boolean;
-    error?: string;
-  }> => {
+  returns: v.object({
+    response: v.string(),
+    metadata: v.any(),
+    success: v.boolean(),
+    error: v.optional(v.string()),
+  }),
+  handler: async (ctx, { threadId, userMessage, userId, userEmail, clinicId }) => {
     
     // Ottieni configurazione
     const config = await ctx.runQuery(api.agent.getAgentConfig, { clinicId });
@@ -528,13 +651,33 @@ export const chatWithAgent = action({
     // Ottieni cronologia conversazione
     const messages = await ctx.runQuery(api.agent.getThreadMessages, { threadId });
     
+    interface AgentMessage {
+      _id: Id<"agentMessages">;
+      _creationTime: number;
+      threadId: Id<"agentThreads">;
+      role: "user" | "assistant";
+      content: string;
+      metadata?: Record<string, unknown>;
+    }
+    
     // 🆕 CONTROLLA SE STIAMO ASPETTANDO ATTRIBUTI
-    const lastAssistantMessage = messages
-      .filter(m => m.role === "assistant")
-      .sort((a, b) => b._creationTime - a._creationTime)[0];
+    const lastAssistantMessage: AgentMessage | undefined = messages
+      .filter((m: AgentMessage): m is AgentMessage => m.role === "assistant")
+      .sort((a: AgentMessage, b: AgentMessage) => b._creationTime - a._creationTime)[0];
     
     
-    let intent: any;
+    interface UserIntent {
+      type: "search_ticket" | "suggest_category" | "create_ticket" | "general" | "correction" | "fallback_help" | "provide_attributes";
+      query?: string;
+      title?: string;
+      description?: string;
+      categoryId?: string;
+      correctionType?: "wrong_category" | "general_error";
+      userFeedback?: string;
+      attributeValues?: string;
+    }
+    
+    let intent: UserIntent;
     
     // Se stiamo aspettando attributi, NON analizzare l'intento con AI
     if (lastAssistantMessage?.metadata?.awaitingAttributes === true) {
@@ -548,7 +691,7 @@ export const chatWithAgent = action({
     }
     
     let responseContent = "";
-    let metadata: any = {};
+    const metadata: Record<string, unknown> = {};
 
     try {
       switch (intent.type) {
@@ -625,9 +768,9 @@ export const chatWithAgent = action({
           // 🆕 L'utente sta fornendo i valori degli attributi obbligatori
           
           const attrMetadata = lastAssistantMessage?.metadata;
-          const requiredAttrs = attrMetadata?.requiredAttributes || [];
-          const attrCategoryId = attrMetadata?.suggestedCategory;
-          const attrTicket = attrMetadata?.suggestedTicket;
+          const requiredAttrs = (attrMetadata?.requiredAttributes as Array<Record<string, unknown>>) || [];
+          const attrCategoryId = attrMetadata?.suggestedCategory as Id<"categories"> | undefined;
+          const attrTicket = attrMetadata?.suggestedTicket as { title: string; description: string } | undefined;
           
           
           if (!attrCategoryId || !attrTicket || requiredAttrs.length === 0) {
@@ -636,16 +779,16 @@ export const chatWithAgent = action({
           }
           
           // 🔧 PARSING SEMPLICE: splitta il messaggio e assegna i valori in ordine
-          const userValues = intent.attributeValues.trim().split(/\s+/); // Split per spazi
-          const collectedAttrs: any = {};
+          const userValues = (intent.attributeValues || "").trim().split(/\s+/); // Split per spazi
+          const collectedAttrs: Record<string, string> = {};
           
-          requiredAttrs.forEach((attr: any, index: number) => {
+          requiredAttrs.forEach((attr, index) => {
             if (index === 0 && userValues.length >= 2) {
               // Primo attributo: prendi i primi due token se ci sono (es: "mario rossi")
-              collectedAttrs[attr.slug] = `${userValues[0]} ${userValues[1]}`;
+              collectedAttrs[attr.slug as string] = `${userValues[0]} ${userValues[1]}`;
             } else if (index === 1 && userValues.length >= 3) {
               // Secondo attributo: prendi il terzo token (es: "12343532")
-              collectedAttrs[attr.slug] = userValues[2];
+              collectedAttrs[attr.slug as string] = userValues[2];
             }
           });
           
@@ -654,7 +797,7 @@ export const chatWithAgent = action({
           const attrTicketResult = await ctx.runAction(api.agent.createTicketWithSuggestion, {
             title: attrTicket.title,
             description: attrTicket.description,
-            categoryId: attrCategoryId as any,
+            categoryId: attrCategoryId,
             clinicId,
             userEmail,
             attributes: collectedAttrs, // 🆕 Passo gli attributi raccolti!
@@ -662,9 +805,11 @@ export const chatWithAgent = action({
           
           responseContent = `✅ Perfetto! Ho creato il ticket per te! 🎉\n\n🎫 **Ticket #${attrTicketResult.ticketNumber}**\n📋 **Oggetto**: ${attrTicket.title}\n\n📝 **Informazioni raccolte:**\n`;
           
-          requiredAttrs.forEach((attr: any) => {
-            if (collectedAttrs[attr.slug]) {
-              responseContent += `• **${attr.name}**: ${collectedAttrs[attr.slug]}\n`;
+          requiredAttrs.forEach((attr) => {
+            const attrSlug = attr.slug as string;
+            const attrName = attr.name as string;
+            if (collectedAttrs[attrSlug]) {
+              responseContent += `• **${attrName}**: ${collectedAttrs[attrSlug]}\n`;
             }
           });
           
@@ -675,26 +820,28 @@ export const chatWithAgent = action({
 
         case "create_ticket":
           // Recupera i metadati dal messaggio precedente (categoria suggerita)
-          const lastAssistantMessageForTicket = messages
-            .filter(m => m.role === "assistant")
-            .sort((a, b) => b._creationTime - a._creationTime)[0];
+          const lastAssistantMessageForTicket: AgentMessage | undefined = messages
+            .filter((m: AgentMessage): m is AgentMessage => m.role === "assistant")
+            .sort((a: AgentMessage, b: AgentMessage) => b._creationTime - a._creationTime)[0];
           
           
-          const categoryId = intent.categoryId || lastAssistantMessageForTicket?.metadata?.suggestedCategory;
-          const title = intent.title || lastAssistantMessageForTicket?.metadata?.suggestedTicket?.title;
-          const description = intent.description || lastAssistantMessageForTicket?.metadata?.suggestedTicket?.description;
-          const requiredAttributes = (lastAssistantMessageForTicket?.metadata as any)?.requiredAttributes || [];
+          const categoryId = intent.categoryId || (lastAssistantMessageForTicket?.metadata?.suggestedCategory as string | undefined);
+          const title = intent.title || (lastAssistantMessageForTicket?.metadata?.suggestedTicket as { title?: string })?.title;
+          const description = intent.description || (lastAssistantMessageForTicket?.metadata?.suggestedTicket as { description?: string })?.description;
+          const requiredAttributes = (lastAssistantMessageForTicket?.metadata?.requiredAttributes as Array<Record<string, unknown>>) || [];
           
           // 🆕 Se ci sono attributi obbligatori, chiediamoli
           if (requiredAttributes.length > 0 && categoryId && title && description) {
             responseContent = `📝 Perfetto! Prima di creare il ticket, ho bisogno di queste informazioni:\n\n`;
-            requiredAttributes.forEach((attr: any, index: number) => {
-              responseContent += `${index + 1}. **${attr.name}**`;
-              if (attr.config.placeholder) {
-                responseContent += ` (${attr.config.placeholder})`;
+            requiredAttributes.forEach((attr, index) => {
+              responseContent += `${index + 1}. **${attr.name as string}**`;
+              const attrConfig = attr.config as Record<string, unknown>;
+              if (attrConfig.placeholder) {
+                responseContent += ` (${attrConfig.placeholder as string})`;
               }
-              if (attr.type === 'select' && attr.config.options) {
-                responseContent += `\n   📌 Opzioni: ${attr.config.options.join(', ')}`;
+              if (attr.type === 'select' && attrConfig.options) {
+                const options = attrConfig.options as Array<string>;
+                responseContent += `\n   📌 Opzioni: ${options.join(', ')}`;
               }
               responseContent += `\n\n`;
             });
@@ -711,7 +858,7 @@ export const chatWithAgent = action({
             const ticketResult = await ctx.runAction(api.agent.createTicketWithSuggestion, {
               title,
               description,
-              categoryId: categoryId as any,
+              categoryId: categoryId as Id<"categories">,
               clinicId,
               userEmail, // 🆕 Passo l'email invece dell'userId
             });
@@ -779,7 +926,7 @@ export const chatWithAgent = action({
 
 // =================== HELPER FUNCTIONS ===================
 
-async function analyzeUserIntent(message: string): Promise<{
+interface AnalyzedIntent {
   type: "search_ticket" | "suggest_category" | "create_ticket" | "general" | "correction" | "fallback_help";
   query?: string;
   title?: string;
@@ -787,7 +934,9 @@ async function analyzeUserIntent(message: string): Promise<{
   categoryId?: string;
   correctionType?: "wrong_category" | "general_error";
   userFeedback?: string;
-}> {
+}
+
+async function analyzeUserIntent(message: string): Promise<AnalyzedIntent> {
   const messageLower = message.toLowerCase();
 
   // 🆕 CORREZIONE: L'utente sta dicendo che l'agent ha sbagliato
@@ -885,14 +1034,27 @@ RISPONDI SOLO con un JSON in questo formato:
   return { type: "general" };
 }
 
-function formatSearchResults(results: any): string {
+interface SearchResult {
+  query: string;
+  results: Array<{
+    id: string;
+    title: string;
+    description: string;
+    status: string;
+    category: string;
+    url: string;
+  }>;
+  totalFound: number;
+}
+
+function formatSearchResults(results: SearchResult): string {
   if (results.totalFound === 0) {
     return `🔍 Hmm, non ho trovato ticket per "${results.query}"...\n\n Prova con altri termini o controlla l'ID del ticket. Se hai bisogno di aiuto, chiedimi pure! 😊`;
   }
 
   let response = `🔍 Ecco cosa ho trovato per "${results.query}":\n\n`;
   
-  results.results.forEach((ticket: any, index: number) => {
+  results.results.forEach((ticket, index) => {
     response += `**${index + 1}. ${ticket.title}**\n`;
     response += `📌 ${ticket.status} • ID: ${ticket.id}\n`;
     response += `${ticket.description}\n`;
@@ -904,7 +1066,28 @@ function formatSearchResults(results: any): string {
   return response;
 }
 
-function formatCategorySuggestion(suggestion: any): string {
+interface CategorySuggestion {
+  recommendedCategory: {
+    _id: Id<"categories">;
+    name: string;
+  } | null;
+  confidence: number;
+  explanation: string;
+  alternativeCategory: {
+    _id: Id<"categories">;
+    name: string;
+  } | null;
+  requiredAttributes: Array<{
+    _id: Id<"categoryAttributes">;
+    name: string;
+    slug: string;
+    type: "text" | "number" | "date" | "select" | "multiselect" | "boolean";
+    required: boolean;
+    config: Record<string, unknown>;
+  }>;
+}
+
+function formatCategorySuggestion(suggestion: CategorySuggestion): string {
   if (!suggestion.recommendedCategory) {
     return "😅 Mi dispiace, non sono riuscito a trovare la categoria giusta per questo problema. Puoi essere più specifico o contattare direttamente il supporto?";
   }
@@ -929,13 +1112,14 @@ function formatCategorySuggestion(suggestion: any): string {
   // 🆕 SE CI SONO ATTRIBUTI OBBLIGATORI, CHIEDIGLI
   if (suggestion.requiredAttributes && suggestion.requiredAttributes.length > 0) {
     response += `📝 Per completare il ticket, ho bisogno di qualche informazione in più:\n\n`;
-    suggestion.requiredAttributes.forEach((attr: any, index: number) => {
+    suggestion.requiredAttributes.forEach((attr, index) => {
       response += `${index + 1}. **${attr.name}**`;
       if (attr.config.placeholder) {
-        response += ` (${attr.config.placeholder})`;
+        response += ` (${attr.config.placeholder as string})`;
       }
       if (attr.type === 'select' && attr.config.options) {
-        response += `\n   Opzioni: ${attr.config.options.join(', ')}`;
+        const options = attr.config.options as Array<string>;
+        response += `\n   Opzioni: ${options.join(', ')}`;
       }
       response += `\n`;
     });
@@ -947,10 +1131,15 @@ function formatCategorySuggestion(suggestion: any): string {
   return response;
 }
 
-async function generateGeneralResponse(message: string, messages: any[], systemPrompt: string): Promise<string> {
+interface ConversationMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+async function generateGeneralResponse(message: string, messages: Array<ConversationMessage>, systemPrompt: string): Promise<string> {
   const conversationHistory = messages
     .slice(-6) // Prendi solo gli ultimi 6 messaggi per non sovraccaricare il prompt
-    .map((m: any) => `${m.role}: ${m.content}`)
+    .map((m) => `${m.role}: ${m.content}`)
     .join('\n');
   
   const prompt = `${systemPrompt}
@@ -1058,6 +1247,7 @@ export const initializeAgentConfigSimple = mutation({
     clinicId: v.id("clinics"),
     userId: v.id("users")
   },
+  returns: v.id("agentConfig"),
   handler: async (ctx, { clinicId, userId }) => {
     const existing = await ctx.db
       .query("agentConfig")

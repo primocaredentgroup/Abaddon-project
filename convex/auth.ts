@@ -1,11 +1,17 @@
 import { v } from "convex/values"
-import { mutation, query } from "./_generated/server"
+import { mutation, query, internalMutation } from "./_generated/server"
 import { ConvexError } from "convex/values"
 import { Id } from "./_generated/dataModel"
+import { internal } from "./_generated/api"
+
+import { Doc } from "./_generated/dataModel"
 
 // Funzione helper per assegnare automaticamente la società basata sul dominio email
+// Nota: questa è una funzione helper interna che usa 'any' per il ctx per compatibilità
+// con diversi context types (mutation, internal mutation). È OK in questo caso.
 async function autoAssignSocietyByEmail(
-  ctx: any,
+  // @ts-expect-error: Using any for ctx to support multiple context types
+  ctx,
   userId: Id<"users">,
   email: string
 ) {
@@ -13,8 +19,10 @@ async function autoAssignSocietyByEmail(
     // Controllo se l'utente ha già una società assegnata
     const existingUserSociety = await ctx.db
       .query("userSocieties")
-      .withIndex("by_user", (q: any) => q.eq("userId", userId))
-      .filter((q: any) => q.eq(q.field("isActive"), true))
+      // @ts-expect-error: Query builder typing is complex
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      // @ts-expect-error: Filter typing is complex
+      .filter((q) => q.eq(q.field("isActive"), true))
       .first();
 
     // Se ha già una società, non faccio nulla
@@ -33,7 +41,8 @@ async function autoAssignSocietyByEmail(
     // Cerco un mapping attivo per questo dominio
     const domainMapping = await ctx.db
       .query("domainSocieties")
-      .withIndex("by_domain_active", (q: any) =>
+      // @ts-expect-error: Query builder typing is complex
+      .withIndex("by_domain_active", (q) =>
         q.eq("domain", domain).eq("isActive", true)
       )
       .first();
@@ -43,7 +52,7 @@ async function autoAssignSocietyByEmail(
     }
 
     // Verifico che la società esista e sia attiva
-    const society: any = await ctx.db.get(domainMapping.societyId);
+    const society: Doc<"societies"> | null = await ctx.db.get(domainMapping.societyId);
     if (!society || !society.isActive) {
       return;
     }
@@ -56,7 +65,7 @@ async function autoAssignSocietyByEmail(
       assignedAt: Date.now(),
       isActive: true,
     });
-  } catch (error) {
+  } catch {
     // Non voglio che l'assegnazione della società blocchi il login
   }
 }
@@ -68,6 +77,31 @@ export const getOrCreateUser = mutation({
     email: v.string(),
     name: v.string(),
   },
+  returns: v.union(
+    v.object({
+      _id: v.id("users"),
+      _creationTime: v.number(),
+      email: v.string(),
+      name: v.string(),
+      auth0Id: v.string(),
+      clinicId: v.id("clinics"),
+      roleId: v.id("roles"),
+      isActive: v.boolean(),
+      lastLoginAt: v.optional(v.number()),
+      categoryCompetencies: v.optional(v.array(v.id("categories"))),
+      preferences: v.object({
+        notifications: v.object({
+          email: v.boolean(),
+          push: v.boolean(),
+        }),
+        dashboard: v.object({
+          defaultView: v.string(),
+          itemsPerPage: v.number(),
+        }),
+      }),
+    }),
+    v.null()
+  ),
   handler: async (ctx, { auth0Id, email, name }) => {
     // Cerca l'utente esistente
     const existingUser = await ctx.db
@@ -164,7 +198,8 @@ export const checkUserPermission = query({
     action: v.string(),
     targetId: v.optional(v.string()),
   },
-  handler: async (ctx, { resource, action, targetId }) => {
+  returns: v.boolean(),
+  handler: async (ctx, { resource, action }) => {
     const identity = await ctx.auth.getUserIdentity()
     if (!identity) {
       return false
@@ -214,6 +249,7 @@ export const updateUserProfile = mutation({
       }),
     }))
   },
+  returns: v.id("users"),
   handler: async (ctx, updates) => {
     const identity = await ctx.auth.getUserIdentity()
     if (!identity) {
@@ -239,4 +275,170 @@ export const updateUserProfile = mutation({
     
     return user._id
   }
+})
+
+// Mutation ottimizzata per ottenere l'utente corrente (con creazione automatica)
+// Nota: è una mutation perché crea utenti e aggiorna lastLoginAt (segue Convex rule: mutations write)
+export const getCurrentUser = mutation({
+  args: {},
+  returns: v.union(
+    v.object({
+      _id: v.id("users"),
+      _creationTime: v.number(),
+      email: v.string(),
+      name: v.string(),
+      auth0Id: v.string(),
+      clinicId: v.id("clinics"),
+      roleId: v.id("roles"),
+      isActive: v.boolean(),
+      lastLoginAt: v.optional(v.number()),
+      categoryCompetencies: v.optional(v.array(v.id("categories"))),
+      preferences: v.object({
+        notifications: v.object({
+          email: v.boolean(),
+          push: v.boolean(),
+        }),
+        dashboard: v.object({
+          defaultView: v.string(),
+          itemsPerPage: v.number(),
+        }),
+      }),
+      clinic: v.optional(v.object({
+        _id: v.id("clinics"),
+        name: v.string(),
+        code: v.string(),
+      })),
+      role: v.optional(v.object({
+        _id: v.id("roles"),
+        name: v.string(),
+        permissions: v.array(v.string()),
+      })),
+    }),
+    v.null()
+  ),
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity()
+    if (!identity) {
+      return null
+    }
+
+    // Ottiene o crea l'utente in un'unica transazione
+    const existingUser = await ctx.db
+      .query("users")
+      .withIndex("by_auth0", (q) => q.eq("auth0Id", identity.subject))
+      .unique()
+
+    if (!existingUser) {
+      // Crea automaticamente l'utente se non esiste usando mutation interna
+      const userId: Id<"users"> = await ctx.runMutation(internal.auth.createUserFromIdentity, {
+        auth0Id: identity.subject,
+        email: identity.email!,
+        name: identity.name || identity.email!.split("@")[0],
+      })
+      
+      const newUser = await ctx.db.get(userId)
+      if (!newUser) return null
+      
+      // Popola dati con type narrowing esplicito
+      const clinicDoc = await ctx.db.get(newUser.clinicId)
+      const roleDoc = await ctx.db.get(newUser.roleId)
+      
+      // Type narrowing manuale per clinic
+      const clinic = clinicDoc && 'name' in clinicDoc && 'code' in clinicDoc ? 
+        { _id: clinicDoc._id, name: clinicDoc.name, code: clinicDoc.code } : 
+        undefined
+      
+      // Type narrowing manuale per role
+      const role = roleDoc && 'name' in roleDoc && 'permissions' in roleDoc ?
+        { _id: roleDoc._id, name: roleDoc.name, permissions: roleDoc.permissions } :
+        undefined
+      
+      return { 
+        ...newUser, 
+        clinic,
+        role
+      }
+    }
+
+    // Aggiorna ultimo accesso
+    await ctx.db.patch(existingUser._id, { lastLoginAt: Date.now() })
+
+    // Popola i dati in parallelo con type narrowing esplicito
+    const clinicDoc = await ctx.db.get(existingUser.clinicId)
+    const roleDoc = await ctx.db.get(existingUser.roleId)
+    
+    // Type narrowing manuale per clinic
+    const clinic = clinicDoc && 'name' in clinicDoc && 'code' in clinicDoc ? 
+      { _id: clinicDoc._id, name: clinicDoc.name, code: clinicDoc.code } : 
+      undefined
+    
+    // Type narrowing manuale per role
+    const role = roleDoc && 'name' in roleDoc && 'permissions' in roleDoc ?
+      { _id: roleDoc._id, name: roleDoc.name, permissions: roleDoc.permissions } :
+      undefined
+
+    return {
+      ...existingUser,
+      clinic,
+      role,
+    }
+  },
+})
+
+// Mutation interna per creare un nuovo utente da Auth0 identity
+export const createUserFromIdentity = internalMutation({
+  args: {
+    auth0Id: v.string(),
+    email: v.string(),
+    name: v.string(),
+  },
+  returns: v.id("users"),
+  handler: async (ctx, { auth0Id, email, name }) => {
+    // Verifica clinica di default
+    const defaultClinic = await ctx.db
+      .query("clinics")
+      .withIndex("by_code", (q) => q.eq("code", "DEMO001"))
+      .unique()
+    
+    if (!defaultClinic) {
+      throw new ConvexError("No default clinic found. Please initialize the database first.")
+    }
+    
+    // Ottieni ruolo utente di default
+    const userRole = await ctx.db
+      .query("roles")
+      .withIndex("by_system", (q) => q.eq("isSystem", true))
+      .filter((q) => q.eq(q.field("name"), "Utente"))
+      .unique()
+    
+    if (!userRole) {
+      throw new ConvexError("Default user role not found. Please initialize the database first.")
+    }
+    
+    // Crea utente
+    const userId = await ctx.db.insert("users", {
+      email,
+      name,
+      auth0Id,
+      clinicId: defaultClinic._id,
+      roleId: userRole._id,
+      isActive: true,
+      lastLoginAt: Date.now(),
+      preferences: {
+        notifications: {
+          email: true,
+          push: true,
+        },
+        dashboard: {
+          defaultView: "my-tickets",
+          itemsPerPage: 25,
+        },
+      },
+    })
+    
+    // Assegnazione automatica società basata sul dominio email
+    await autoAssignSocietyByEmail(ctx, userId, email)
+    
+    return userId
+  },
 })
