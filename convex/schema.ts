@@ -67,11 +67,10 @@ export default defineSchema({
     description: v.optional(v.string()),
     clinicId: v.optional(v.id("clinics")),
     permissions: v.array(v.string()), // Cambiato da v.id("permissions") a v.string() per semplicità
-    isSystem: v.optional(v.boolean()),
+    isSystem: v.boolean(),
     isActive: v.boolean(),
   })
-    .index("by_clinic", ["clinicId"])
-    .index("by_system", ["isSystem"]),
+    .index("by_clinic", ["clinicId"]),
 
   // Permissions table
   permissions: defineTable({

@@ -118,7 +118,7 @@ export const createSystemRoles = mutation({
     // Verifica se i ruoli esistono già
     const existingRoles = await ctx.db
       .query("roles")
-      .withIndex("by_system", (q) => q.eq("isSystem", true))
+      .filter((q) => q.eq(q.field("isSystem"), true))
       .collect()
       
     if (existingRoles.length > 0) {

@@ -154,7 +154,7 @@ export const getOrCreateUser = mutation({
     // Ottieni il ruolo utente di default
     const userRole = await ctx.db
       .query("roles")
-      .withIndex("by_system", (q) => q.eq("isSystem", true))
+      .filter((q) => q.eq(q.field("isSystem"), true))
       .filter((q) => q.eq(q.field("name"), "Utente"))
       .unique()
     
@@ -407,7 +407,7 @@ export const createUserFromIdentity = internalMutation({
     // Ottieni ruolo utente di default
     const userRole = await ctx.db
       .query("roles")
-      .withIndex("by_system", (q) => q.eq("isSystem", true))
+      .filter((q) => q.eq(q.field("isSystem"), true))
       .filter((q) => q.eq(q.field("name"), "Utente"))
       .unique()
     
