@@ -1,6 +1,7 @@
 import { v } from "convex/values"
 import { mutation, query, internalMutation } from "./_generated/server"
 import { ConvexError } from "convex/values"
+import { userHasAccessToCategory } from "./categories"
 
 // 🔓 VERSIONE SIMPLE per sviluppo (senza autenticazione)
 export const getByCategorySimple = query({
@@ -55,10 +56,16 @@ export const getByCategory = query({
       throw new ConvexError("User not found")
     }
 
-    // Get category to verify clinic access
+    // Get category to verify access (via società)
     const category = await ctx.db.get(categoryId)
-    if (!category || category.clinicId !== user.clinicId) {
-      throw new ConvexError("Category not found or access denied")
+    if (!category) {
+      throw new ConvexError("Category not found")
+    }
+    
+    // Verifica accesso via società
+    const hasAccess = await userHasAccessToCategory(ctx, user._id, categoryId)
+    if (!hasAccess) {
+      throw new ConvexError("Access denied to this category")
     }
 
     let query = ctx.db
@@ -82,12 +89,13 @@ export const getByCategory = query({
   },
 })
 
-// Query to get all attributes for a clinic (admin use)
+// ⚠️ DEPRECATED: Gli attributi non sono più collegati alle cliniche
+// Query per ottenere tutti gli attributi filtrati per società dell'utente (admin use)
 export const getByClinic = query({
   args: {
-    clinicId: v.optional(v.id("clinics")),
+    userId: v.id("users"), // ← CAMBIATO: ora usa userId per filtrare per società
   },
-  handler: async (ctx, { clinicId }) => {
+  handler: async (ctx, { userId }) => {
     const identity = await ctx.auth.getUserIdentity()
     if (!identity) {
       throw new ConvexError("Not authenticated")
@@ -102,20 +110,26 @@ export const getByClinic = query({
       throw new ConvexError("User not found")
     }
 
-    // Use provided clinicId or user's clinic
-    const targetClinicId = clinicId || user.clinicId
-
-    // Check if user has access to this clinic
-    if (targetClinicId !== user.clinicId) {
-      // TODO: Add role-based permission check for cross-clinic access
-      throw new ConvexError("Access denied")
+    // Ottieni tutte le categorie accessibili all'utente (via società)
+    // userHasAccessToCategory già importato in cima al file
+    const allCategories = await ctx.db.query("categories").collect()
+    
+    const accessibleCategories: Array<string> = [];
+    for (const cat of allCategories) {
+      if (await userHasAccessToCategory(ctx, userId, cat._id)) {
+        accessibleCategories.push(cat._id);
+      }
     }
 
-    return await ctx.db
+    // Ottieni tutti gli attributi di queste categorie
+    const allAttributes = await ctx.db
       .query("categoryAttributes")
-      .withIndex("by_clinic", (q) => q.eq("clinicId", targetClinicId))
       .filter((q) => q.eq(q.field("isActive"), true))
       .collect()
+    
+    return allAttributes.filter(attr => 
+      accessibleCategories.includes(attr.categoryId)
+    );
   },
 })
 
@@ -166,10 +180,17 @@ export const create = mutation({
       throw new ConvexError("User not found")
     }
 
-    // Get category to verify access
+    // Get category to verify access (via società)
     const category = await ctx.db.get(args.categoryId)
-    if (!category || category.clinicId !== user.clinicId) {
-      throw new ConvexError("Category not found or access denied")
+    if (!category) {
+      throw new ConvexError("Category not found")
+    }
+    
+    // Verifica accesso via società
+    // userHasAccessToCategory già importato in cima al file
+    const hasAccess = await userHasAccessToCategory(ctx, user._id, args.categoryId)
+    if (!hasAccess) {
+      throw new ConvexError("Access denied to this category")
     }
 
     // Check if slug is unique within category
@@ -193,7 +214,7 @@ export const create = mutation({
     // Create the attribute
     const attributeId = await ctx.db.insert("categoryAttributes", {
       ...args,
-      clinicId: user.clinicId,
+      // ❌ RIMOSSO clinicId - gli attributi sono collegati alle categorie
       isActive: true,
     })
 
@@ -250,8 +271,15 @@ export const update = mutation({
 
     // Get attribute to verify access
     const attribute = await ctx.db.get(attributeId)
-    if (!attribute || attribute.clinicId !== user.clinicId) {
-      throw new ConvexError("Attribute not found or access denied")
+    if (!attribute) {
+      throw new ConvexError("Attribute not found")
+    }
+    
+    // Verifica accesso via categoria e società
+    // userHasAccessToCategory già importato in cima al file
+    const hasAccess = await userHasAccessToCategory(ctx, user._id, attribute.categoryId)
+    if (!hasAccess) {
+      throw new ConvexError("Access denied to this category")
     }
 
     // If slug is being updated, check uniqueness
@@ -305,8 +333,15 @@ export const remove = mutation({
 
     // Get attribute to verify access
     const attribute = await ctx.db.get(attributeId)
-    if (!attribute || attribute.clinicId !== user.clinicId) {
-      throw new ConvexError("Attribute not found or access denied")
+    if (!attribute) {
+      throw new ConvexError("Attribute not found")
+    }
+    
+    // Verifica accesso via categoria e società
+    // userHasAccessToCategory già importato in cima al file
+    const hasAccess = await userHasAccessToCategory(ctx, user._id, attribute.categoryId)
+    if (!hasAccess) {
+      throw new ConvexError("Access denied to this category")
     }
 
     // Soft delete by setting isActive to false
@@ -554,7 +589,7 @@ export const createSimple = mutation({
     // Create the attribute
     const attributeId = await ctx.db.insert("categoryAttributes", {
       ...args,
-      clinicId: category.clinicId,
+      // ❌ RIMOSSO clinicId - gli attributi sono collegati alle categorie, non alle cliniche
       isActive: true,
     })
 

@@ -52,10 +52,10 @@ export default function ViewsPage() {
     user?.email && clinicId ? { userEmail: user.email, clinicId } : "skip"
   )
   
-  // Query per le categorie
+  // 🔓 ADMIN VIEW: Mostra TUTTE le categorie (no filtro società)
   const categories = useQuery(
     api.categories.getCategoriesByClinic,
-    clinicId ? { clinicId, isActive: true } : "skip"
+    { isActive: true } // NO userId → mostra TUTTO
   )
   
   // Query per i ticket di una vista specifica

@@ -69,10 +69,10 @@ export default function SLAMonitorPage() {
   // Get clinic ID from user  
   const clinicId = (user as any)?.clinicId || (user as any)?.clinic?._id
 
-  // Query per ottenere le categorie REALI dal database
+  // 🔓 ADMIN VIEW: Mostra TUTTE le categorie (no filtro società)
   const categoriesFromDB = useQuery(
     api.categories.getCategoriesByClinic,
-    clinicId ? { clinicId, isActive: true } : "skip"
+    { isActive: true } // NO userId → mostra TUTTO
   )
   
   // Mappa le categorie in un formato semplice per il form

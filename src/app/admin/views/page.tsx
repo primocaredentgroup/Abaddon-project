@@ -50,9 +50,10 @@ export default function AdminViewsPage() {
     api.ticketViews.getViewsByClinic,
     clinicId ? { clinicId } : "skip"
   )
+  // 🔓 ADMIN VIEW: Mostra TUTTE le categorie (no filtro società)
   const categories = useQuery(
     api.categories.getCategoriesByClinic,
-    clinicId ? { clinicId, isActive: true } : "skip"
+    { isActive: true } // NO userId → mostra TUTTO
   )
   const allUsers = useQuery(api.users.getAllUsers, {})
   

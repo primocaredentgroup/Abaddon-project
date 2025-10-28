@@ -54,10 +54,10 @@ export default function MacrosPage() {
   // Get clinic ID from user (con cast per supportare sia ID diretto che oggetto clinic)
   const clinicId = (user as any)?.clinicId || (user as any)?.clinic?._id
   
-  // Fetch real categories from Convex
+  // 🔓 ADMIN VIEW: Mostra TUTTE le categorie (no filtro società)
   const categoriesFromDB = useQuery(
     api.categories.getCategoriesByClinic,
-    clinicId ? { clinicId } : "skip"
+    {} // NO userId → mostra TUTTO
   )
   
   // Fetch ticket statuses from Convex

@@ -2,6 +2,7 @@ import { v } from "convex/values"
 import { mutation, query } from "./_generated/server"
 import { ConvexError } from "convex/values"
 import { getCurrentUser, generateSlug } from "./lib/utils"
+import { userHasAccessToCategory } from "./categories"
 
 // Query per ottenere tutti i tag di una clinica
 export const getTagsByClinic = query({
@@ -119,9 +120,8 @@ export const createTag = mutation({
         throw new ConvexError("Category not found")
       }
       
-      if (category.clinicId !== args.clinicId) {
-        throw new ConvexError("Category does not belong to the specified clinic")
-      }
+      // ❌ RIMOSSO check clinicId - le categorie non hanno più clinicId
+      // La verifica dell'accesso avviene via società
     }
     
     // Verifica che non esista già un tag con lo stesso slug nella clinica
@@ -185,9 +185,7 @@ export const updateTag = mutation({
         throw new ConvexError("Category not found")
       }
       
-      if (category.clinicId !== tag.clinicId) {
-        throw new ConvexError("Category does not belong to the same clinic")
-      }
+      // ❌ RIMOSSO check clinicId - le categorie non hanno più clinicId
     }
     
     // Aggiorna slug se il nome cambia
@@ -262,19 +260,28 @@ export const incrementTagUsage = mutation({
   }
 })
 
-// Query per ottenere statistiche tag per categoria
+// ⚠️ DEPRECATED: Le categorie non sono più legate alle cliniche
+// Query per ottenere statistiche tag per clinica e società dell'utente
 export const getTagStatsByCategory = query({
-  args: { clinicId: v.id("clinics") },
-  handler: async (ctx, { clinicId }) => {
+  args: { 
+    clinicId: v.id("clinics"),
+    userId: v.id("users") // ← AGGIUNTO: necessario per filtrare categorie per società
+  },
+  handler: async (ctx, { clinicId, userId }) => {
     const tags = await ctx.db
       .query("tags")
       .withIndex("by_clinic", (q) => q.eq("clinicId", clinicId))
       .collect()
     
-    const categories = await ctx.db
-      .query("categories")
-      .withIndex("by_clinic", (q) => q.eq("clinicId", clinicId))
-      .collect()
+    // Ottieni categorie accessibili all'utente via società (importato in cima)
+    const allCategories = await ctx.db.query("categories").collect()
+    
+    const categories = [];
+    for (const cat of allCategories) {
+      if (await userHasAccessToCategory(ctx, userId, cat._id)) {
+        categories.push(cat);
+      }
+    }
     
     // Raggruppa tag per categoria
     const statsByCategory = categories.map(category => {

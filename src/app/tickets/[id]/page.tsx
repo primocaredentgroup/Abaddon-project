@@ -5,6 +5,7 @@ import { useQuery, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { TicketActions } from '@/components/tickets/TicketActions';
+import { PriorityLevel } from '@/components/tickets/PriorityLevel';
 import { useRole } from '@/providers/RoleProvider';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -128,6 +129,7 @@ export default function TicketDetailPage() {
   const addComment = useMutation(api.ticketComments.add);
   const nudgeTicket = useMutation(api.ticketComments.nudge);
   const updateTicket = useMutation(api.tickets.update);
+  const updatePriority = useMutation(api.tickets.updatePriority);
   const executeMacro = useMutation(api.macros.executeMacro);
   const updateTicketAttribute = useMutation(api.ticketAttributes.update);
 
@@ -538,6 +540,35 @@ export default function TicketDetailPage() {
                     <Tag className="h-3 w-3 mr-1" />
                     {ticket.category?.name || 'N/A'}
                   </Badge>
+                </div>
+
+                {/* Priorità */}
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-600">Priorità</span>
+                  <PriorityLevel
+                    value={ticket.priority || 1}
+                    onChange={canManage ? async (newPriority) => {
+                      try {
+                        await updatePriority({
+                          ticketId: ticketId as any,
+                          priority: newPriority,
+                          userEmail: user?.email || '',
+                        });
+                        toast({
+                          title: "Priorità aggiornata",
+                          description: `Priorità impostata a ${newPriority}`,
+                        });
+                      } catch (error) {
+                        toast({
+                          title: "Errore",
+                          description: "Impossibile aggiornare la priorità",
+                          variant: "destructive",
+                        });
+                      }
+                    } : undefined}
+                    readonly={!canManage}
+                    showLabel={false}
+                  />
                 </div>
 
                 <div className="flex items-center justify-between">

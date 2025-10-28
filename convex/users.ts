@@ -22,7 +22,7 @@ export const getCurrentUserProfile = query({
     
     // Popola i dati della clinica e del ruolo
     const [clinic, role] = await Promise.all([
-      ctx.db.get(user.clinicId),
+      user.clinicId ? ctx.db.get(user.clinicId) : Promise.resolve(null),
       ctx.db.get(user.roleId)
     ])
     
@@ -77,7 +77,7 @@ export const getUserById = query({
     
     // Popola i dati della clinica e del ruolo
     const [clinic, role] = await Promise.all([
-      ctx.db.get(user.clinicId),
+      user.clinicId ? ctx.db.get(user.clinicId) : Promise.resolve(null),
       ctx.db.get(user.roleId)
     ])
     
@@ -506,7 +506,7 @@ export const getAvailableAgents = query({
       agents.map(async (agent) => {
         const [role, clinic] = await Promise.all([
           ctx.db.get(agent.roleId),
-          ctx.db.get(agent.clinicId)
+          agent.clinicId ? ctx.db.get(agent.clinicId) : Promise.resolve(null)
         ])
         return {
           _id: agent._id,

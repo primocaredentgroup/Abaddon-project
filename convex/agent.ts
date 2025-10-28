@@ -1,5 +1,5 @@
 import { v } from "convex/values"
-import { mutation, query, action } from "./_generated/server"
+import { mutation, query, action, internalQuery } from "./_generated/server"
 import { ConvexError } from "convex/values"
 import { getCurrentUser } from "./lib/utils"
 import { GoogleGenerativeAI } from "@google/generative-ai"
@@ -15,6 +15,20 @@ async function call_llm(prompt: string) {
   const result = await model.generateContent(prompt);
   return result.response.text();
 }
+
+// =================== INTERNAL QUERIES ===================
+
+// Query interna per ottenere ticket recenti (usata da actions)
+export const getRecentTicketsInternal = internalQuery({
+  args: { limit: v.number() },
+  returns: v.array(v.any()),
+  handler: async (ctx, { limit }) => {
+    return await ctx.db
+      .query("tickets")
+      .order("desc")
+      .take(limit);
+  },
+});
 
 // =================== QUERIES ===================
 
@@ -343,8 +357,7 @@ export const suggestCategory = action({
   args: {
     title: v.string(),
     description: v.string(),
-    clinicId: v.id("clinics"),
-    userId: v.id("users"), // 🆕 Aggiungi userId per filtrare per società
+    userId: v.id("users"), // Filtra categorie per società dell'utente
   },
   returns: v.object({
     recommendedCategory: v.union(v.null(), v.object({
@@ -373,35 +386,23 @@ export const suggestCategory = action({
       config: v.any(),
     })),
   }),
-  handler: async (ctx, { title, description, clinicId, userId }) => {
-    // Ottieni config agent
-    const config = await ctx.runQuery(api.agent.getAgentConfig, { clinicId });
-    if (!config.settings.canSuggestCategories) {
-      throw new ConvexError("Suggerimenti categoria non abilitati");
+  handler: async (ctx, { title, description, userId }): Promise<any> => {
+    // 🏢 Ottieni categorie filtrate per società dell'utente
+    const categories: Array<Doc<"categories">> = await ctx.runQuery(api.categories.getPublicCategoriesByUserSocieties, { userId });
+    
+    if (!categories || categories.length === 0) {
+      throw new ConvexError("Nessuna categoria disponibile per l'utente");
     }
-
-    // Ottieni categorie della clinica
-    const allCategories = await ctx.runQuery(api.categories.getCategoriesByClinic, { clinicId });
     
-    // 🆕 Ottieni società dell'utente per filtrare categorie
-    const userSocieties = await ctx.runQuery(api.userSocieties.getUserSocieties, { userId });
-    const userSocietyIds: Array<Id<"societies">> = userSocieties?.map((us: Doc<"userSocieties">) => us.societyId) || [];
-    
-    // 🆕 Filtra categorie per società
-    const categories: Array<Doc<"categories">> = allCategories.filter((cat: Doc<"categories">) => {
-      // Se categoria non ha società, è pubblica per tutti
-      if (!cat.societyIds || cat.societyIds.length === 0) {
-        return true;
-      }
-      // Se categoria ha società, verifica che l'utente ne faccia parte
-      return cat.societyIds.some((societyId: Id<"societies">) => userSocietyIds.includes(societyId));
+    // 📊 Ottieni esempi di ticket precedenti per apprendimento
+    // Prendi ticket recenti delle categorie visibili all'utente
+    const categoryIds: Array<Id<"categories">> = categories.map((cat: Doc<"categories">) => cat._id);
+    const allTickets: Array<Doc<"tickets">> = await ctx.runQuery(internal.agent.getRecentTicketsInternal, {
+      limit: 100
     });
-    
-    // Ottieni esempi di ticket precedenti per apprendimento (usando query interna)
-    const recentTickets = await ctx.runQuery(internal.tickets.getByClinicInternal, {
-      clinicId,
-      limit: 20,
-    });
+    const recentTickets: Array<Doc<"tickets">> = allTickets
+      .filter((t: Doc<"tickets">) => categoryIds.includes(t.categoryId))
+      .slice(0, 20);
     
     interface TicketExample {
       title: string;
@@ -424,34 +425,48 @@ Titolo: ${title}
 Descrizione: ${description}
 
 CATEGORIE DISPONIBILI:
-${categories.map((cat) => `- ID: ${cat._id}, Nome: ${cat.name}, Descrizione: ${cat.description || 'N/A'}, Sinonimi: ${cat.synonyms.join(', ')}`).join('\n')}
+${categories.map((cat: Doc<"categories">) => `- ID: ${cat._id}, Nome: ${cat.name}, Descrizione: ${cat.description || 'N/A'}, Sinonimi: ${cat.synonyms.join(', ')}`).join('\n')}
 
 ESEMPI DI CLASSIFICAZIONI PRECEDENTI:
 ${ticketExamples.map((ex) => `Titolo: "${ex.title}" → Categoria: ${ex.categoryId}`).join('\n')}
 
-Analizza il contenuto del ticket e restituisci:
-1. L'ID della categoria più appropriata
-2. Il livello di confidenza (0-100)
-3. Una breve spiegazione del perché hai scelto questa categoria
-4. Eventualmente una categoria alternativa
+Analizza il contenuto del ticket e restituisci SOLO ED ESCLUSIVAMENTE un oggetto JSON valido nel seguente formato.
+NON aggiungere spiegazioni, NON usare markdown, SOLO il JSON puro:
 
-Formato di risposta JSON:
 {
   "recommendedCategoryId": "categoria_id",
   "confidence": 85,
   "explanation": "Spiegazione della scelta",
   "alternativeCategory": "categoria_id_alternativa_o_null"
 }
+
+IMPORTANTE: La risposta deve iniziare con { e finire con }. Non scrivere altro testo.
 `;
 
     try {
       const aiResponse = await call_llm(prompt);
-      // Rimuovi backtick markdown se presenti
-      const cleanedResponse = aiResponse.replace(/```json\n?|\n?```/g, '').trim();
+      console.log("📥 Risposta AI grezza:", aiResponse.substring(0, 200));
+      
+      // Pulizia robusta della risposta
+      let cleanedResponse = aiResponse.trim();
+      
+      // Rimuovi markdown code blocks
+      cleanedResponse = cleanedResponse.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      
+      // Cerca il primo { e l'ultimo } per estrarre solo il JSON
+      const firstBrace = cleanedResponse.indexOf('{');
+      const lastBrace = cleanedResponse.lastIndexOf('}');
+      
+      if (firstBrace !== -1 && lastBrace !== -1 && firstBrace < lastBrace) {
+        cleanedResponse = cleanedResponse.substring(firstBrace, lastBrace + 1);
+      }
+      
+      console.log("🧹 Risposta pulita:", cleanedResponse.substring(0, 200));
+      
       const parsed = JSON.parse(cleanedResponse);
       
       // Valida che la categoria esista
-      const recommendedCategory = categories.find((c) => c._id === parsed.recommendedCategoryId);
+      const recommendedCategory: Doc<"categories"> | undefined = categories.find((c: Doc<"categories">) => c._id === parsed.recommendedCategoryId);
       
       // Ottieni attributi obbligatori per la categoria suggerita
       interface RequiredAttribute {
@@ -490,16 +505,24 @@ Formato di risposta JSON:
         } : null,
         confidence: parsed.confidence || 0,
         explanation: parsed.explanation || "Categoria suggerita basata sul contenuto",
-        alternativeCategory: categories.find((c) => c._id === parsed.alternativeCategory) ? {
-          _id: categories.find((c) => c._id === parsed.alternativeCategory)!._id,
-          name: categories.find((c) => c._id === parsed.alternativeCategory)!.name,
+        alternativeCategory: categories.find((c: Doc<"categories">) => c._id === parsed.alternativeCategory) ? {
+          _id: categories.find((c: Doc<"categories">) => c._id === parsed.alternativeCategory)!._id,
+          name: categories.find((c: Doc<"categories">) => c._id === parsed.alternativeCategory)!.name,
         } : null,
         requiredAttributes, // 🆕 AGGIUNGO ATTRIBUTI OBBLIGATORI
       };
-    } catch (error) {
+    } catch (error: any) {
       console.error("Errore AI suggerimento categoria:", error);
       
-      // Fallback: suggerisci categoria più comune
+      // 🔴 RATE LIMIT? Mostra messaggio specifico
+      const isRateLimit = error?.message?.includes("429") || error?.message?.includes("quota") || error?.status === 429;
+      const errorMsg = isRateLimit 
+        ? "⚠️ Limite API AI raggiunto (10 richieste/minuto). Categoria non suggerita automaticamente, selezionala manualmente."
+        : "AI temporaneamente non disponibile. Seleziona categoria manualmente.";
+      
+      console.warn(`🛑 ${errorMsg}`);
+      
+      // Fallback: categoria "Generale" o prima disponibile
       const mostUsedCategory = categories.find((c) => c.name.toLowerCase().includes('generale')) || categories[0];
       
       interface RequiredAttribute {
@@ -536,13 +559,14 @@ Formato di risposta JSON:
         }
       }
       
+      // 🆕 RESTITUISCI SEMPRE UN RISULTATO VALIDO (anche se l'AI fallisce!)
       return {
         recommendedCategory: mostUsedCategory ? {
           _id: mostUsedCategory._id,
           name: mostUsedCategory.name,
         } : null,
-        confidence: 20,
-        explanation: "Suggerimento automatico: categoria generale",
+        confidence: 30, // Bassa confidenza = suggerimento automatico fallback
+        explanation: errorMsg,
         alternativeCategory: null,
         requiredAttributes, // 🆕 AGGIUNGO ATTRIBUTI OBBLIGATORI
       };
@@ -746,8 +770,7 @@ export const chatWithAgent = action({
           const suggestion = await ctx.runAction(api.agent.suggestCategory, {
             title: intent.title!,
             description: intent.description!,
-            clinicId,
-            userId, // 🆕 Aggiungi userId per filtro società
+            userId, // 🆕 userId per filtro società (senza clinicId)
           });
           
           

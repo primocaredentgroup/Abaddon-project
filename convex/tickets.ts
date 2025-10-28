@@ -4,6 +4,34 @@ import { ConvexError } from "convex/values"
 // import { getCurrentUser } from "./lib/utils" // Non usato al momento
 import { internal } from "./_generated/api"
 import { canManageAllTickets } from "./lib/permissions"
+import { Id } from "./_generated/dataModel"
+import type { QueryCtx, MutationCtx } from "./_generated/server"
+import { userHasAccessToCategory } from "./categories"
+
+// Helper function per ottenere tutte le clinic IDs dell'utente
+async function getUserClinicIds(ctx: QueryCtx | MutationCtx, userId: Id<"users">): Promise<Id<"clinics">[]> {
+  const user = await ctx.db.get(userId);
+  if (!user) return [];
+  
+  // Ottieni cliniche da userClinics (attive)
+  const userClinics = await ctx.db
+    .query("userClinics")
+    .withIndex("by_user_active", (q) =>
+      q.eq("userId", userId).eq("isActive", true)
+    )
+    .collect();
+  
+  if (userClinics.length > 0) {
+    return userClinics.map(uc => uc.clinicId);
+  }
+  
+  // Fallback: usa user.clinicId se esiste (backward compatibility)
+  if (user.clinicId) {
+    return [user.clinicId];
+  }
+  
+  return [];
+}
 
 // Query to get tickets for current user's clinic with filters
 export const getByClinic = query({
@@ -31,32 +59,37 @@ export const getByClinic = query({
       throw new ConvexError("User not found")
     }
 
-    let query = ctx.db
-      .query("tickets")
-      .withIndex("by_clinic", (q) => q.eq("clinicId", user.clinicId))
+    // Ottieni tutte le cliniche dell'utente
+    const clinicIds = await getUserClinicIds(ctx, user._id);
+    
+    if (clinicIds.length === 0) {
+      return { tickets: [], total: 0, hasMore: false };
+    }
+
+    // Ottieni tutti i ticket dalle cliniche dell'utente
+    const allTickets = await ctx.db.query("tickets").collect();
+    let tickets = allTickets.filter(t => clinicIds.includes(t.clinicId))
 
     // Apply filters
     if (args.status) {
-      query = query.filter((q) => q.eq(q.field("status"), args.status))
+      tickets = tickets.filter(t => t.status === args.status)
     }
 
     if (args.assigneeId) {
-      query = query.filter((q) => q.eq(q.field("assigneeId"), args.assigneeId))
+      tickets = tickets.filter(t => t.assigneeId === args.assigneeId)
     }
 
     if (args.creatorId) {
-      query = query.filter((q) => q.eq(q.field("creatorId"), args.creatorId))
+      tickets = tickets.filter(t => t.creatorId === args.creatorId)
     }
 
     if (args.categoryId) {
-      query = query.filter((q) => q.eq(q.field("categoryId"), args.categoryId))
+      tickets = tickets.filter(t => t.categoryId === args.categoryId)
     }
 
     if (args.visibility) {
-      query = query.filter((q) => q.eq(q.field("visibility"), args.visibility))
+      tickets = tickets.filter(t => t.visibility === args.visibility)
     }
-
-    let tickets = await query.collect()
 
     // Apply visibility rules - users can only see:
     // 1. Public tickets in their clinic
@@ -124,12 +157,19 @@ export const getById = query({
       throw new ConvexError("Utente non trovato")
     }
 
-    // Verifica permessi
+    // Verifica permessi: l'utente può vedere il ticket se:
+    // 1. È il creatore
+    // 2. È l'assegnatario
+    // 3. Ha accesso alla clinica del ticket
+    // 4. Il ticket è pubblico e nella sua clinica
+    const clinicIds = await getUserClinicIds(ctx, user._id);
+    const hasClinicAccess = clinicIds.includes(ticket.clinicId);
+    
     const canView = 
       ticket.creatorId === user._id || 
       ticket.assigneeId === user._id ||
-      ticket.clinicId === user.clinicId ||
-      ticket.visibility === 'public'
+      hasClinicAccess ||
+      (ticket.visibility === 'public' && hasClinicAccess)
 
     if (!canView) {
       throw new ConvexError("Non hai permessi per vedere questo ticket")
@@ -453,14 +493,25 @@ export const create = mutation({
       throw new ConvexError("User not found")
     }
 
-    // Verify category exists and user has access
+    // Verifica che l'utente abbia una clinica assegnata
+    if (!user.clinicId) {
+      throw new ConvexError("User has no clinic assigned")
+    }
+
+    // Verify category exists and user has access (via società)
     const category = await ctx.db.get(args.categoryId)
-    if (!category || category.clinicId !== user.clinicId) {
-      throw new ConvexError("Category not found or access denied")
+    if (!category) {
+      throw new ConvexError("Category not found")
+    }
+    
+    // Verifica accesso via società (importato in cima)
+    const hasAccess = await userHasAccessToCategory(ctx, user._id, args.categoryId)
+    if (!hasAccess) {
+      throw new ConvexError("Access denied to this category")
     }
 
     // Get clinic settings to check if public tickets are allowed
-    const clinic = await ctx.db.get(user.clinicId)
+    const clinic = await ctx.db.get(user.clinicId!)
     const visibility = args.visibility || 'private'
     
     // Per ora tutti i ticket sono privati, rimuoveremo questa logica
@@ -488,11 +539,12 @@ export const create = mutation({
       status: "open",
       ticketNumber: 0, // Placeholder - questa funzione sarà rimossa
       categoryId: args.categoryId,
-      clinicId: user.clinicId,
+      clinicId: user.clinicId!,
       creatorId: user._id,
       visibility,
       lastActivityAt: now,
       attributeCount: 0, // Will be updated when attributes are added
+      priority: 1, // Default: Molto Bassa (1/5)
     })
 
     // Save attributes if provided
@@ -524,8 +576,10 @@ export const createWithAuth = mutation({
     title: v.string(),
     description: v.string(),
     categoryId: v.id("categories"),
+    clinicId: v.optional(v.id("clinics")), // 🆕 Clinica da usare (se omessa usa user.clinicId)
     attributes: v.optional(v.any()),
     visibility: v.optional(v.union(v.literal("public"), v.literal("private"))),
+    priority: v.optional(v.number()), // Priorità 1-5 (solo agenti/admin, default: 1)
     userEmail: v.string(),
   },
   handler: async (ctx, args): Promise<{ ticketId: any, ticketNumber: number }> => {
@@ -539,6 +593,34 @@ export const createWithAuth = mutation({
       throw new ConvexError("Utente non trovato nel sistema")
     }
     
+    // Determina clinicId da usare
+    let targetClinicId: Id<"clinics"> | undefined = args.clinicId;
+    
+    if (targetClinicId) {
+      // Se clinicId è passato, verifica che l'utente abbia accesso a questa clinica
+      const userClinic = await ctx.db
+        .query("userClinics")
+        .withIndex("by_user_clinic", (q) =>
+          q.eq("userId", user._id).eq("clinicId", targetClinicId!)
+        )
+        .filter((q) => q.eq(q.field("isActive"), true))
+        .unique();
+      
+      if (!userClinic) {
+        throw new ConvexError("Non hai accesso a questa clinica");
+      }
+    } else {
+      // Fallback: usa user.clinicId (backward compatibility)
+      if (!user.clinicId) {
+        throw new ConvexError("Nessuna clinica associata all'utente");
+      }
+      targetClinicId = user.clinicId;
+    }
+    
+    // Dopo i check sopra, targetClinicId è garantito essere defined
+    if (!targetClinicId) {
+      throw new ConvexError("Clinic ID not determined");
+    }
 
     // Verify category exists
     const category = await ctx.db.get(args.categoryId)
@@ -554,8 +636,23 @@ export const createWithAuth = mutation({
     
 
     // Get clinic settings to check if public tickets are allowed
-    const clinic = await ctx.db.get(user.clinicId)
+    const clinic = await ctx.db.get(targetClinicId!)
     const visibility = args.visibility || 'private'
+    
+    // Gestisci priorità (solo agenti/admin possono impostarla diversa da 1)
+    let priority = 1; // Default per tutti gli utenti
+    if (args.priority !== undefined) {
+      // Validazione priorità
+      if (args.priority < 1 || args.priority > 5) {
+        throw new ConvexError("Priorità non valida. Deve essere tra 1 e 5.");
+      }
+      // Verifica che l'utente sia agente/admin
+      const role = await ctx.db.get(user.roleId);
+      if (role && (role.permissions.includes("manage_all_tickets") || role.permissions.includes("assign_tickets"))) {
+        priority = args.priority;
+      }
+      // Se non è agente/admin, ignora il valore e usa default 1
+    }
     
     // Per ora tutti i ticket sono privati
     // if (visibility === 'public' && !(clinic as any)?.settings?.allowPublicTickets) {
@@ -571,18 +668,19 @@ export const createWithAuth = mutation({
       status: "open",
       ticketNumber: ticketNumber, // Il numero incrementale che abbiamo generato
       categoryId: args.categoryId,
-      clinicId: user.clinicId,
+      clinicId: targetClinicId!, // 🆕 Usa la clinica selezionata
       creatorId: user._id,
-      visibility: 'private', // Per ora tutti i ticket sono privati
+      visibility: visibility, // ✅ Usa il valore dal parametro (default: 'private')
       lastActivityAt: now,
       attributeCount: 0,
+      priority: priority, // Priorità 1-5 (default: 1, modificabile solo da agenti/admin)
     })
 
 
     // 🎯 ESEGUI I TRIGGER ATTIVI DELLA CLINICA
     const triggers = await ctx.db
       .query("triggers")
-      .withIndex("by_clinic", (q) => q.eq("clinicId", user.clinicId))
+      .withIndex("by_clinic", (q) => q.eq("clinicId", targetClinicId!))
       .filter((q) => q.eq(q.field("isActive"), true))
       .collect()
 
@@ -599,6 +697,15 @@ export const createWithAuth = mutation({
       } else if (trigger.conditions.type === 'status_change') {
         // Confronta con lo status del ticket (sempre "open" alla creazione)
         conditionMet = 'open' === trigger.conditions.value
+      } else if (trigger.conditions.type === 'priority_eq') {
+        // Confronta con la priorità del ticket (priorità esatta)
+        conditionMet = priority === parseInt(trigger.conditions.value)
+      } else if (trigger.conditions.type === 'priority_gte') {
+        // Confronta con la priorità del ticket (priorità >= valore)
+        conditionMet = priority >= parseInt(trigger.conditions.value)
+      } else if (trigger.conditions.type === 'priority_lte') {
+        // Confronta con la priorità del ticket (priorità <= valore)
+        conditionMet = priority <= parseInt(trigger.conditions.value)
       }
 
       // Se la condizione è soddisfatta, esegui le azioni
@@ -626,6 +733,17 @@ export const createWithAuth = mutation({
             status: trigger.actions.value,
             lastActivityAt: Date.now()
           })
+        } else if (trigger.actions.type === 'set_priority') {
+          // Imposta la priorità del ticket (1-5)
+          const newPriority = parseInt(trigger.actions.value);
+          if (newPriority >= 1 && newPriority <= 5) {
+            await ctx.db.patch(ticketId, { 
+              priority: newPriority,
+              lastActivityAt: Date.now()
+            })
+          } else {
+            console.warn(`  ⚠️ Priorità non valida: ${trigger.actions.value} (deve essere 1-5)`)
+          }
         }
       } else {
       }
@@ -710,32 +828,22 @@ export const getMyClinicTicketsWithAuth = query({
     
     if (!user) return []
 
-    // Ottieni tutte le cliniche dell'utente dalla nuova tabella userClinics
-    const userClinics = await ctx.db
-      .query("userClinics")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
-      .filter((q) => q.eq(q.field("isActive"), true))
-      .collect()
+    // 🏥 Ottieni TUTTE le cliniche dell'utente (multi-clinic + fallback)
+    const clinicIds = await getUserClinicIds(ctx, user._id);
 
-    if (userClinics.length === 0) {
-      // Fallback: usa la clinica principale per backward compatibility
-      const clinicIds = [user.clinicId]
-    } else {
-      const clinicIds = userClinics.map(uc => uc.clinicId)
+    if (clinicIds.length === 0) {
+      return []; // Nessuna clinica associata
     }
-
-    const clinicIds = userClinics.length > 0 
-      ? userClinics.map(uc => uc.clinicId)
-      : [user.clinicId] // Fallback
 
     // Ottieni tutti i ticket delle cliniche dell'utente
     const allTickets = await ctx.db.query("tickets").collect()
-    let relevantTickets = allTickets.filter(ticket => 
-      clinicIds.includes(ticket.clinicId)
-    )
-
-    // 🆕 Filtra per mostrare SOLO ticket pubblici (i privati vanno in "I miei ticket")
-    relevantTickets = relevantTickets.filter(ticket => ticket.visibility === 'public')
+    
+    // 🆕 Filtra per:
+    // 1. Cliniche dell'utente
+    // 2. SOLO ticket pubblici (i privati vanno in "I miei ticket")
+    let relevantTickets = allTickets
+      .filter(ticket => clinicIds.includes(ticket.clinicId))
+      .filter(ticket => ticket.visibility === 'public')
 
     // Filtra per status se specificato
     if (args.status) {
@@ -851,11 +959,16 @@ export const list = query({
     if (!user) {
       throw new ConvexError("User not found")
     }
+    
+    const clinicId = args.clinicId || user.clinicId
+    if (!clinicId) {
+      throw new ConvexError("Clinic ID not found")
+    }
 
     // Start with clinic-based query
     let query = ctx.db
       .query("tickets")
-      .withIndex("by_clinic", (q) => q.eq("clinicId", args.clinicId || user.clinicId))
+      .withIndex("by_clinic", (q) => q.eq("clinicId", clinicId))
 
     // Apply status filter if provided
     if (args.status) {
@@ -1108,11 +1221,15 @@ export const getStats = query({
     if (!user) {
       throw new ConvexError("User not found")
     }
+    
+    if (!user.clinicId) {
+      throw new ConvexError("User has no clinic assigned")
+    }
 
     // Get all tickets for the clinic
     const allTickets = await ctx.db
       .query("tickets")
-      .withIndex("by_clinic", (q) => q.eq("clinicId", user.clinicId))
+      .withIndex("by_clinic", (q) => q.eq("clinicId", user.clinicId!))
       .collect()
 
     // Filter by visibility rules
@@ -1173,11 +1290,15 @@ export const search = query({
     if (!user) {
       throw new ConvexError("User not found")
     }
+    
+    if (!user.clinicId) {
+      throw new ConvexError("User has no clinic assigned")
+    }
 
     // Start with clinic-based query
     let tickets = await ctx.db
       .query("tickets")
-      .withIndex("by_clinic", (q) => q.eq("clinicId", user.clinicId))
+      .withIndex("by_clinic", (q) => q.eq("clinicId", user.clinicId!))
       .collect()
 
     // Apply visibility rules
@@ -1349,6 +1470,10 @@ export const getSearchSuggestions = query({
     if (!user) {
       throw new ConvexError("User not found")
     }
+    
+    if (!user.clinicId) {
+      throw new ConvexError("User has no clinic assigned")
+    }
 
     if (searchTerm.length < 2) {
       return []
@@ -1365,7 +1490,7 @@ export const getSearchSuggestions = query({
     // Search tickets
     const tickets = await ctx.db
       .query("tickets")
-      .withIndex("by_clinic", (q) => q.eq("clinicId", user.clinicId))
+      .withIndex("by_clinic", (q) => q.eq("clinicId", user.clinicId!))
       .collect()
 
     const accessibleTickets = tickets.filter(ticket => 
@@ -1389,11 +1514,21 @@ export const getSearchSuggestions = query({
     })))
 
     // Search categories
-    const categories = await ctx.db
+    // 🏢 Ottieni categorie filtrate per società dell'utente (importato in cima)
+    const allCategories = await ctx.db
       .query("categories")
-      .withIndex("by_clinic", (q) => q.eq("clinicId", user.clinicId))
       .filter((q) => q.eq(q.field("isActive"), true))
-      .collect()
+      .collect();
+    
+    // Filtra categorie per accesso utente (via società)
+    const categoriesWithAccess = [];
+    for (const category of allCategories) {
+      const hasAccess = await userHasAccessToCategory(ctx, user._id, category._id);
+      if (hasAccess) {
+        categoriesWithAccess.push(category);
+      }
+    }
+    const categories = categoriesWithAccess;
 
     const matchingCategories = categories
       .filter(category => 
@@ -1411,7 +1546,7 @@ export const getSearchSuggestions = query({
     // Search users
     const users = await ctx.db
       .query("users")
-      .withIndex("by_clinic", (q) => q.eq("clinicId", user.clinicId))
+      .withIndex("by_clinic", (q) => q.eq("clinicId", user.clinicId!))
       .filter((q) => q.eq(q.field("isActive"), true))
       .collect()
 
@@ -1458,6 +1593,10 @@ export const getPaginatedTickets = query({
     if (!user) {
       throw new ConvexError("User not found")
     }
+    
+    if (!user.clinicId) {
+      throw new ConvexError("User has no clinic assigned")
+    }
 
     const limit = Math.min(args.limit || 20, 100) // Max 100 items per page
     const orderBy = args.orderBy || "lastActivityAt"
@@ -1465,7 +1604,7 @@ export const getPaginatedTickets = query({
 
     let query = ctx.db
       .query("tickets")
-      .withIndex("by_clinic", (q) => q.eq("clinicId", user.clinicId))
+      .withIndex("by_clinic", (q) => q.eq("clinicId", user.clinicId!))
 
     // Apply filters
     if (args.status) {
@@ -1546,10 +1685,14 @@ export const getTicketCounts = query({
     if (!user) {
       throw new ConvexError("User not found")
     }
+    
+    if (!user.clinicId) {
+      throw new ConvexError("User has no clinic assigned")
+    }
 
     const tickets = await ctx.db
       .query("tickets")
-      .withIndex("by_clinic", (q) => q.eq("clinicId", user.clinicId))
+      .withIndex("by_clinic", (q) => q.eq("clinicId", user.clinicId!))
       .collect()
 
     const counts = {
@@ -1607,13 +1750,17 @@ export const getRecentActivity = query({
     if (!user) {
       throw new ConvexError("User not found")
     }
+    
+    if (!user.clinicId) {
+      throw new ConvexError("User has no clinic assigned")
+    }
 
     const limit = Math.min(args.limit || 10, 50)
     const since = args.since || (Date.now() - 24 * 60 * 60 * 1000) // Last 24 hours
 
     let query = ctx.db
       .query("tickets")
-      .withIndex("by_clinic", (q) => q.eq("clinicId", user.clinicId))
+      .withIndex("by_clinic", (q) => q.eq("clinicId", user.clinicId!))
       .filter((q: any) => q.gte(q.field("lastActivityAt"), since))
       .order("desc")
 
@@ -1662,6 +1809,10 @@ export const searchTicketsOptimized = query({
     if (!user) {
       throw new ConvexError("User not found")
     }
+    
+    if (!user.clinicId) {
+      throw new ConvexError("User has no clinic assigned")
+    }
 
     const searchTerms = args.query.toLowerCase().split(' ').filter(term => term.length > 0)
     const limit = Math.min(args.limit || 20, 100)
@@ -1669,7 +1820,7 @@ export const searchTicketsOptimized = query({
 
     let query = ctx.db
       .query("tickets")
-      .withIndex("by_clinic", (q) => q.eq("clinicId", user.clinicId))
+      .withIndex("by_clinic", (q) => q.eq("clinicId", user.clinicId!))
 
     // Apply basic filters first for better performance
     if (args.filters?.status) {
@@ -1754,7 +1905,7 @@ export const getByTicketNumber = query({
     const ticket = await ctx.db
       .query("tickets")
       .withIndex("by_clinic_ticket_number", (q) => 
-        q.eq("clinicId", targetClinicId).eq("ticketNumber", ticketNumber)
+        q.eq("clinicId", targetClinicId!).eq("ticketNumber", ticketNumber)
       )
       .first()
 
@@ -1881,5 +2032,70 @@ export const runTicketNumberMigration: any = mutation({
     const result: any = await ctx.runMutation(internal.tickets.addTicketNumbersToExistingTickets, {})
     
     return result
+  },
+})
+
+// Mutation per aggiornare la priorità di un ticket (solo agenti/admin)
+export const updatePriority = mutation({
+  args: {
+    ticketId: v.id("tickets"),
+    priority: v.number(),
+    userEmail: v.string(),
+  },
+  returns: v.object({
+    success: v.boolean(),
+    message: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    // Validazione priorità
+    if (args.priority < 1 || args.priority > 5) {
+      throw new ConvexError("Priorità non valida. Deve essere tra 1 e 5.");
+    }
+
+    // Verifica autenticazione
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new ConvexError("Non autenticato");
+    }
+
+    // Ottieni utente
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_auth0", (q) => q.eq("auth0Id", identity.subject))
+      .first();
+
+    if (!user) {
+      throw new ConvexError("Utente non trovato");
+    }
+
+    // Verifica che l'utente sia agente o admin
+    const role = await ctx.db.get(user.roleId);
+    if (!role) {
+      throw new ConvexError("Ruolo utente non trovato");
+    }
+
+    const canModifyPriority = role.permissions.includes("manage_all_tickets") || 
+                               role.permissions.includes("assign_tickets");
+    
+    if (!canModifyPriority) {
+      throw new ConvexError("Solo agenti e amministratori possono modificare la priorità");
+    }
+
+    // Ottieni ticket
+    const ticket = await ctx.db.get(args.ticketId);
+    if (!ticket) {
+      throw new ConvexError("Ticket non trovato");
+    }
+
+    // Aggiorna priorità
+    await ctx.db.patch(args.ticketId, {
+      priority: args.priority,
+      lastActivityAt: Date.now(),
+    });
+
+    return {
+      success: true,
+      message: `Priorità aggiornata a ${args.priority}`,
+    };
   },
 })

@@ -5,6 +5,7 @@ import { useQuery, useMutation } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { useAuth } from '@/hooks/useAuth'
 import { AppLayout } from '@/components/layout/AppLayout'
+import { PriorityLevel } from '@/components/tickets/PriorityLevel'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -24,7 +25,7 @@ interface AssignedTicket {
   title: string
   description: string
   status: 'open' | 'in_progress' | 'closed'
-  priority?: 'low' | 'medium' | 'high' | 'urgent'
+  priority?: number // 1-5: 1=Molto Bassa, 2=Bassa, 3=Media, 4=Alta, 5=Urgente
   visibility: 'public' | 'private'
   _creationTime: number
   lastActivityAt: number
@@ -51,11 +52,21 @@ interface AssignedTicket {
   lastNudgeAt?: number
 }
 
+const priorityOptions = [
+  { value: 'all', label: 'Tutte' },
+  { value: '1', label: '🔥 Molto Bassa' },
+  { value: '2', label: '🔥🔥 Bassa' },
+  { value: '3', label: '🔥🔥🔥 Media' },
+  { value: '4', label: '🔥🔥🔥🔥 Alta' },
+  { value: '5', label: '🔥🔥🔥🔥🔥 Urgente' },
+];
+
 export default function AssignedTicketsPage() {
   const { user } = useAuth()
   const { toast } = useToast()
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('')
+  const [priorityFilter, setPriorityFilter] = useState<string>('all')
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'updated' | 'nudged'>('newest')
   const [assigningTicket, setAssigningTicket] = useState<string | null>(null)
   
@@ -128,8 +139,19 @@ export default function AssignedTicketsPage() {
       filtered = filtered.filter(ticket => ticket.status === statusFilter)
     }
 
-    // Sort tickets
+    // Filter by priority
+    if (priorityFilter && priorityFilter !== 'all') {
+      const targetPriority = parseInt(priorityFilter);
+      filtered = filtered.filter(ticket => ticket.priority === targetPriority)
+    }
+
+    // Sort tickets - SEMPRE prima per priorità (DESC), poi per il criterio scelto
     filtered.sort((a, b) => {
+      // Prima ordina per priorità (5 urgente prima, poi 4, 3, 2, 1)
+      const priorityDiff = (b.priority || 1) - (a.priority || 1);
+      if (priorityDiff !== 0) return priorityDiff;
+      
+      // Se priorità uguale, ordina per il criterio scelto
       switch (sortBy) {
         case 'oldest':
           return a._creationTime - b._creationTime
@@ -150,7 +172,7 @@ export default function AssignedTicketsPage() {
     })
 
     return filtered
-  }, [assignedTickets, searchTerm, statusFilter, sortBy])
+  }, [assignedTickets, searchTerm, statusFilter, priorityFilter, sortBy])
 
   // Get status icon
   const getStatusIcon = (status: string) => {
@@ -163,15 +185,7 @@ export default function AssignedTicketsPage() {
   }
 
   // Get priority color
-  const getPriorityColor = (priority?: string) => {
-    switch (priority) {
-      case 'urgent': return 'bg-red-100 text-red-800'
-      case 'high': return 'bg-orange-100 text-orange-800'
-      case 'medium': return 'bg-yellow-100 text-yellow-800'
-      case 'low': return 'bg-green-100 text-green-800'
-      default: return 'bg-gray-100 text-gray-800'
-    }
-  }
+  // Rimossa getPriorityColor - ora usiamo il componente PriorityLevel
 
   // Handler per assegnare ticket a se stessi
   const handleAssignToMe = async (ticketId: string) => {
@@ -296,6 +310,14 @@ export default function AssignedTicketsPage() {
               ]}
             />
 
+            {/* Priority Filter */}
+            <Select
+              value={priorityFilter}
+              onChange={(value) => setPriorityFilter(value)}
+              placeholder="Filtra per priorità"
+              options={priorityOptions}
+            />
+
             {/* Sort By */}
             <Select
               value={sortBy}
@@ -315,6 +337,7 @@ export default function AssignedTicketsPage() {
               onClick={() => {
                 setSearchTerm('')
                 setStatusFilter('')
+                setPriorityFilter('all')
                 setSortBy('newest')
               }}
               className="w-full"
@@ -414,6 +437,7 @@ export default function AssignedTicketsPage() {
                 onClick={() => {
                   setSearchTerm('')
                   setStatusFilter('')
+                  setPriorityFilter('all')
                   setSortBy('newest')
                 }}
               >
@@ -466,9 +490,13 @@ export default function AssignedTicketsPage() {
                       )}
 
                       {ticket.priority && (
-                        <Badge className={getPriorityColor(ticket.priority)}>
-                          {ticket.priority.toUpperCase()}
-                        </Badge>
+                        <div className="flex items-center">
+                          <PriorityLevel
+                            value={ticket.priority}
+                            readonly={true}
+                            showLabel={true}
+                          />
+                        </div>
                       )}
                     </div>
 

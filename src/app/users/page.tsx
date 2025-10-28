@@ -208,7 +208,7 @@ export default function UsersPage() {
                     </td>
                   </tr>
                   {/* Riga espansa per gestione competenze (Agenti e Admin) */}
-                  {canManageCompetencies && isExpanded && (
+                  {canManageCompetencies && isExpanded && u.clinicId && (
                     <tr className="bg-gradient-to-b from-gray-50 to-white">
                       <td colSpan={5} className="px-6 py-6">
                         <UserCompetenciesManager 

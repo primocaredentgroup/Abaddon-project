@@ -4,6 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { PriorityLevel } from '@/components/tickets/PriorityLevel';
 import { useRole } from '@/providers/RoleProvider';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -33,7 +34,7 @@ type Ticket = {
   title: string;
   description: string;
   status: 'new' | 'open' | 'in_progress' | 'pending' | 'resolved' | 'closed';
-  priority: 'low' | 'medium' | 'high' | 'urgent';
+  priority: number; // 1-5: 1=Molto Bassa, 2=Bassa, 3=Media, 4=Alta, 5=Urgente
   assignee: string;
   createdAt: string;
   lastActivity: string;
@@ -107,7 +108,7 @@ export default function MyTicketsPage() {
       status: ticket.status === 'open' ? 'open' : 
               ticket.status === 'in_progress' ? 'in_progress' :
               ticket.status === 'closed' ? 'closed' : 'new',
-      priority: 'medium', // Default - non abbiamo priorità in Convex ancora
+      priority: ticket.priority || 1, // Priorità reale dal database (default: 1)
       assignee: ticket.assignee?.name || 'Non assegnato',
       createdAt: new Date(ticket._creationTime).toLocaleDateString(),
       lastActivity: new Date(ticket.lastActivityAt).toLocaleDateString(),
@@ -149,6 +150,11 @@ export default function MyTicketsPage() {
     const list = [...filteredTickets];
     
     list.sort((a, b) => {
+      // SEMPRE prima ordina per priorità (5 urgente prima, poi 4, 3, 2, 1)
+      const priorityDiff = (b.priority || 1) - (a.priority || 1);
+      if (priorityDiff !== 0) return priorityDiff;
+      
+      // Se priorità uguale, ordina per la colonna scelta
       let aVal: any = a[sortBy as keyof Ticket];
       let bVal: any = b[sortBy as keyof Ticket];
       
@@ -374,6 +380,9 @@ export default function MyTicketsPage() {
                         Categoria
                       </th>
                       <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Priorità
+                      </th>
+                      <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Clinica
                       </th>
                       <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -444,6 +453,15 @@ export default function MyTicketsPage() {
                           <Badge variant="info" className="text-xs">
                             {ticket.category}
                           </Badge>
+                        </td>
+                        <td className="px-3 py-3 text-center">
+                          <div className="flex justify-center" onClick={(e) => e.stopPropagation()}>
+                            <PriorityLevel
+                              value={ticket.priority || 1}
+                              readonly={true}
+                              showLabel={false}
+                            />
+                          </div>
                         </td>
                         <td className="px-3 py-3 text-center">
                           <span className="text-xs text-gray-600">
