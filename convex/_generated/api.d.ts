@@ -33,6 +33,7 @@ import type * as lib_utils from "../lib/utils.js";
 import type * as macros from "../macros.js";
 import type * as makeAdmin from "../makeAdmin.js";
 import type * as migrations_cleanDuplicateClinics from "../migrations/cleanDuplicateClinics.js";
+import type * as migrations_initializeTicketStatuses from "../migrations/initializeTicketStatuses.js";
 import type * as migrations_migratePriorityToNumber from "../migrations/migratePriorityToNumber.js";
 import type * as migrations_populateUserClinics from "../migrations/populateUserClinics.js";
 import type * as migrations_reactivateSystemClinics from "../migrations/reactivateSystemClinics.js";
@@ -92,6 +93,7 @@ declare const fullApi: ApiFromModules<{
   macros: typeof macros;
   makeAdmin: typeof makeAdmin;
   "migrations/cleanDuplicateClinics": typeof migrations_cleanDuplicateClinics;
+  "migrations/initializeTicketStatuses": typeof migrations_initializeTicketStatuses;
   "migrations/migratePriorityToNumber": typeof migrations_migratePriorityToNumber;
   "migrations/populateUserClinics": typeof migrations_populateUserClinics;
   "migrations/reactivateSystemClinics": typeof migrations_reactivateSystemClinics;

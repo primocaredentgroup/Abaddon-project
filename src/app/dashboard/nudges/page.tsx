@@ -68,6 +68,13 @@ export default function NudgedTicketsPage() {
     const targetPriority = parseInt(priorityFilter);
     nudgedTickets = nudgedTickets.filter((t: any) => t.priority === targetPriority);
   }
+  
+  // Ordina SEMPRE per priorità (5 urgente prima, poi 4, 3, 2, 1), poi per data creazione
+  nudgedTickets = nudgedTickets.sort((a: any, b: any) => {
+    const priorityDiff = (b.priority || 1) - (a.priority || 1);
+    if (priorityDiff !== 0) return priorityDiff;
+    return b._creationTime - a._creationTime; // Se priorità uguale, ordina per più recente
+  });
 
   const getUrgencyLevel = (nudgeCount: number, lastNudgeAt: number) => {
     const hoursAgo = (Date.now() - lastNudgeAt) / (1000 * 60 * 60);

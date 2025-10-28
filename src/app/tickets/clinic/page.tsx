@@ -110,7 +110,7 @@ export default function ClinicTicketsPage() {
       status: ticket.status === 'open' ? 'open' : 
               ticket.status === 'in_progress' ? 'in_progress' :
               ticket.status === 'closed' ? 'closed' : 'new',
-      priority: 'medium', // Default
+      priority: ticket.priority || 1, // Priorità reale dal database (default: 1)
       assignee: ticket.assignee?.name || 'Non assegnato',
       createdAt: new Date(ticket._creationTime).toLocaleDateString(),
       lastActivity: new Date(ticket.lastActivityAt).toLocaleDateString(),
@@ -169,6 +169,11 @@ export default function ClinicTicketsPage() {
     const list = [...filteredTickets];
     
     list.sort((a, b) => {
+      // SEMPRE prima ordina per priorità (5 urgente prima, poi 4, 3, 2, 1)
+      const priorityDiff = (b.priority || 1) - (a.priority || 1);
+      if (priorityDiff !== 0) return priorityDiff;
+      
+      // Se priorità uguale, ordina per la colonna scelta
       let aVal: any = a[sortBy as keyof Ticket];
       let bVal: any = b[sortBy as keyof Ticket];
       

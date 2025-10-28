@@ -697,6 +697,15 @@ export const createWithAuth = mutation({
       } else if (trigger.conditions.type === 'status_change') {
         // Confronta con lo status del ticket (sempre "open" alla creazione)
         conditionMet = 'open' === trigger.conditions.value
+      } else if (trigger.conditions.type === 'priority_eq') {
+        // Confronta con la priorità del ticket (priorità esatta)
+        conditionMet = priority === parseInt(trigger.conditions.value)
+      } else if (trigger.conditions.type === 'priority_gte') {
+        // Confronta con la priorità del ticket (priorità >= valore)
+        conditionMet = priority >= parseInt(trigger.conditions.value)
+      } else if (trigger.conditions.type === 'priority_lte') {
+        // Confronta con la priorità del ticket (priorità <= valore)
+        conditionMet = priority <= parseInt(trigger.conditions.value)
       }
 
       // Se la condizione è soddisfatta, esegui le azioni
@@ -724,6 +733,17 @@ export const createWithAuth = mutation({
             status: trigger.actions.value,
             lastActivityAt: Date.now()
           })
+        } else if (trigger.actions.type === 'set_priority') {
+          // Imposta la priorità del ticket (1-5)
+          const newPriority = parseInt(trigger.actions.value);
+          if (newPriority >= 1 && newPriority <= 5) {
+            await ctx.db.patch(ticketId, { 
+              priority: newPriority,
+              lastActivityAt: Date.now()
+            })
+          } else {
+            console.warn(`  ⚠️ Priorità non valida: ${trigger.actions.value} (deve essere 1-5)`)
+          }
         }
       } else {
       }

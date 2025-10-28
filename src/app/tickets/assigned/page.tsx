@@ -145,8 +145,13 @@ export default function AssignedTicketsPage() {
       filtered = filtered.filter(ticket => ticket.priority === targetPriority)
     }
 
-    // Sort tickets
+    // Sort tickets - SEMPRE prima per priorità (DESC), poi per il criterio scelto
     filtered.sort((a, b) => {
+      // Prima ordina per priorità (5 urgente prima, poi 4, 3, 2, 1)
+      const priorityDiff = (b.priority || 1) - (a.priority || 1);
+      if (priorityDiff !== 0) return priorityDiff;
+      
+      // Se priorità uguale, ordina per il criterio scelto
       switch (sortBy) {
         case 'oldest':
           return a._creationTime - b._creationTime

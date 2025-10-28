@@ -27,6 +27,31 @@ import {
   Target
 } from 'lucide-react'
 
+// Helper function per visualizzare i tipi di condizioni e azioni in modo leggibile
+const getConditionLabel = (type: string) => {
+  const labels: Record<string, string> = {
+    'status_change': 'Cambio di stato',
+    'category_match': 'Categoria specifica',
+    'priority_eq': 'Priorità uguale a',
+    'priority_gte': 'Priorità ≥',
+    'priority_lte': 'Priorità ≤',
+    'time_elapsed': 'Tempo trascorso',
+    'keyword_match': 'Parola chiave'
+  };
+  return labels[type] || type;
+};
+
+const getActionLabel = (type: string) => {
+  const labels: Record<string, string> = {
+    'assign_user': 'Assegna utente',
+    'change_status': 'Cambia stato',
+    'set_priority': 'Imposta priorità',
+    'send_notification': 'Invia notifica',
+    'add_comment': 'Aggiungi commento'
+  };
+  return labels[type] || type;
+};
+
 export default function TriggersPage() {
   const { user } = useAuth()
   const [searchTerm, setSearchTerm] = useState('')
@@ -363,14 +388,14 @@ export default function TriggersPage() {
                       <Target className="h-4 w-4 text-blue-500" />
                       <span className="font-medium">Quando:</span>
                       <Badge variant="outline">
-                        {trigger.conditions?.type || 'Non definito'}
+                        {getConditionLabel(trigger.conditions?.type || '')} = {trigger.conditions?.value || '?'}
                       </Badge>
                     </div>
                     <div className="flex items-center space-x-2 text-sm">
                       <Settings className="h-4 w-4 text-green-500" />
                       <span className="font-medium">Allora:</span>
                       <Badge variant="outline">
-                        {trigger.actions?.type || 'Non definito'}
+                        {getActionLabel(trigger.actions?.type || '')} = {trigger.actions?.value || '?'}
                       </Badge>
                     </div>
                   </div>
@@ -434,10 +459,12 @@ export default function TriggersPage() {
                         onChange={(e) => setFormData(prev => ({ ...prev, conditionType: e.target.value, conditionValue: '' }))}
                       >
                         <option value="status_change">Cambio di stato</option>
-                        <option value="priority_high">Priorità alta</option>
+                        <option value="category_match">Categoria specifica</option>
+                        <option value="priority_eq">Priorità uguale a</option>
+                        <option value="priority_gte">Priorità maggiore o uguale a</option>
+                        <option value="priority_lte">Priorità minore o uguale a</option>
                         <option value="time_elapsed">Tempo trascorso</option>
                         <option value="keyword_match">Parola chiave</option>
-                        <option value="category_match">Categoria specifica</option>
                       </select>
                     </div>
                     
@@ -473,6 +500,20 @@ export default function TriggersPage() {
                             </option>
                           ))}
                         </select>
+                      ) : formData.conditionType === 'priority_eq' || formData.conditionType === 'priority_gte' || formData.conditionType === 'priority_lte' ? (
+                        <select 
+                          className="w-full p-2 border rounded-md"
+                          value={formData.conditionValue}
+                          onChange={(e) => setFormData(prev => ({ ...prev, conditionValue: e.target.value }))}
+                          required
+                        >
+                          <option value="">Seleziona una priorità...</option>
+                          <option value="1">🔥 Molto Bassa (1)</option>
+                          <option value="2">🔥🔥 Bassa (2)</option>
+                          <option value="3">🔥🔥🔥 Media (3)</option>
+                          <option value="4">🔥🔥🔥🔥 Alta (4)</option>
+                          <option value="5">🔥🔥🔥🔥🔥 Urgente (5)</option>
+                        </select>
                       ) : (
                         <Input 
                           placeholder="es. 24 ore, parola chiave..." 
@@ -495,7 +536,7 @@ export default function TriggersPage() {
                       >
                         <option value="assign_user">Assegna utente</option>
                         <option value="change_status">Cambia stato</option>
-                        <option value="change_priority">Cambia priorità</option>
+                        <option value="set_priority">Imposta priorità</option>
                         <option value="send_notification">Invia notifica</option>
                         <option value="add_comment">Aggiungi commento</option>
                       </select>
@@ -532,6 +573,20 @@ export default function TriggersPage() {
                               {status.label}
                             </option>
                           ))}
+                        </select>
+                      ) : formData.actionType === 'set_priority' ? (
+                        <select 
+                          className="w-full p-2 border rounded-md"
+                          value={formData.actionValue}
+                          onChange={(e) => setFormData(prev => ({ ...prev, actionValue: e.target.value }))}
+                          required
+                        >
+                          <option value="">Seleziona una priorità...</option>
+                          <option value="1">🔥 Molto Bassa (1)</option>
+                          <option value="2">🔥🔥 Bassa (2)</option>
+                          <option value="3">🔥🔥🔥 Media (3)</option>
+                          <option value="4">🔥🔥🔥🔥 Alta (4)</option>
+                          <option value="5">🔥🔥🔥🔥🔥 Urgente (5)</option>
                         </select>
                       ) : (
                         <Input 
