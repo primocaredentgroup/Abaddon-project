@@ -30,7 +30,14 @@ export function AgentWidget({ className }: AgentWidgetProps) {
   // Crea/ottieni thread quando aperto
   useEffect(() => {
     if (isOpen && user && !threadId) {
-      createOrGetThread({ userId: user.id as any, clinicId: user.clinicId as any })
+      // Estrai clinicId con fallback
+      const clinicId = (user as any)?.clinicId || (user as any)?.clinic?._id;
+      if (!clinicId) {
+        console.error("AgentWidget: nessuna clinica disponibile per l'utente");
+        return;
+      }
+      
+      createOrGetThread({ userId: user.id as any, clinicId: clinicId as any })
         .then(setThreadId)
         .catch(err => console.error("Errore creazione thread:", err))
     }
@@ -66,13 +73,19 @@ export function AgentWidget({ className }: AgentWidgetProps) {
     setMessages(prev => [...prev, userMessage])
 
     try {
+      // Estrai clinicId con fallback
+      const clinicId = (user as any)?.clinicId || (user as any)?.clinic?._id;
+      if (!clinicId) {
+        throw new Error("Nessuna clinica disponibile per l'utente");
+      }
+      
       // Chiama la vera action Convex
       const result = await chatWithAgent({
         threadId,
         userMessage: message,
         userId: user.id as any,
         userEmail: user.email, // 🆕 Aggiungo email per creazione ticket
-        clinicId: user.clinicId as any
+        clinicId: clinicId as any
       })
       
       // Aggiungi risposta bot

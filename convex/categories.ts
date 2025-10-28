@@ -1,20 +1,60 @@
 import { v } from "convex/values"
-import { mutation, query } from "./_generated/server"
+import { mutation, query, QueryCtx } from "./_generated/server"
 import { ConvexError } from "convex/values"
 import { getCurrentUser, generateSlug } from "./lib/utils"
+import { Id, Doc } from "./_generated/dataModel"
 
-// Query per ottenere l'albero delle categorie di una clinica
+// 🛡️ Helper: Verifica se un utente ha accesso a una categoria (via società)
+export async function userHasAccessToCategory(
+  ctx: QueryCtx,
+  userId: Id<"users">,
+  categoryId: Id<"categories">
+): Promise<boolean> {
+  const category = await ctx.db.get(categoryId);
+  if (!category) return false;
+  
+  // Se la categoria non ha societyIds → visibile a tutti
+  if (!category.societyIds || category.societyIds.length === 0) {
+    return true;
+  }
+  
+  // Ottieni società dell'utente
+  const userSocieties = await ctx.db
+    .query("userSocieties")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .filter((q) => q.eq(q.field("isActive"), true))
+    .collect();
+  
+  const userSocietyIds = userSocieties.map(us => us.societyId);
+  
+  // Verifica se l'utente ha almeno una società della categoria
+  return category.societyIds.some(societyId => userSocietyIds.includes(societyId));
+}
+
+// ⚠️ DEPRECATED: Le categorie non hanno più clinicId, usa getCategoryTreeByUser
+// Query per ottenere l'albero delle categorie filtrate per società dell'utente
 export const getCategoryTree = query({
   args: { 
-    clinicId: v.id("clinics"),
+    userId: v.id("users"), // ← CAMBIATO: ora usa userId invece di clinicId
     visibility: v.optional(v.union(v.literal("public"), v.literal("private"))),
     isActive: v.optional(v.boolean())
   },
-  handler: async (ctx, { clinicId, visibility, isActive }) => {
-    const categories = await ctx.db
+  handler: async (ctx, { userId, visibility, isActive }) => {
+    // Ottieni categorie filtrate per società dell'utente
+    const allCategories = await ctx.db
       .query("categories")
-      .withIndex("by_clinic", (q) => q.eq("clinicId", clinicId))
       .collect()
+    
+    // Filtra per accesso utente (via società)
+    const categoriesWithAccess = [];
+    for (const category of allCategories) {
+      const hasAccess = await userHasAccessToCategory(ctx, userId, category._id);
+      if (hasAccess) {
+        categoriesWithAccess.push(category);
+      }
+    }
+    
+    const categories = categoriesWithAccess;
     
     // Applica filtri
     let filteredCategories = categories
@@ -54,23 +94,34 @@ export const getCategoryTree = query({
   }
 })
 
-// Query per ottenere tutte le categorie di una clinica (lista piatta)
+// ⚠️ DEPRECATED: Le categorie non hanno più clinicId, usa getPublicCategoriesByUserSocieties o getCategoryTree
+// Query per ottenere tutte le categorie filtrate per società (lista piatta)
 export const getCategoriesByClinic = query({
   args: { 
-    clinicId: v.id("clinics"),
+    userId: v.id("users"), // ← CAMBIATO: ora usa userId per ottenere società
     visibility: v.optional(v.union(v.literal("public"), v.literal("private"))),
     isActive: v.optional(v.boolean())
   },
-  handler: async (ctx, { clinicId, visibility, isActive }) => {
-    let query = ctx.db
-      .query("categories")
-      .withIndex("by_clinic", (q) => q.eq("clinicId", clinicId))
+  handler: async (ctx, { userId, visibility, isActive }) => {
+    // Ottieni società dell'utente
+    const userSocieties = await ctx.db
+      .query("userSocieties")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .filter((q) => q.eq(q.field("isActive"), true))
+      .collect();
     
-    const categories = await query.collect()
+    const societyIds = userSocieties.map(us => us.societyId);
+    
+    // Ottieni tutte le categorie
+    const allCategories = await ctx.db.query("categories").collect()
+    
+    // Filtra per accesso utente (via società)
+    let filteredCategories = allCategories.filter(cat => {
+      if (!cat.societyIds || cat.societyIds.length === 0) return true;
+      return cat.societyIds.some(sid => societyIds.includes(sid));
+    });
     
     // Applica filtri
-    let filteredCategories = categories
-    
     if (visibility) {
       filteredCategories = filteredCategories.filter(cat => cat.visibility === visibility)
     }
@@ -123,19 +174,25 @@ export const getCategoryById = query({
 // Query per ottenere tutte le categorie attive (per competenze agenti)
 export const getAllCategories = query({
   args: {
-    clinicId: v.optional(v.id("clinics"))
+    userId: v.optional(v.id("users")) // ← CAMBIATO: filtra per società utente se fornito
   },
-  handler: async (ctx, { clinicId }) => {
-    let categories
+  handler: async (ctx, { userId }) => {
+    let categories = await ctx.db.query("categories").collect()
     
-    // Se clinicId è fornito, filtra per clinica
-    if (clinicId) {
-      categories = await ctx.db
-        .query("categories")
-        .withIndex("by_clinic", (q) => q.eq("clinicId", clinicId))
-        .collect()
-    } else {
-      categories = await ctx.db.query("categories").collect()
+    // Se userId è fornito, filtra per società utente
+    if (userId) {
+      const userSocieties = await ctx.db
+        .query("userSocieties")
+        .withIndex("by_user", (q) => q.eq("userId", userId))
+        .filter((q) => q.eq(q.field("isActive"), true))
+        .collect();
+      
+      const societyIds = userSocieties.map(us => us.societyId);
+      
+      categories = categories.filter(cat => {
+        if (!cat.societyIds || cat.societyIds.length === 0) return true;
+        return cat.societyIds.some(sid => societyIds.includes(sid));
+      });
     }
     
     // Filtra solo categorie attive e non eliminate
@@ -150,33 +207,49 @@ export const getAllCategories = query({
   }
 })
 
-// Query per ottenere categorie pubbliche di una clinica (per utenti)
+// ⚠️ DEPRECATED: Usa getPublicCategoriesByUserSocieties invece
+// Query per ottenere categorie pubbliche (per utenti)
 export const getPublicCategories = query({
-  args: { clinicId: v.id("clinics") },
-  handler: async (ctx, { clinicId }) => {
-    return await ctx.db
+  args: { userId: v.id("users") }, // ← CAMBIATO: usa userId per filtrare società
+  handler: async (ctx, { userId }) => {
+    // Ottieni società dell'utente
+    const userSocieties = await ctx.db
+      .query("userSocieties")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .filter((q) => q.eq(q.field("isActive"), true))
+      .collect();
+    
+    const societyIds = userSocieties.map(us => us.societyId);
+    
+    // Ottieni tutte le categorie pubbliche
+    const categories = await ctx.db
       .query("categories")
-      .withIndex("by_clinic", (q) => q.eq("clinicId", clinicId))
+      .withIndex("by_visibility", (q) => q.eq("visibility", "public"))
       .filter((q) => 
         q.and(
-          q.eq(q.field("visibility"), "public"),
           q.eq(q.field("isActive"), true),
-          q.eq(q.field("deletedAt"), undefined) // escludi eliminate
+          q.eq(q.field("deletedAt"), undefined)
         )
       )
       .collect()
+    
+    // Filtra per società
+    return categories.filter(cat => {
+      if (!cat.societyIds || cat.societyIds.length === 0) return true;
+      return cat.societyIds.some(sid => societyIds.includes(sid));
+    });
   }
 })
 
-// 🆕 Query per ottenere categorie filtrate per società dell'utente
+// ⚠️ DEPRECATED: Usa getPublicCategoriesByUserSocieties o getCategoryTree invece
+// Query per ottenere categorie filtrate per società dell'utente
 export const getCategoriesByUserSocieties = query({
   args: { 
     userId: v.id("users"),
-    clinicId: v.id("clinics"),
     visibility: v.optional(v.union(v.literal("public"), v.literal("private"))),
     isActive: v.optional(v.boolean())
   },
-  handler: async (ctx, { userId, clinicId, visibility, isActive }) => {
+  handler: async (ctx, { userId, visibility, isActive }) => {
     // Ottieni le società dell'utente
     const userSocieties = await ctx.db
       .query("userSocieties")
@@ -186,11 +259,8 @@ export const getCategoriesByUserSocieties = query({
 
     const societyIds = userSocieties.map(us => us.societyId);
 
-    // Ottieni tutte le categorie della clinica
-    let categories = await ctx.db
-      .query("categories")
-      .withIndex("by_clinic", (q) => q.eq("clinicId", clinicId))
-      .collect();
+    // Ottieni tutte le categorie (SENZA filtro clinica)
+    let categories = await ctx.db.query("categories").collect();
 
     // Filtra per visibilità e stato attivo
     let filteredCategories = categories.filter(cat => !cat.deletedAt);
@@ -239,9 +309,8 @@ export const getCategoriesByUserSocieties = query({
 export const getPublicCategoriesByUserSocieties = query({
   args: { 
     userId: v.id("users"),
-    clinicId: v.id("clinics")
   },
-  handler: async (ctx, { userId, clinicId }) => {
+  handler: async (ctx, { userId }) => {
     // Ottieni le società dell'utente
     const userSocieties = await ctx.db
       .query("userSocieties")
@@ -251,13 +320,12 @@ export const getPublicCategoriesByUserSocieties = query({
 
     const societyIds = userSocieties.map(us => us.societyId);
 
-    // Ottieni tutte le categorie pubbliche e attive della clinica
+    // 🆕 Ottieni TUTTE le categorie pubbliche e attive (senza filtro clinica!)
     const categories = await ctx.db
       .query("categories")
-      .withIndex("by_clinic", (q) => q.eq("clinicId", clinicId))
+      .withIndex("by_visibility", (q) => q.eq("visibility", "public"))
       .filter((q) => 
         q.and(
-          q.eq(q.field("visibility"), "public"),
           q.eq(q.field("isActive"), true),
           q.eq(q.field("deletedAt"), undefined)
         )
@@ -265,9 +333,9 @@ export const getPublicCategoriesByUserSocieties = query({
       .collect();
 
     // Filtra per società: mostra categorie che sono per le società dell'utente 
-    // o che non hanno restrizioni di società (societyIds = null)
+    // o che non hanno restrizioni di società (societyIds = null/empty)
     const filteredCategories = categories.filter(cat => {
-      // Se la categoria non ha societyIds, è visibile a tutti
+      // Se la categoria non ha societyIds, è visibile a TUTTI
       if (!cat.societyIds || cat.societyIds.length === 0) {
         return true;
       }
@@ -283,17 +351,31 @@ export const getPublicCategoriesByUserSocieties = query({
   }
 });
 
+// ⚠️ DEPRECATED: Le categorie non sono più filtrate per clinica
 // Query per ottenere tutte le categorie incluse quelle eliminate (per admin)
 export const getAllCategoriesByClinic = query({
   args: { 
-    clinicId: v.id("clinics"),
+    userId: v.optional(v.id("users")), // ← CAMBIATO: filtra per società utente se fornito
     includeDeleted: v.optional(v.boolean())
   },
-  handler: async (ctx, { clinicId, includeDeleted = false }) => {
-    const categories = await ctx.db
-      .query("categories")
-      .withIndex("by_clinic", (q) => q.eq("clinicId", clinicId))
-      .collect()
+  handler: async (ctx, { userId, includeDeleted = false }) => {
+    let categories = await ctx.db.query("categories").collect()
+    
+    // Se userId è fornito, filtra per società utente
+    if (userId) {
+      const userSocieties = await ctx.db
+        .query("userSocieties")
+        .withIndex("by_user", (q) => q.eq("userId", userId))
+        .filter((q) => q.eq(q.field("isActive"), true))
+        .collect();
+      
+      const societyIds = userSocieties.map(us => us.societyId);
+      
+      categories = categories.filter(cat => {
+        if (!cat.societyIds || cat.societyIds.length === 0) return true;
+        return cat.societyIds.some(sid => societyIds.includes(sid));
+      });
+    }
     
     // Filtra o include categorie eliminate
     const filteredCategories = includeDeleted 
@@ -320,15 +402,31 @@ export const getAllCategoriesByClinic = query({
   }
 })
 
+// ⚠️ DEPRECATED: Le categorie non sono più filtrate per clinica
 // Query per ottenere solo le categorie eliminate (cestino)
 export const getDeletedCategories = query({
-  args: { clinicId: v.id("clinics") },
-  handler: async (ctx, { clinicId }) => {
-    const categories = await ctx.db
+  args: { userId: v.optional(v.id("users")) }, // ← CAMBIATO: filtra per società utente se fornito
+  handler: async (ctx, { userId }) => {
+    let categories = await ctx.db
       .query("categories")
-      .withIndex("by_clinic", (q) => q.eq("clinicId", clinicId))
       .filter((q) => q.neq(q.field("deletedAt"), undefined))
       .collect()
+    
+    // Se userId è fornito, filtra per società utente
+    if (userId) {
+      const userSocieties = await ctx.db
+        .query("userSocieties")
+        .withIndex("by_user", (q) => q.eq("userId", userId))
+        .filter((q) => q.eq(q.field("isActive"), true))
+        .collect();
+      
+      const societyIds = userSocieties.map(us => us.societyId);
+      
+      categories = categories.filter(cat => {
+        if (!cat.societyIds || cat.societyIds.length === 0) return true;
+        return cat.societyIds.some(sid => societyIds.includes(sid));
+      });
+    }
     
     // Ordina per data di eliminazione (più recenti prima)
     categories.sort((a, b) => (b.deletedAt || 0) - (a.deletedAt || 0))
@@ -352,7 +450,6 @@ export const createCategory = mutation({
   args: {
     name: v.string(),
     description: v.optional(v.string()),
-    clinicId: v.id("clinics"),
     departmentId: v.optional(v.id("departments")),
     visibility: v.union(v.literal("public"), v.literal("private")),
     defaultTicketVisibility: v.optional(v.union(v.literal("public"), v.literal("private"))),
@@ -372,33 +469,22 @@ export const createCategory = mutation({
     // Genera slug
     const slug = generateSlug(args.name)
     
-    // Verifica che la clinica esista
-    const clinic = await ctx.db.get(args.clinicId)
-    if (!clinic) {
-      throw new ConvexError("Clinic not found")
-    }
-    
     // Verifica che il dipartimento esista se fornito
     if (args.departmentId) {
       const department = await ctx.db.get(args.departmentId)
       if (!department) {
         throw new ConvexError("Department not found")
       }
-      
-      // Verifica che il dipartimento appartenga alla stessa clinica
-      if (department.clinicId !== args.clinicId) {
-        throw new ConvexError("Department does not belong to the specified clinic")
-      }
     }
     
-    // Verifica che non esista già una categoria con lo stesso slug nella clinica
+    // Verifica che non esista già una categoria con lo stesso slug globalmente
     const existingCategory = await ctx.db
       .query("categories")
-      .withIndex("by_slug", (q) => q.eq("clinicId", args.clinicId).eq("slug", slug))
+      .withIndex("by_slug", (q) => q.eq("slug", slug))
       .unique()
       
     if (existingCategory) {
-      throw new ConvexError("A category with this name already exists in this clinic")
+      throw new ConvexError("A category with this name already exists")
     }
     
     // Gestisci gerarchia
@@ -410,10 +496,6 @@ export const createCategory = mutation({
       const parent = await ctx.db.get(args.parentId)
       if (!parent) {
         throw new ConvexError("Parent category not found")
-      }
-      
-      if (parent.clinicId !== args.clinicId) {
-        throw new ConvexError("Parent category must belong to the same clinic")
       }
       
       depth = parent.depth + 1
@@ -430,29 +512,25 @@ export const createCategory = mutation({
       const rootCategories = await ctx.db
         .query("categories")
         .withIndex("by_parent", (q) => q.eq("parentId", undefined))
-        .filter((q) => q.eq(q.field("clinicId"), args.clinicId))
         .collect()
       order = rootCategories.length
     }
     
-    // Determina se richiede approvazione
-    const requiresApproval = clinic.settings.requireApprovalForCategories
-    
-    // Crea la categoria
+    // Crea la categoria (senza approvazione)
     const categoryId = await ctx.db.insert("categories", {
       name: args.name,
       slug,
       description: args.description,
-      clinicId: args.clinicId,
       departmentId: args.departmentId,
       visibility: args.visibility,
+      defaultTicketVisibility: args.defaultTicketVisibility,
       parentId: args.parentId,
       path,
       depth,
       order,
       synonyms: args.synonyms || [],
-      requiresApproval,
-      isActive: !requiresApproval, // Se richiede approvazione, inizia come inattiva
+      requiresApproval: false, // Categorie non richiedono più approvazione (no clinica)
+      isActive: true,
       societyIds: args.societyIds || undefined, // 🆕 Supporto società
     })
     
@@ -493,23 +571,18 @@ export const updateCategory = mutation({
       if (!department) {
         throw new ConvexError("Department not found")
       }
-      
-      // Verifica che il dipartimento appartenga alla stessa clinica
-      if (department.clinicId !== category.clinicId) {
-        throw new ConvexError("Department does not belong to the same clinic")
-      }
     }
     
-    // Verifica unicità del nome se viene cambiato
+    // Verifica unicità del nome se viene cambiato (globalmente)
     if (updates.name && updates.name !== category.name) {
+      const slug = generateSlug(updates.name);
       const existingCategory = await ctx.db
         .query("categories")
-        .withIndex("by_clinic", (q) => q.eq("clinicId", category.clinicId))
-        .filter((q) => q.eq(q.field("name"), updates.name))
+        .withIndex("by_slug", (q) => q.eq("slug", slug))
         .unique()
         
-      if (existingCategory) {
-        throw new ConvexError("A category with this name already exists in this clinic")
+      if (existingCategory && existingCategory._id !== categoryId) {
+        throw new ConvexError("A category with this name already exists")
       }
     }
     
@@ -654,21 +727,13 @@ export const deleteCategory = mutation({
   }
 })
 
+// ⚠️ DEPRECATED: Le categorie non richiedono più approvazione (non sono legate a cliniche)
 // Query per ottenere categorie in attesa di approvazione
 export const getPendingCategories = query({
-  args: { clinicId: v.optional(v.id("clinics")) },
-  handler: async (ctx, { clinicId }) => {
-    let categories
-    
-    if (clinicId) {
-      categories = await ctx.db
-        .query("categories")
-        .withIndex("by_clinic", (q) => q.eq("clinicId", clinicId))
-    } else {
-      categories = await ctx.db.query("categories")
-    }
-    
-    const allCategories = await categories
+  args: { userId: v.optional(v.id("users")) }, // ← CAMBIATO: filtra per società utente se fornito
+  handler: async (ctx, { userId }) => {
+    let allCategories = await ctx.db
+      .query("categories")
       .filter((q) => 
         q.and(
           q.eq(q.field("requiresApproval"), true),
@@ -677,14 +742,29 @@ export const getPendingCategories = query({
       )
       .collect()
     
-    // Popola i dati della clinica e del dipartimento
+    // Se userId è fornito, filtra per società utente
+    if (userId) {
+      const userSocieties = await ctx.db
+        .query("userSocieties")
+        .withIndex("by_user", (q) => q.eq("userId", userId))
+        .filter((q) => q.eq(q.field("isActive"), true))
+        .collect();
+      
+      const societyIds = userSocieties.map(us => us.societyId);
+      
+      allCategories = allCategories.filter(cat => {
+        if (!cat.societyIds || cat.societyIds.length === 0) return true;
+        return cat.societyIds.some(sid => societyIds.includes(sid));
+      });
+    }
+    
+    // Popola i dati del dipartimento
     const categoriesWithDetails = await Promise.all(
       allCategories.map(async (category) => {
-        const [clinic, department] = await Promise.all([
-          ctx.db.get(category.clinicId),
-          category.departmentId ? ctx.db.get(category.departmentId) : null
-        ])
-        return { ...category, clinic, department }
+        const department = category.departmentId 
+          ? await ctx.db.get(category.departmentId)
+          : null
+        return { ...category, department }
       })
     )
     
@@ -722,28 +802,15 @@ export const fixExistingCategoriesVisibility = mutation({
   },
 })
 
-// Mutation per inizializzare le categorie di base per una clinica
+// ⚠️ DEPRECATED: Le categorie non sono più legate alle cliniche
+// Mutation per inizializzare le categorie di base (globali per tutte le società)
 export const initializeBaseCategories = mutation({
-  args: { clinicId: v.id("clinics") },
-  handler: async (ctx, { clinicId }) => {
+  args: { 
+    societyIds: v.optional(v.array(v.id("societies"))) // ← OPZIONALE: se vuoto, categorie globali
+  },
+  handler: async (ctx, { societyIds }) => {
     // Verifica autenticazione (commentata per test)
     // const currentUser = await getCurrentUser(ctx)
-    
-    // Verifica che la clinica esista
-    const clinic = await ctx.db.get(clinicId)
-    if (!clinic) {
-      throw new ConvexError("Clinic not found")
-    }
-    
-    // Elimina categorie esistenti per questa clinica
-    const existingCategories = await ctx.db
-      .query("categories")
-      .withIndex("by_clinic", (q) => q.eq("clinicId", clinicId))
-      .collect()
-    
-    for (const category of existingCategories) {
-      await ctx.db.delete(category._id)
-    }
     
     // Definisci le 9 categorie di base
     const baseCategories = [
@@ -801,11 +868,21 @@ export const initializeBaseCategories = mutation({
       const category = baseCategories[i]
       const slug = generateSlug(category.name)
       
+      // Verifica se esiste già
+      const existing = await ctx.db
+        .query("categories")
+        .withIndex("by_slug", (q) => q.eq("slug", slug))
+        .unique()
+      
+      if (existing) {
+        console.log(`Categoria ${category.name} già esistente, skip.`);
+        continue;
+      }
+      
       const categoryId = await ctx.db.insert("categories", {
         name: category.name,
         slug,
         description: category.description,
-        clinicId,
         visibility: "public",
         parentId: undefined, // Categorie root
         path: [],
@@ -814,6 +891,7 @@ export const initializeBaseCategories = mutation({
         synonyms: category.synonyms,
         requiresApproval: false,
         isActive: true,
+        societyIds: societyIds || undefined, // Se non specificato, categorie globali
       })
       
       categoryIds.push(categoryId)

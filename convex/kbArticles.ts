@@ -222,6 +222,10 @@ export const createArticle = mutation({
       throw new ConvexError("Solo agenti e amministratori possono creare articoli")
     }
 
+    if (!user.clinicId) {
+      throw new ConvexError("User has no clinic assigned")
+    }
+
     // Crea articolo
     const articleId = await ctx.db.insert("kbArticles", {
       title: args.title,
@@ -361,6 +365,10 @@ export const createSuggestion = mutation({
 
     if (!user) {
       throw new ConvexError("Utente non trovato")
+    }
+
+    if (!user.clinicId) {
+      throw new ConvexError("User has no clinic assigned")
     }
 
     // Crea suggerimento

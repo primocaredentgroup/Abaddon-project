@@ -53,10 +53,14 @@ export const list = query({
       throw new ConvexError("User not found")
     }
 
+    if (!user.clinicId) {
+      throw new ConvexError("User has no clinic assigned")
+    }
+
     // Get all departments for the user's clinic
     const departments = await ctx.db
       .query("departments")
-      .withIndex("by_clinic", (q) => q.eq("clinicId", user.clinicId))
+      .withIndex("by_clinic", (q) => q.eq("clinicId", user.clinicId!))
       .collect()
 
     // Filter only active departments

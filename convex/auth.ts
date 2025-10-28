@@ -6,6 +6,95 @@ import { internal } from "./_generated/api"
 
 import { Doc } from "./_generated/dataModel"
 
+// Query per ottenere le cliniche attive di un utente
+export const getUserActiveClinics = query({
+  args: {
+    userId: v.id("users"),
+  },
+  returns: v.array(
+    v.object({
+      _id: v.id("clinics"),
+      name: v.string(),
+      code: v.string(),
+      address: v.string(),
+      phone: v.string(),
+      email: v.string(),
+      externalClinicId: v.optional(v.string()),
+      isActive: v.boolean(),
+      isSystem: v.optional(v.boolean()),
+      userRole: v.union(v.literal("user"), v.literal("agent"), v.literal("admin")),
+    })
+  ),
+  handler: async (ctx, { userId }) => {
+    // Ottieni le relazioni userClinics attive
+    const userClinics = await ctx.db
+      .query("userClinics")
+      .withIndex("by_user_active", (q) =>
+        q.eq("userId", userId).eq("isActive", true)
+      )
+      .collect();
+
+    // Popola con i dati delle cliniche
+    const clinicsWithRole = await Promise.all(
+      userClinics.map(async (uc) => {
+        const clinic = await ctx.db.get(uc.clinicId);
+        if (!clinic) return null;
+        return {
+          _id: clinic._id,
+          name: clinic.name,
+          code: clinic.code,
+          address: clinic.address,
+          phone: clinic.phone,
+          email: clinic.email,
+          externalClinicId: clinic.externalClinicId,
+          isActive: clinic.isActive,
+          isSystem: clinic.isSystem,
+          userRole: uc.role,
+        };
+      })
+    );
+
+    return clinicsWithRole.filter((c) => c !== null) as any[];
+  },
+})
+
+// Query per ottenere un utente per ID (usata internamente per controlli)
+export const getUserById = query({
+  args: {
+    userId: v.id("users"),
+  },
+  returns: v.union(
+    v.object({
+      _id: v.id("users"),
+      _creationTime: v.number(),
+      email: v.string(),
+      name: v.string(),
+      clinicId: v.optional(v.id("clinics")),
+      roleId: v.id("roles"),
+      auth0Id: v.string(),
+      isActive: v.boolean(),
+      lastLoginAt: v.optional(v.number()),
+      lastClinicSyncAt: v.optional(v.number()),
+      isSyncing: v.optional(v.boolean()),
+      categoryCompetencies: v.optional(v.array(v.id("categories"))),
+      preferences: v.object({
+        notifications: v.object({
+          email: v.boolean(),
+          push: v.boolean(),
+        }),
+        dashboard: v.object({
+          defaultView: v.string(),
+          itemsPerPage: v.number(),
+        }),
+      }),
+    }),
+    v.null()
+  ),
+  handler: async (ctx, { userId }) => {
+    return await ctx.db.get(userId);
+  },
+})
+
 // Funzione helper per assegnare automaticamente la società basata sul dominio email
 // Nota: questa è una funzione helper interna che usa 'any' per il ctx per compatibilità
 // con diversi context types (mutation, internal mutation). È OK in questo caso.
@@ -84,10 +173,12 @@ export const getOrCreateUser = mutation({
       email: v.string(),
       name: v.string(),
       auth0Id: v.string(),
-      clinicId: v.id("clinics"),
+      clinicId: v.optional(v.id("clinics")), // Optional: usa userClinics invece
       roleId: v.id("roles"),
       isActive: v.boolean(),
       lastLoginAt: v.optional(v.number()),
+      lastClinicSyncAt: v.optional(v.number()),
+      isSyncing: v.optional(v.boolean()),
       categoryCompetencies: v.optional(v.array(v.id("categories"))),
       preferences: v.object({
         notifications: v.object({
@@ -288,10 +379,12 @@ export const getCurrentUser = mutation({
       email: v.string(),
       name: v.string(),
       auth0Id: v.string(),
-      clinicId: v.id("clinics"),
+      clinicId: v.optional(v.id("clinics")), // Optional: usa userClinics invece
       roleId: v.id("roles"),
       isActive: v.boolean(),
       lastLoginAt: v.optional(v.number()),
+      lastClinicSyncAt: v.optional(v.number()), // Timestamp ultimo sync cliniche
+      isSyncing: v.optional(v.boolean()), // Flag per evitare sync multipli simultanei
       categoryCompetencies: v.optional(v.array(v.id("categories"))),
       preferences: v.object({
         notifications: v.object({
@@ -340,8 +433,9 @@ export const getCurrentUser = mutation({
       if (!newUser) return null
       
       // Popola dati con type narrowing esplicito
-      const clinicDoc = await ctx.db.get(newUser.clinicId)
-      const roleDoc = await ctx.db.get(newUser.roleId)
+      // Controllo se clinicId è valido prima di fare .get()
+      const clinicDoc = newUser.clinicId ? await ctx.db.get(newUser.clinicId) : null
+      const roleDoc = newUser.roleId ? await ctx.db.get(newUser.roleId) : null
       
       // Type narrowing manuale per clinic
       const clinic = clinicDoc && 'name' in clinicDoc && 'code' in clinicDoc ? 
@@ -364,8 +458,9 @@ export const getCurrentUser = mutation({
     await ctx.db.patch(existingUser._id, { lastLoginAt: Date.now() })
 
     // Popola i dati in parallelo con type narrowing esplicito
-    const clinicDoc = await ctx.db.get(existingUser.clinicId)
-    const roleDoc = await ctx.db.get(existingUser.roleId)
+    // Controllo se clinicId è valido prima di fare .get()
+    const clinicDoc = existingUser.clinicId ? await ctx.db.get(existingUser.clinicId) : null
+    const roleDoc = existingUser.roleId ? await ctx.db.get(existingUser.roleId) : null
     
     // Type narrowing manuale per clinic
     const clinic = clinicDoc && 'name' in clinicDoc && 'code' in clinicDoc ? 
@@ -415,15 +510,16 @@ export const createUserFromIdentity = internalMutation({
       throw new ConvexError("Default user role not found. Please initialize the database first.")
     }
     
-    // Crea utente
+    // Crea utente (clinicId è optional, usiamo userClinics)
     const userId = await ctx.db.insert("users", {
       email,
       name,
       auth0Id,
-      clinicId: defaultClinic._id,
+      clinicId: defaultClinic._id, // Manteniamo per backward compatibility
       roleId: userRole._id,
       isActive: true,
       lastLoginAt: Date.now(),
+      lastClinicSyncAt: undefined, // Verrà settato al primo sync PrimoUp
       preferences: {
         notifications: {
           email: true,
@@ -434,6 +530,16 @@ export const createUserFromIdentity = internalMutation({
           itemsPerPage: 25,
         },
       },
+    })
+    
+    // Crea relazione userClinics con clinica di default
+    await ctx.db.insert("userClinics", {
+      userId,
+      clinicId: defaultClinic._id,
+      externalClinicId: defaultClinic.externalClinicId,
+      role: "user",
+      isActive: true,
+      joinedAt: Date.now(),
     })
     
     // Assegnazione automatica società basata sul dominio email

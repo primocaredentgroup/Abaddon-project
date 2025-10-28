@@ -30,14 +30,31 @@ export default function NewTicketPage() {
   // Ottieni l'email dell'utente corrente (necessario per le mutation)
   const currentUserEmail = authUser?.email || user?.email;
   
-  // Estrai clinicId e userId in modo sicuro
-  const clinicId = (authUser as any)?.clinicId || (authUser as any)?.clinic?._id
+  // Estrai userId in modo sicuro
   const userId = (authUser as any)?.id // 🔥 FIX: useAuth ritorna "id" invece di "_id"
   
-  // Query per ottenere le categorie pubbliche filtrate per società dell'utente
+  // Query per ottenere le cliniche attive dell'utente
+  const userClinicsData = useQuery(
+    api.auth.getUserActiveClinics,
+    userId ? { userId } : "skip"
+  );
+  
+  // 📝 Stato form (DICHIARATO PRIMA!)
+  const [formData, setFormData] = useState({
+    title: '',
+    description: '',
+    category: '',
+    clinicId: '', // 🆕 Clinica selezionata
+    visibility: 'public',
+    tags: '',
+  });
+  
+  // 🏢 Query per categorie (DOPO formData!)
+  // Le categorie sono filtrate SOLO per SOCIETÀ dell'utente (NON per clinica!)
+  // Mostra: categorie con societyIds=null (visibili a tutti) + categorie delle società dell'utente
   const categoriesData = useQuery(
     api.categories.getPublicCategoriesByUserSocieties,
-    (clinicId && userId) ? { clinicId, userId } : "skip"
+    userId ? { userId } : "skip"
   );
   
   // Trasforma le categorie nel formato atteso dal Select
@@ -51,13 +68,43 @@ export default function NewTicketPage() {
   // Stato di caricamento
   const isLoadingCategories = categoriesData === undefined;
   
-  const [formData, setFormData] = useState({
-    title: '',
-    description: '',
-    category: '',
-    visibility: 'public',
-    tags: '',
-  });
+  // 🆕 Setta automaticamente la prima clinica quando disponibile
+  useEffect(() => {
+    if (userClinicsData && userClinicsData.length > 0 && !formData.clinicId) {
+      console.log("🔍 TOTALE Cliniche disponibili:", userClinicsData.length);
+      
+      let selectedClinic = null;
+
+      // Priorità 1: Se ha solo 1 clinica → preseleziona
+      if (userClinicsData.length === 1) {
+        selectedClinic = userClinicsData[0]._id;
+        console.log("✅ Priorità 1: 1 sola clinica →", userClinicsData[0].code);
+      } 
+      // Priorità 2: Se ha cliniche di sistema (isSystem: true)
+      else {
+        // Filtra cliniche di sistema
+        const systemClinics = userClinicsData.filter(c => c.isSystem === true);
+        
+        if (systemClinics.length > 0) {
+          // Ordina alfabeticamente per code
+          systemClinics.sort((a, b) => a.code.localeCompare(b.code));
+          
+          selectedClinic = systemClinics[0]._id;
+          console.log(`✅ Priorità 2: Clinica di sistema trovata (${systemClinics.length} totali) →`, systemClinics[0].code);
+          if (systemClinics.length > 1) {
+            console.log("📋 Altre cliniche di sistema:", systemClinics.slice(1).map(c => c.code).join(", "));
+          }
+        } else {
+          console.log("⚠️ Nessuna clinica di sistema (isSystem: true) trovata, nessuna preselezione");
+        }
+      }
+
+      if (selectedClinic) {
+        setFormData(prev => ({ ...prev, clinicId: selectedClinic }));
+        console.log("🏥 Clinica preselezionata:", selectedClinic);
+      }
+    }
+  }, [userClinicsData, formData.clinicId]);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   
@@ -113,7 +160,7 @@ export default function NewTicketPage() {
   // 🤖 Effect: Analizza la descrizione con l'Agent AI
   useEffect(() => {
     const analyzeDescription = async () => {
-      if (!debouncedDescription || debouncedDescription.length < 10 || !clinicId || !userId || !formData.title) {
+      if (!debouncedDescription || debouncedDescription.length < 10 || !formData.clinicId || !userId || !formData.title) {
         return;
       }
       
@@ -122,21 +169,29 @@ export default function NewTicketPage() {
         const suggestion = await suggestCategory({
           title: formData.title,
           description: debouncedDescription,
-          clinicId: clinicId as any,
-          userId: userId as any // 🆕 Passa userId per filtro società
+          userId: userId as any // Filtra categorie per società dell'utente
         });
         
         setAgentSuggestion(suggestion);
-        setShowSuggestion(true);
+        
+        // 🆕 Se AI fallisce (confidence bassa < 40) o non trova categoria → NASCONDI suggerimento
+        // L'utente dovrà selezionare manualmente dal dropdown (che si popola automaticamente)
+        if (!suggestion?.recommendedCategory || (suggestion?.confidence && suggestion.confidence < 40)) {
+          console.warn('⚠️ AI non ha trovato categoria o confidence troppo bassa → dropdown manuale');
+          setShowSuggestion(false); // Nascondi suggerimento, mostra dropdown
+        } else {
+          setShowSuggestion(true);
+        }
       } catch (error) {
         console.error('❌ Error analyzing description:', error);
+        setShowSuggestion(false); // 🆕 Nascondi suggerimento in caso di errore
       } finally {
         setIsAnalyzing(false);
       }
     };
     
     analyzeDescription();
-  }, [debouncedDescription, formData.title, clinicId, userId, suggestCategory]);
+  }, [debouncedDescription, formData.title, formData.clinicId, userId, suggestCategory]);
   
   // 📝 Effect: Carica attributi obbligatori quando cambia la categoria
   useEffect(() => {
@@ -186,12 +241,12 @@ export default function NewTicketPage() {
   
   // 🚫 Handler: Rifiuta suggerimento dell'agent
   const handleRejectSuggestion = async () => {
-    if (agentSuggestion?.recommendedCategory && userId && clinicId) {
+    if (agentSuggestion?.recommendedCategory && userId && formData.clinicId) {
       try {
         // Salva feedback negativo
         await saveAgentFeedback({
           userId: userId as any,
-          clinicId: clinicId as any,
+          clinicId: formData.clinicId as any,
           suggestedCategoryId: agentSuggestion.recommendedCategory._id,
           suggestedCategoryName: agentSuggestion.recommendedCategory.name,
           ticketTitle: formData.title,
@@ -240,6 +295,11 @@ export default function NewTicketPage() {
         return;
       }
       
+      if (!formData.clinicId) {
+        alert('Seleziona una clinica');
+        return;
+      }
+      
       // 📝 Validazione attributi obbligatori
       const missingAttributes = requiredAttributes.filter(attr => {
         const value = attributeValues[attr.slug];
@@ -257,6 +317,7 @@ export default function NewTicketPage() {
         title: formData.title.trim(),
         description: formData.description.trim(),
         categoryId: formData.category as any, // Cast necessario per TypeScript
+        clinicId: formData.clinicId as any, // 🆕 Clinica selezionata dall'utente
         visibility: formData.visibility, // 🆕 Usa la visibilità selezionata dall'utente!
         userEmail: currentUserEmail, // Email utente autenticato (validato sopra)
       });
@@ -411,6 +472,24 @@ export default function NewTicketPage() {
                     </div>
                   )}
 
+                  {/* 🏥 Selettore Clinica */}
+                  {userClinicsData && userClinicsData.length > 1 && (
+                    <Select
+                      label="Clinica *"
+                      options={[
+                        { value: '', label: 'Seleziona clinica...' },
+                        ...userClinicsData.map(clinic => ({
+                          value: clinic._id,
+                          label: clinic.name
+                        }))
+                      ]}
+                      value={formData.clinicId}
+                      onChange={(e) => setFormData({...formData, clinicId: e.target.value})}
+                      required
+                    />
+                  )}
+                  
+                  {/* 📋 Selettore Categoria */}
                   <Select
                     label="Categoria *"
                     options={[
@@ -423,7 +502,7 @@ export default function NewTicketPage() {
                     value={formData.category}
                     onChange={(e) => setFormData({...formData, category: e.target.value})}
                     required
-                    disabled={isLoadingCategories}
+                    disabled={isLoadingCategories || !formData.clinicId}
                   />
                   
                   {/* 💡 Messaggio quando suggerimento è rifiutato */}
@@ -616,7 +695,7 @@ export default function NewTicketPage() {
               <KBWidget
                 category={formData.category ? categoriesData?.find(c => c._id === formData.category)?.slug : undefined}
                 searchTerm={formData.title + ' ' + formData.description}
-                clinicId={clinicId}
+                clinicId={formData.clinicId}
               />
 
               {/* Preview */}

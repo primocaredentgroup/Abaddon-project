@@ -37,10 +37,14 @@ export const getTicketsToManage = query({
     // Ottieni le competenze dell'utente
     const userCompetencies = user.categoryCompetencies || []
 
+    if (!user.clinicId) {
+      throw new ConvexError("User has no clinic assigned")
+    }
+
     // Trova tutti i ticket della clinica
     const allTickets = await ctx.db
       .query("tickets")
-      .withIndex("by_clinic", (q) => q.eq("clinicId", user.clinicId))
+      .withIndex("by_clinic", (q) => q.eq("clinicId", user.clinicId!))
       .collect()
 
     // Filtra i ticket secondo le regole

@@ -24,10 +24,11 @@ export function UserCompetenciesManager({ userId, userName, userEmail, userClini
   const [isEditing, setIsEditing] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState<Id<"categories">[]>([]);
 
-  // Carica tutte le categorie disponibili della clinica dell'utente
+  // 🔓 ADMIN VIEW: Mostra TUTTE le categorie disponibili (no filtro società)
+  // L'admin può assegnare qualsiasi categoria come competenza
   const allCategories = useQuery(
     api.categories.getAllCategories,
-    { clinicId: userClinicId }
+    {} // NO userId → mostra TUTTO
   ) || [];
 
   // Carica le competenze attuali dell'utente

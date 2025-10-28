@@ -55,10 +55,10 @@ export default function TriggersPage() {
     clinicId ? { clinicId } : "skip"
   )
   
-  // Query per categorie
+  // 🔓 ADMIN VIEW: Mostra TUTTE le categorie (no filtro società)
   const categoriesFromDB = useQuery(
     api.categories.getCategoriesByClinic,
-    clinicId ? { clinicId, isActive: true } : "skip"
+    { isActive: true } // NO userId → mostra TUTTO
   )
   
   // Query per utenti (agenti/admin)

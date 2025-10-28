@@ -6,11 +6,13 @@ export default defineSchema({
   users: defineTable({
     email: v.string(),
     name: v.string(),
-    clinicId: v.id("clinics"), // Clinica principale (backward compatibility)
+    clinicId: v.optional(v.id("clinics")), // DEPRECATED: Usa userClinics invece (manteniamo per backward compatibility)
     roleId: v.id("roles"),
     auth0Id: v.string(),
     isActive: v.boolean(),
     lastLoginAt: v.optional(v.number()),
+    lastClinicSyncAt: v.optional(v.number()), // Timestamp ultimo sync cliniche da PrimoUp
+    isSyncing: v.optional(v.boolean()), // Flag per evitare sync multipli simultanei
     categoryCompetencies: v.optional(v.array(v.id("categories"))), // Categorie di competenza per agenti
     preferences: v.object({
       notifications: v.object({
@@ -32,6 +34,7 @@ export default defineSchema({
   userClinics: defineTable({
     userId: v.id("users"),
     clinicId: v.id("clinics"),
+    externalClinicId: v.optional(v.string()), // ID clinica da PrimoUp per matching
     role: v.union(v.literal("user"), v.literal("agent"), v.literal("admin")), // Ruolo specifico per questa clinica
     isActive: v.boolean(),
     joinedAt: v.number(),
@@ -39,7 +42,8 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_clinic", ["clinicId"])
     .index("by_user_clinic", ["userId", "clinicId"])
-    .index("by_clinic_role", ["clinicId", "role"]),
+    .index("by_clinic_role", ["clinicId", "role"])
+    .index("by_user_active", ["userId", "isActive"]),
 
   // Clinics table
   clinics: defineTable({
@@ -56,10 +60,12 @@ export default defineSchema({
       defaultSlaHours: v.number(),
     }),
     isActive: v.boolean(),
+    isSystem: v.optional(v.boolean()), // 🏢 Cliniche di sistema (HQ, LABORATORIO, ecc.)
   })
     .index("by_code", ["code"])
     .index("by_active", ["isActive"])
-    .index("by_external_id", ["externalClinicId"]),
+    .index("by_external_id", ["externalClinicId"])
+    .index("by_system", ["isSystem"]),
 
   // Roles table
   roles: defineTable({
@@ -96,7 +102,6 @@ export default defineSchema({
     name: v.string(),
     slug: v.string(),                  // univoco per ricerca/URL
     description: v.optional(v.string()),
-    clinicId: v.id("clinics"),
     departmentId: v.optional(v.id("departments")),
     visibility: v.union(v.literal("public"), v.literal("private")),
     requiresApproval: v.boolean(),
@@ -117,15 +122,13 @@ export default defineSchema({
     // Soft delete
     deletedAt: v.optional(v.number()),        // timestamp per soft delete
     
-    // 🆕 Società support - se null, la categoria è visibile a tutte le società
+    // 🆕 Società support - se null/empty, la categoria è visibile a tutte le società
     societyIds: v.optional(v.array(v.id("societies"))), // Array di società per cui questa categoria è visibile
   })
-    .index("by_clinic", ["clinicId"])
     .index("by_department", ["departmentId"])
     .index("by_visibility", ["visibility"])
-    .index("by_clinic_visibility", ["clinicId", "visibility"])
     .index("by_parent", ["parentId"])
-    .index("by_slug", ["clinicId", "slug"])
+    .index("by_slug", ["slug"]) // ← slug deve essere univoco globalmente
     .index("by_active", ["isActive"]),
 
   // Tags table
@@ -265,11 +268,9 @@ export default defineSchema({
       value: v.any(),
     })),
     
-    clinicId: v.id("clinics"),
     isActive: v.boolean(),
   })
     .index("by_category", ["categoryId"])
-    .index("by_clinic", ["clinicId"])
     .index("by_creation", ["categoryId", "showInCreation"])
     .index("by_order", ["categoryId", "order"]),
 
@@ -658,4 +659,13 @@ export default defineSchema({
     .index("by_society", ["societyId"])
     .index("by_active", ["isActive"])
     .index("by_domain_active", ["domain", "isActive"]),
+
+  // PrimoUp Token Storage - Per gestire i token di autenticazione PrimoUp
+  primoup_tokens: defineTable({
+    token: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    isActive: v.boolean(),
+  })
+    .index("by_active", ["isActive"]),
 })

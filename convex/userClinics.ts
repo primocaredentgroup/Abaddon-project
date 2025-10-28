@@ -219,10 +219,15 @@ export const migrateExistingUsersToMultiClinic = mutation({
     let migrated = 0
 
     for (const user of allUsers) {
+      // Salta utenti senza clinicId (verranno assegnati al primo login)
+      if (!user.clinicId) {
+        continue
+      }
+
       // Verifica se esiste già una relazione
       const existing = await ctx.db
         .query("userClinics")
-        .withIndex("by_user_clinic", (q) => q.eq("userId", user._id).eq("clinicId", user.clinicId))
+        .withIndex("by_user_clinic", (q) => q.eq("userId", user._id).eq("clinicId", user.clinicId!))
         .unique()
 
       if (!existing) {

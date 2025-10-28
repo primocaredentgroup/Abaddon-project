@@ -196,6 +196,10 @@ export const getVisibilitySettings = query({
     const currentUser = await getCurrentUser(ctx)
     const targetClinicId = clinicId || currentUser.clinicId
     
+    if (!targetClinicId) {
+      throw new ConvexError("Clinic ID not found")
+    }
+    
     const clinic = await ctx.db.get(targetClinicId)
     if (!clinic) {
       throw new ConvexError("Clinic not found")
@@ -226,6 +230,10 @@ export const updateVisibilitySettings = mutation({
   handler: async (ctx, { clinicId, ...settings }) => {
     const currentUser = await getCurrentUser(ctx)
     const targetClinicId = clinicId || currentUser.clinicId
+    
+    if (!targetClinicId) {
+      throw new ConvexError("Clinic ID not found")
+    }
     
     const clinic = await ctx.db.get(targetClinicId)
     if (!clinic) {
@@ -277,6 +285,10 @@ export const arePublicTicketsAllowed = query({
     const currentUser = await getCurrentUser(ctx)
     const targetClinicId = clinicId || currentUser.clinicId
     
+    if (!targetClinicId) {
+      return false
+    }
+    
     const clinic = await ctx.db.get(targetClinicId)
     if (!clinic) {
       return false
@@ -295,6 +307,10 @@ export const togglePublicTickets = mutation({
   handler: async (ctx, { clinicId, enabled }) => {
     const currentUser = await getCurrentUser(ctx)
     const targetClinicId = clinicId || currentUser.clinicId
+    
+    if (!targetClinicId) {
+      throw new ConvexError("Clinic ID not found")
+    }
     
     const clinic = await ctx.db.get(targetClinicId)
     if (!clinic) {

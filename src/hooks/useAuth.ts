@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from 'react';
 import { useAuth0 } from '@auth0/auth0-react';
-import { useMutation } from 'convex/react';
+import { useMutation, useAction } from 'convex/react';
 import { useConvexAuth } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 
@@ -13,6 +13,7 @@ interface ExtendedUser {
   roleName?: string;
   id: string;
   clinicId?: string;
+  lastClinicSyncAt?: number;
   clinic?: {
     name: string;
   };
@@ -30,6 +31,9 @@ export function useAuth() {
   
   // Mutation per ottenere/creare utente (segue Convex rules: mutations write)
   const getCurrentUserMutation = useMutation(api.auth.getCurrentUser);
+  
+  // Action per sincronizzare cliniche da PrimoUp
+  const syncUserClinics = useAction(api.primoupActions.syncUserClinicsFromPrimoUp);
 
   // Carica utente quando autenticato
   useEffect(() => {
@@ -47,10 +51,30 @@ export function useAuth() {
               ruolo: userData.role?.name || 'user',
               roleName: userData.role?.name,
               clinicId: userData.clinicId,
+              lastClinicSyncAt: userData.lastClinicSyncAt,
               clinic: userData.clinic,
               role: userData.role,
             };
             setConvexUser(mappedUser);
+            
+            // 🔄 Sync cliniche da PrimoUp se necessario (1 volta/giorno)
+            const now = Date.now();
+            const oneDayMs = 24 * 60 * 60 * 1000;
+            const needsSync = !userData.lastClinicSyncAt || (now - userData.lastClinicSyncAt) > oneDayMs;
+            
+            if (needsSync) {
+              console.log('🔄 Syncing user clinics from PrimoUp...');
+              try {
+                await syncUserClinics({
+                  userEmail: userData.email,
+                  userId: userData._id,
+                });
+                console.log('✅ User clinics synced successfully');
+              } catch (error) {
+                console.error('❌ Failed to sync user clinics:', error);
+                // Non blocchiamo il login se il sync fallisce
+              }
+            }
           }
         } catch (error) {
           console.error('Errore caricamento utente:', error);
@@ -61,7 +85,7 @@ export function useAuth() {
     }
     
     loadUser();
-  }, [isAuthenticated, convexUser, isLoadingUser, getCurrentUserMutation]);
+  }, [isAuthenticated, convexUser, isLoadingUser, getCurrentUserMutation, syncUserClinics]);
 
   // Reset user on logout
   useEffect(() => {
@@ -104,6 +128,7 @@ export function useAuth() {
           ruolo: userData.role?.name || 'user',
           roleName: userData.role?.name,
           clinicId: userData.clinicId,
+          lastClinicSyncAt: userData.lastClinicSyncAt,
           clinic: userData.clinic,
           role: userData.role,
         };

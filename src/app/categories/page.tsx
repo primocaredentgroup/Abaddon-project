@@ -55,15 +55,15 @@ export default function AdminCategoriesPage() {
     societyIds: [] as string[] // 🆕 Supporto società
   })
 
-  // Estrai clinicId in modo sicuro (potrebbe essere user.clinicId o user.clinic._id)
+  // Estrai clinicId (ancora necessario per alcune operazioni)
   const clinicId = (user as any)?.clinicId || (user as any)?.clinic?._id
   
-  // Queries
+  // 🔓 ADMIN VIEW: Mostra TUTTE le categorie senza filtri (no userId = no filtro società)
   const categories = useQuery(api.categories.getAllCategoriesByClinic, 
-    clinicId ? { clinicId, includeDeleted: false } : "skip"
+    { includeDeleted: false } // NO userId → mostra TUTTO
   )
   const deletedCategories = useQuery(api.categories.getDeletedCategories, 
-    clinicId ? { clinicId } : "skip"
+    {} // NO userId → mostra TUTTO
   )
   const societies = useQuery(api.societies.getAllSocieties, { activeOnly: true })
   const categoryAttributes = useQuery(
