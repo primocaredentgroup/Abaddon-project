@@ -98,28 +98,34 @@ export const getCategoryTree = query({
 // Query per ottenere tutte le categorie filtrate per società (lista piatta)
 export const getCategoriesByClinic = query({
   args: { 
-    userId: v.id("users"), // ← CAMBIATO: ora usa userId per ottenere società
+    userId: v.optional(v.id("users")), // ← OPTIONAL: se presente filtra per società, altrimenti mostra TUTTO (admin)
     visibility: v.optional(v.union(v.literal("public"), v.literal("private"))),
     isActive: v.optional(v.boolean())
   },
   handler: async (ctx, { userId, visibility, isActive }) => {
-    // Ottieni società dell'utente
-    const userSocieties = await ctx.db
-      .query("userSocieties")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .filter((q) => q.eq(q.field("isActive"), true))
-      .collect();
-    
-    const societyIds = userSocieties.map(us => us.societyId);
-    
     // Ottieni tutte le categorie
     const allCategories = await ctx.db.query("categories").collect()
     
-    // Filtra per accesso utente (via società)
-    let filteredCategories = allCategories.filter(cat => {
-      if (!cat.societyIds || cat.societyIds.length === 0) return true;
-      return cat.societyIds.some(sid => societyIds.includes(sid));
-    });
+    let filteredCategories = allCategories;
+    
+    // 🔓 Se userId è presente → filtra per società dell'utente
+    // 🔒 Se userId è assente → mostra TUTTO (logica admin/agent)
+    if (userId) {
+      // Ottieni società dell'utente
+      const userSocieties = await ctx.db
+        .query("userSocieties")
+        .withIndex("by_user", (q) => q.eq("userId", userId))
+        .filter((q) => q.eq(q.field("isActive"), true))
+        .collect();
+      
+      const societyIds = userSocieties.map(us => us.societyId);
+      
+      // Filtra per accesso utente (via società)
+      filteredCategories = allCategories.filter(cat => {
+        if (!cat.societyIds || cat.societyIds.length === 0) return true;
+        return cat.societyIds.some(sid => societyIds.includes(sid));
+      });
+    }
     
     // Applica filtri
     if (visibility) {

@@ -200,13 +200,8 @@ export default defineSchema({
     lastActivityAt: v.number(),
     attributeCount: v.number(), // for query optimizations
     
-    // Legacy fields for backward compatibility
-    priority: v.optional(v.union(
-      v.literal("low"),
-      v.literal("medium"),
-      v.literal("high"),
-      v.literal("urgent")
-    )),
+    // Priority system: 1=Molto Bassa, 2=Bassa, 3=Media, 4=Alta, 5=Urgente (default: 1)
+    priority: v.number(),
     customFields: v.optional(v.any()),
     slaDeadline: v.optional(v.number()),
     tags: v.optional(v.array(v.string())),

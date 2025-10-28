@@ -4,6 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { PriorityLevel } from '@/components/tickets/PriorityLevel';
 import { useRole } from '@/providers/RoleProvider';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -33,7 +34,7 @@ type Ticket = {
   title: string;
   description: string;
   status: 'new' | 'open' | 'in_progress' | 'pending' | 'resolved' | 'closed';
-  priority: 'low' | 'medium' | 'high' | 'urgent';
+  priority: number; // 1-5: 1=Molto Bassa, 2=Bassa, 3=Media, 4=Alta, 5=Urgente
   assignee: string;
   createdAt: string;
   lastActivity: string;
@@ -396,6 +397,9 @@ export default function ClinicTicketsPage() {
                         Categoria
                       </th>
                       <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Priorità
+                      </th>
+                      <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Creatore
                       </th>
                       <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -456,9 +460,23 @@ export default function ClinicTicketsPage() {
                           )}
                         </td>
                         <td className="px-3 py-3 text-center">
-                          <Badge variant="default" className="text-xs">
-                            {ticket.category}
-                          </Badge>
+                          <div className="flex flex-col items-center gap-1">
+                            <Badge variant="default" className="text-xs">
+                              {ticket.category}
+                            </Badge>
+                            <span className="text-xs text-gray-500">
+                              🏥 {ticket.clinic}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-3 py-3 text-center">
+                          <div className="flex justify-center">
+                            <PriorityLevel
+                              value={ticket.priority || 1}
+                              readonly={true}
+                              showLabel={false}
+                            />
+                          </div>
                         </td>
                         <td className="px-3 py-3 text-center">
                           <span className="text-xs text-gray-600">

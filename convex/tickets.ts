@@ -544,6 +544,7 @@ export const create = mutation({
       visibility,
       lastActivityAt: now,
       attributeCount: 0, // Will be updated when attributes are added
+      priority: 1, // Default: Molto Bassa (1/5)
     })
 
     // Save attributes if provided
@@ -578,6 +579,7 @@ export const createWithAuth = mutation({
     clinicId: v.optional(v.id("clinics")), // 🆕 Clinica da usare (se omessa usa user.clinicId)
     attributes: v.optional(v.any()),
     visibility: v.optional(v.union(v.literal("public"), v.literal("private"))),
+    priority: v.optional(v.number()), // Priorità 1-5 (solo agenti/admin, default: 1)
     userEmail: v.string(),
   },
   handler: async (ctx, args): Promise<{ ticketId: any, ticketNumber: number }> => {
@@ -637,6 +639,21 @@ export const createWithAuth = mutation({
     const clinic = await ctx.db.get(targetClinicId!)
     const visibility = args.visibility || 'private'
     
+    // Gestisci priorità (solo agenti/admin possono impostarla diversa da 1)
+    let priority = 1; // Default per tutti gli utenti
+    if (args.priority !== undefined) {
+      // Validazione priorità
+      if (args.priority < 1 || args.priority > 5) {
+        throw new ConvexError("Priorità non valida. Deve essere tra 1 e 5.");
+      }
+      // Verifica che l'utente sia agente/admin
+      const role = await ctx.db.get(user.roleId);
+      if (role && (role.permissions.includes("manage_all_tickets") || role.permissions.includes("assign_tickets"))) {
+        priority = args.priority;
+      }
+      // Se non è agente/admin, ignora il valore e usa default 1
+    }
+    
     // Per ora tutti i ticket sono privati
     // if (visibility === 'public' && !(clinic as any)?.settings?.allowPublicTickets) {
     //   console.warn('⚠️ Ticket pubblici non permessi, forzo a privato')
@@ -656,6 +673,7 @@ export const createWithAuth = mutation({
       visibility: visibility, // ✅ Usa il valore dal parametro (default: 'private')
       lastActivityAt: now,
       attributeCount: 0,
+      priority: priority, // Priorità 1-5 (default: 1, modificabile solo da agenti/admin)
     })
 
 
@@ -1994,5 +2012,70 @@ export const runTicketNumberMigration: any = mutation({
     const result: any = await ctx.runMutation(internal.tickets.addTicketNumbersToExistingTickets, {})
     
     return result
+  },
+})
+
+// Mutation per aggiornare la priorità di un ticket (solo agenti/admin)
+export const updatePriority = mutation({
+  args: {
+    ticketId: v.id("tickets"),
+    priority: v.number(),
+    userEmail: v.string(),
+  },
+  returns: v.object({
+    success: v.boolean(),
+    message: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    // Validazione priorità
+    if (args.priority < 1 || args.priority > 5) {
+      throw new ConvexError("Priorità non valida. Deve essere tra 1 e 5.");
+    }
+
+    // Verifica autenticazione
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new ConvexError("Non autenticato");
+    }
+
+    // Ottieni utente
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_auth0", (q) => q.eq("auth0Id", identity.subject))
+      .first();
+
+    if (!user) {
+      throw new ConvexError("Utente non trovato");
+    }
+
+    // Verifica che l'utente sia agente o admin
+    const role = await ctx.db.get(user.roleId);
+    if (!role) {
+      throw new ConvexError("Ruolo utente non trovato");
+    }
+
+    const canModifyPriority = role.permissions.includes("manage_all_tickets") || 
+                               role.permissions.includes("assign_tickets");
+    
+    if (!canModifyPriority) {
+      throw new ConvexError("Solo agenti e amministratori possono modificare la priorità");
+    }
+
+    // Ottieni ticket
+    const ticket = await ctx.db.get(args.ticketId);
+    if (!ticket) {
+      throw new ConvexError("Ticket non trovato");
+    }
+
+    // Aggiorna priorità
+    await ctx.db.patch(args.ticketId, {
+      priority: args.priority,
+      lastActivityAt: Date.now(),
+    });
+
+    return {
+      success: true,
+      message: `Priorità aggiornata a ${args.priority}`,
+    };
   },
 })

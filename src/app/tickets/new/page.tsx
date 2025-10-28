@@ -14,13 +14,14 @@ import { Textarea } from '@/components/ui/Textarea';
 import { Select } from '@/components/ui/Select';
 import { Badge } from '@/components/ui/Badge';
 import { KBWidget } from '@/components/kb/KBWidget';
+import { PriorityLevel } from '@/components/tickets/PriorityLevel';
 import { ArrowLeft, Upload, User, Tag, Sparkles, Check, X } from 'lucide-react';
 import Link from 'next/link';
 import { useDebounce } from '@/hooks/useDebounce';
 
 
 export default function NewTicketPage() {
-  const { user } = useRole();
+  const { user, role } = useRole();
   const { user: authUser } = useAuth();
   const router = useRouter();
   
@@ -46,6 +47,7 @@ export default function NewTicketPage() {
     category: '',
     clinicId: '', // 🆕 Clinica selezionata
     visibility: 'public',
+    priority: 1, // Priorità 1-5 (default: 1)
     tags: '',
   });
   
@@ -319,6 +321,7 @@ export default function NewTicketPage() {
         categoryId: formData.category as any, // Cast necessario per TypeScript
         clinicId: formData.clinicId as any, // 🆕 Clinica selezionata dall'utente
         visibility: formData.visibility, // 🆕 Usa la visibilità selezionata dall'utente!
+        priority: formData.priority, // Priorità 1-5 (solo agenti/admin, default: 1)
         userEmail: currentUserEmail, // Email utente autenticato (validato sopra)
       });
       
@@ -688,6 +691,19 @@ export default function NewTicketPage() {
                       </label>
                     </div>
                   </div>
+
+                  {/* Priorità - Solo per agenti/admin */}
+                  {(role === 'agent' || role === 'admin') && (
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700">Priorità</label>
+                      <PriorityLevel
+                        value={formData.priority}
+                        onChange={(priority) => setFormData({...formData, priority})}
+                        readonly={false}
+                        showLabel={true}
+                      />
+                    </div>
+                  )}
                 </CardContent>
               </Card>
 

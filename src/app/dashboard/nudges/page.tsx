@@ -4,9 +4,11 @@ import React, { useState } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { PriorityLevel } from '@/components/tickets/PriorityLevel';
 import { useRole } from '@/providers/RoleProvider';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { Select } from '@/components/ui/Select';
 import { Badge } from '@/components/ui/Badge';
 import {
   Bell,
@@ -21,9 +23,19 @@ import {
 import Link from 'next/link';
 import { toast } from 'sonner';
 
+const priorityOptions = [
+  { value: 'all', label: 'Tutte' },
+  { value: '1', label: '🔥 Molto Bassa' },
+  { value: '2', label: '🔥🔥 Bassa' },
+  { value: '3', label: '🔥🔥🔥 Media' },
+  { value: '4', label: '🔥🔥🔥🔥 Alta' },
+  { value: '5', label: '🔥🔥🔥🔥🔥 Urgente' },
+];
+
 export default function NudgedTicketsPage() {
   const { user } = useRole();
   const [assigningTicket, setAssigningTicket] = useState<string | null>(null); // 🆕 Loading state
+  const [priorityFilter, setPriorityFilter] = useState<string>('all');
   
   // Fetch di TUTTI i ticket da risolvere (aperti e in corso)
   const allTickets = useQuery(
@@ -48,8 +60,14 @@ export default function NudgedTicketsPage() {
     );
   }
   
-  // Conta i ticket sollecitati
-  const nudgedTickets = allTickets.filter((t: any) => (t.nudgeCount || 0) > 0);
+  // Conta i ticket sollecitati e filtra per priorità
+  let nudgedTickets = allTickets.filter((t: any) => (t.nudgeCount || 0) > 0);
+  
+  // Applica filtro priorità
+  if (priorityFilter && priorityFilter !== 'all') {
+    const targetPriority = parseInt(priorityFilter);
+    nudgedTickets = nudgedTickets.filter((t: any) => t.priority === targetPriority);
+  }
 
   const getUrgencyLevel = (nudgeCount: number, lastNudgeAt: number) => {
     const hoursAgo = (Date.now() - lastNudgeAt) / (1000 * 60 * 60);
@@ -164,8 +182,43 @@ export default function NudgedTicketsPage() {
           </Card>
         </div>
 
+        {/* Filtri */}
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-4">
+              <label className="text-sm font-medium text-gray-700">Filtra per priorità:</label>
+              <Select
+                value={priorityFilter}
+                onChange={(value) => setPriorityFilter(value)}
+                placeholder="Filtra per priorità"
+                options={priorityOptions}
+                className="w-64"
+              />
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Lista ticket da risolvere */}
-        {allTickets.length === 0 ? (
+        {nudgedTickets.length === 0 && priorityFilter !== 'all' ? (
+          <Card>
+            <CardContent className="text-center py-12">
+              <Clock className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                Nessun ticket trovato con questi filtri
+              </h3>
+              <p className="text-gray-600">
+                Prova a modificare il filtro priorità per vedere più risultati.
+              </p>
+              <Button
+                variant="outline"
+                onClick={() => setPriorityFilter('all')}
+                className="mt-4"
+              >
+                Mostra tutti i ticket
+              </Button>
+            </CardContent>
+          </Card>
+        ) : allTickets.length === 0 ? (
           <Card>
             <CardContent className="text-center py-12">
               <Clock className="h-12 w-12 text-gray-400 mx-auto mb-4" />
@@ -179,7 +232,7 @@ export default function NudgedTicketsPage() {
           </Card>
         ) : (
           <div className="space-y-4">
-            {allTickets.map((ticket: any) => {
+            {nudgedTickets.map((ticket: any) => {
               const isNudged = (ticket.nudgeCount || 0) > 0;
               const urgency = isNudged ? getUrgencyLevel(ticket.nudgeCount || 0, ticket.lastNudgeAt || 0) : null;
               const hoursAgo = ticket.lastNudgeAt ? Math.floor((Date.now() - ticket.lastNudgeAt) / (1000 * 60 * 60)) : null;
@@ -238,6 +291,17 @@ export default function NudgedTicketsPage() {
                             <Building className="h-4 w-4 mr-1" />
                             <span>{ticket.clinic?.name || 'N/A'}</span>
                           </div>
+                          
+                          {/* Priorità */}
+                          {ticket.priority && (
+                            <div className="flex items-center">
+                              <PriorityLevel
+                                value={ticket.priority}
+                                readonly={true}
+                                showLabel={true}
+                              />
+                            </div>
+                          )}
                           
                           {/* Mostra info sollecito solo se sollecitato */}
                           {isNudged && hoursAgo !== null && (
