@@ -3,21 +3,40 @@ import { query, mutation } from "./_generated/server"
 import { ConvexError } from "convex/values"
 import { hasFullAccess } from "./lib/permissions"
 
-// Query per ottenere tutte le SLA rules di una clinica
-export const getSLARulesByClinic = query({
+// Query per ottenere tutte le SLA rules (globale, senza filtro clinica)
+export const getAllSLARules = query({
   args: {
-    clinicId: v.id("clinics"),
+    userId: v.optional(v.id("users")), // Opzionale: per filtrare per società utente
   },
-  handler: async (ctx, { clinicId }) => {
+  handler: async (ctx, { userId }) => {
+    // Carica tutte le regole SLA
+    const allRules = await ctx.db.query("slaRules").collect();
     
-    const rules = await ctx.db
-      .query("slaRules")
-      .withIndex("by_clinic", (q) => q.eq("clinicId", clinicId))
-      .collect()
+    // Se userId è specificato, filtra per società utente
+    let filteredRules = allRules;
+    
+    if (userId) {
+      // Ottieni società dell'utente
+      const userSocieties = await ctx.db
+        .query("userSocieties")
+        .withIndex("by_user", (q) => q.eq("userId", userId))
+        .filter((q) => q.eq(q.field("isActive"), true))
+        .collect();
+      
+      const userSocietyIds = userSocieties.map(us => us.societyId);
+      
+      // Filtra regole: includi regole globali O regole con società in comune
+      filteredRules = allRules.filter(rule => {
+        if (!rule.societyIds || rule.societyIds.length === 0) {
+          return true; // Regola globale
+        }
+        return rule.societyIds.some(sid => userSocietyIds.includes(sid));
+      });
+    }
     
     // Popola i dati del creatore se disponibile
     const rulesWithCreators = await Promise.all(
-      rules.map(async (rule) => {
+      filteredRules.map(async (rule) => {
         if (rule.createdBy) {
           const creator = await ctx.db.get(rule.createdBy)
           return { ...rule, creator }
@@ -30,17 +49,39 @@ export const getSLARulesByClinic = query({
   }
 })
 
-// Query per ottenere solo le SLA rules attive
+// Query per ottenere solo le SLA rules attive (globale, con filtro società opzionale)
 export const getActiveSLARules = query({
   args: {
-    clinicId: v.id("clinics"),
+    userId: v.optional(v.id("users")), // Opzionale: per filtrare per società utente
   },
-  handler: async (ctx, { clinicId }) => {
-    return await ctx.db
+  handler: async (ctx, { userId }) => {
+    // Carica tutte le regole SLA attive
+    const activeRules = await ctx.db
       .query("slaRules")
-      .withIndex("by_clinic", (q) => q.eq("clinicId", clinicId))
+      .withIndex("by_active", (q) => q.eq("isActive", true))
+      .collect();
+    
+    // Se userId non è specificato, ritorna tutte le regole attive
+    if (!userId) {
+      return activeRules;
+    }
+    
+    // Ottieni società dell'utente
+    const userSocieties = await ctx.db
+      .query("userSocieties")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
       .filter((q) => q.eq(q.field("isActive"), true))
-      .collect()
+      .collect();
+    
+    const userSocietyIds = userSocieties.map(us => us.societyId);
+    
+    // Filtra regole: includi regole globali O regole con società in comune
+    return activeRules.filter(rule => {
+      if (!rule.societyIds || rule.societyIds.length === 0) {
+        return true; // Regola globale
+      }
+      return rule.societyIds.some(sid => userSocietyIds.includes(sid));
+    });
   }
 })
 
@@ -48,7 +89,6 @@ export const getActiveSLARules = query({
 export const createSLARule = mutation({
   args: {
     name: v.string(),
-    clinicId: v.id("clinics"),
     conditions: v.any(),
     targetHours: v.number(),
     requiresApproval: v.optional(v.boolean()),
@@ -66,21 +106,33 @@ export const createSLARule = mutation({
       throw new ConvexError("Creatore non trovato")
     }
     
-    // Verifica che la clinica esista
-    const clinic = await ctx.db.get(args.clinicId)
-    if (!clinic) {
-      throw new ConvexError("Clinica non trovata")
+    // 🆕 Calcola automaticamente societyIds dalle categorie in conditions
+    const conditions = args.conditions as any;
+    const categoryIds = conditions?.categories || [];
+    const societyIdsSet = new Set<string>();
+    
+    for (const categoryId of categoryIds) {
+      const category = await ctx.db
+        .query("categories")
+        .filter((q) => q.eq(q.field("_id"), categoryId))
+        .first();
+      
+      if (category?.societyIds && category.societyIds.length > 0) {
+        category.societyIds.forEach(sid => societyIdsSet.add(sid));
+      }
     }
+    
+    const societyIds = Array.from(societyIdsSet);
     
     // Crea la SLA rule
     const ruleId = await ctx.db.insert("slaRules", {
       name: args.name,
-      clinicId: args.clinicId,
       conditions: args.conditions,
       targetHours: args.targetHours,
       isActive: true,
       requiresApproval: args.requiresApproval || false,
       createdBy: creator._id,
+      societyIds: societyIds.length > 0 ? societyIds as any : undefined, // undefined = regola globale
     })
     
     return ruleId
@@ -104,8 +156,17 @@ export const updateSLARule = mutation({
       throw new ConvexError("SLA rule non trovata")
     }
     
+    // 🆕 Se stiamo aggiornando conditions, SOSTITUISCI completamente (non merge)
+    // perché potremmo voler RIMUOVERE campi (es. priority quando selezioniamo "all")
+    const patchData: any = { ...updates }
+    
+    if (updates.conditions) {
+      // Sostituisci completamente le conditions invece di fare merge
+      patchData.conditions = updates.conditions
+    }
+    
     // Aggiorna la rule
-    await ctx.db.patch(ruleId, updates)
+    await ctx.db.patch(ruleId, patchData)
     
     return ruleId
   }

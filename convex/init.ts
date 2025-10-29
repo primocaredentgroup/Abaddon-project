@@ -1,8 +1,21 @@
-import { mutation } from "./_generated/server"
-import { ConvexError } from "convex/values"
+import { mutation, internalMutation } from "./_generated/server"
+import { ConvexError, v } from "convex/values"
+import { internal } from "./_generated/api"
 
 // Mutation per inizializzare il database con dati di base
 export const initializeDatabase = mutation({
+  args: {},
+  returns: v.object({
+    message: v.string(),
+    data: v.object({
+      permissions: v.number(),
+      roles: v.number(),
+      clinics: v.number(),
+      departments: v.number(),
+      categories: v.number(),
+      ticketStatuses: v.number(),
+    })
+  }),
   handler: async (ctx) => {
     // Verifica se il database è già inizializzato
     const existingPermissions = await ctx.db.query("permissions").collect()
@@ -127,7 +140,6 @@ export const initializeDatabase = mutation({
         name: "Supporto Tecnico",
         slug: "supporto-tecnico",
         description: "Problemi tecnici e supporto IT",
-        clinicId: exampleClinicId,
         departmentId: itDepartmentId,
         visibility: "public" as const,
         parentId: undefined,
@@ -142,7 +154,6 @@ export const initializeDatabase = mutation({
         name: "Richieste HR",
         slug: "richieste-hr",
         description: "Richieste relative alle risorse umane",
-        clinicId: exampleClinicId,
         departmentId: hrDepartmentId,
         visibility: "public" as const,
         parentId: undefined,
@@ -157,7 +168,6 @@ export const initializeDatabase = mutation({
         name: "Manutenzione",
         slug: "manutenzione",
         description: "Richieste di manutenzione strutture",
-        clinicId: exampleClinicId,
         visibility: "public" as const,
         parentId: undefined,
         path: [],
@@ -175,6 +185,59 @@ export const initializeDatabase = mutation({
     
     console.log("Created example categories")
     
+    // 6. 🆕 Inizializza gli stati dei ticket (open, in_progress, closed)
+    console.log("Initializing ticket statuses...")
+    
+    // Controlla se ci sono già stati nella tabella
+    const existingStatuses = await ctx.db.query("ticketStatuses").first()
+    let statusCount = 0
+    
+    if (!existingStatuses) {
+      const defaultStatuses = [
+        {
+          name: "Aperto",
+          slug: "open",
+          description: "Ticket appena creato, in attesa di lavorazione",
+          color: "#ef4444",
+          icon: "circle",
+          order: 1,
+          isSystem: true,
+          isActive: true,
+          isFinal: false,
+        },
+        {
+          name: "In Corso",
+          slug: "in_progress",
+          description: "Ticket in lavorazione da un agente",
+          color: "#f59e0b",
+          icon: "clock",
+          order: 2,
+          isSystem: true,
+          isActive: true,
+          isFinal: false,
+        },
+        {
+          name: "Chiuso",
+          slug: "closed",
+          description: "Ticket completato e chiuso",
+          color: "#22c55e",
+          icon: "check-circle",
+          order: 3,
+          isSystem: true,
+          isActive: true,
+          isFinal: true,
+        }
+      ]
+      
+      for (const status of defaultStatuses) {
+        await ctx.db.insert("ticketStatuses", status)
+        statusCount++
+      }
+      console.log(`✅ ${statusCount} stati inizializzati`)
+    } else {
+      console.log(`⚠️ Stati già presenti, skip inizializzazione`)
+    }
+    
     return {
       message: "Database initialized successfully",
       data: {
@@ -183,6 +246,7 @@ export const initializeDatabase = mutation({
         clinics: 1,
         departments: 2,
         categories: categoryIds.length,
+        ticketStatuses: statusCount, // 🆕 Conteggio stati inizializzati
       }
     }
   }
@@ -190,6 +254,8 @@ export const initializeDatabase = mutation({
 
 // Mutation per resettare il database (solo per sviluppo)
 export const resetDatabase = mutation({
+  args: {},
+  returns: v.object({ message: v.string() }),
   handler: async (ctx) => {
     console.log("Resetting database...")
     

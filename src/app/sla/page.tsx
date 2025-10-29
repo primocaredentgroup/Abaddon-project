@@ -57,7 +57,7 @@ export default function SLAMonitorPage() {
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    priority: 'medium' as 'low' | 'medium' | 'high' | 'urgent',
+    priority: 'all' as 'all' | 'low' | 'medium' | 'high' | 'urgent', // 🆕 Aggiunto 'all'
     responseTime: 24,
     resolutionTime: 72,
     businessHoursOnly: true,
@@ -65,9 +65,6 @@ export default function SLAMonitorPage() {
     isActive: true,
     requiresApproval: false
   })
-
-  // Get clinic ID from user  
-  const clinicId = (user as any)?.clinicId || (user as any)?.clinic?._id
 
   // 🔓 ADMIN VIEW: Mostra TUTTE le categorie (no filtro società)
   const categoriesFromDB = useQuery(
@@ -82,52 +79,32 @@ export default function SLAMonitorPage() {
     slug: cat.slug
   })) || []
   
-  // Queries - NOTA: Queste query dovranno essere implementate nel backend
-  // Per ora uso dei dati fittizi per la struttura del frontend
-  const [slaRules, setSlaRules] = useState<SLARule[]>([
-    {
-      _id: '1',
-      name: 'SLA Standard',
-      description: 'SLA per ticket di priorità normale',
-      priority: 'medium',
-      responseTime: 24,
-      resolutionTime: 72,
-      businessHoursOnly: true,
-      categories: ['general', 'software'],
-      isActive: true,
-      requiresApproval: false,
-      createdBy: 'Admin',
-      createdAt: '2024-01-15'
-    },
-    {
-      _id: '2',
-      name: 'SLA Urgente',
-      description: 'SLA per ticket critici e urgenti',
-      priority: 'urgent',
-      responseTime: 1,
-      resolutionTime: 4,
-      businessHoursOnly: false,
-      categories: ['hardware', 'security'],
-      isActive: true,
-      requiresApproval: true,
-      createdBy: 'Admin',
-      createdAt: '2024-01-15'
-    },
-    {
-      _id: '3',
-      name: 'SLA Bassa Priorità',
-      description: 'SLA per ticket a bassa priorità',
-      priority: 'low',
-      responseTime: 72,
-      resolutionTime: 168,
-      businessHoursOnly: true,
-      categories: ['maintenance'],
-      isActive: false,
-      requiresApproval: false,
-      createdBy: 'Admin',
-      createdAt: '2024-01-15'
+  // ✅ QUERY REALE: Carica le SLA rules da Convex (globale, TUTTE le regole per admin)
+  const slaRulesFromDB = useQuery(
+    api.slaRules.getAllSLARules,
+    {} // Nessun filtro → mostra TUTTE le regole (admin view)
+  )
+  
+  // Mappa i dati dal database al formato del frontend
+  const slaRules: SLARule[] = (slaRulesFromDB || []).map(rule => {
+    // Estrai le conditions
+    const conditions = rule.conditions as any
+    
+    return {
+      _id: rule._id,
+      name: rule.name,
+      description: '', // Non c'è description nello schema attuale
+      priority: conditions?.priority || 'all', // 🆕 Estrai priority dalle conditions (default: 'all')
+      responseTime: rule.targetHours || 24,
+      resolutionTime: rule.targetHours || 72,
+      businessHoursOnly: conditions?.businessHoursOnly ?? true, // 🆕 Estrai da conditions
+      categories: conditions?.categories || [], // 🆕 Estrai categorie dalle conditions
+      isActive: rule.isActive,
+      requiresApproval: rule.requiresApproval || false,
+      createdBy: rule.creator?.name || 'Sistema',
+      createdAt: rule._creationTime ? new Date(rule._creationTime).toLocaleDateString() : ''
     }
-  ])
+  })
   
   // Stats
   const slaStats = {
@@ -137,27 +114,10 @@ export default function SLAMonitorPage() {
     urgent: slaRules.filter(rule => rule.priority === 'urgent').length
   }
 
-  // Mutations fittizie - da implementare nel backend
-  const createSLARule = async (data: any) => {
-    const newRule: SLARule = {
-      ...data,
-      _id: Date.now().toString(),
-      createdBy: (user as any)?.name || 'Sconosciuto',
-      createdAt: new Date().toISOString()
-    }
-    setSlaRules(prev => [...prev, newRule])
-    return newRule
-  }
-  
-  const updateSLARule = async (data: any) => {
-    setSlaRules(prev => prev.map(rule => rule._id === data.ruleId ? { ...rule, ...data } : rule))
-    return data
-  }
-  
-  const deleteSLARule = async (data: any) => {
-    setSlaRules(prev => prev.filter(rule => rule._id !== data.ruleId))
-    return data
-  }
+  // ✅ MUTATIONS REALI: Usa Convex per salvare i dati
+  const createSLARuleMutation = useMutation(api.slaRules.createSLARule)
+  const updateSLARuleMutation = useMutation(api.slaRules.updateSLARule)
+  const deleteSLARuleMutation = useMutation(api.slaRules.deleteSLARule)
 
   // Filter SLA rules based on search
   const filteredRules = slaRules.filter(rule =>
@@ -168,41 +128,53 @@ export default function SLAMonitorPage() {
   // Handle form submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!clinicId || !formData.name.trim()) {
-      alert('Errore: Clinica non trovata o nome regola SLA mancante')
+    if (!formData.name.trim() || !user?.email) {
+      alert('Errore: Nome regola SLA mancante o utente non autenticato')
       return
     }
 
     try {
-      const ruleData = {
-        name: formData.name,
-        description: formData.description,
-        priority: formData.priority,
-        responseTime: formData.responseTime,
-        resolutionTime: formData.resolutionTime,
-        businessHoursOnly: formData.businessHoursOnly,
+      // Costruisci l'oggetto conditions con i dati del form
+      // 🆕 Se priority è 'all', non includiamo il campo priority (= si applica a tutte)
+      const conditions: any = {
         categories: formData.categories,
-        isActive: formData.isActive,
-        requiresApproval: formData.requiresApproval,
-        clinicId
+        businessHoursOnly: formData.businessHoursOnly
+      }
+      
+      // Aggiungi priority solo se non è 'all'
+      if (formData.priority !== 'all') {
+        conditions.priority = formData.priority
       }
 
       if (editingRule) {
         // Update existing rule
-        await updateSLARule({
-          ruleId: editingRule._id,
-          ...ruleData
+        await updateSLARuleMutation({
+          ruleId: editingRule._id as any,
+          name: formData.name,
+          conditions: conditions,
+          targetHours: formData.resolutionTime, // Usa resolutionTime come targetHours
+          isActive: formData.isActive
         })
+        alert('Regola SLA aggiornata con successo!')
       } else {
         // Create new rule
-        await createSLARule(ruleData)
+        // 🆕 Il backend calcolerà automaticamente societyIds dalle categorie
+        await createSLARuleMutation({
+          name: formData.name,
+          conditions: conditions,
+          targetHours: formData.resolutionTime, // Usa resolutionTime come targetHours
+          requiresApproval: formData.requiresApproval,
+          creatorEmail: user.email,
+          // societyIds verrà calcolato dal backend dalle categorie selezionate
+        })
+        alert('Regola SLA creata con successo!')
       }
       
       // Reset form
       setFormData({ 
         name: '', 
         description: '', 
-        priority: 'medium',
+        priority: 'all', // 🆕 Default a 'all' (tutti i ticket)
         responseTime: 24,
         resolutionTime: 72,
         businessHoursOnly: true,
@@ -214,7 +186,7 @@ export default function SLAMonitorPage() {
       setEditingRule(null)
     } catch (error) {
       console.error('Errore nel salvare la regola SLA:', error)
-      alert('Errore nel salvare la regola SLA: ' + error)
+      alert('Errore nel salvare la regola SLA: ' + (error as any).message || error)
     }
   }
 
@@ -239,10 +211,11 @@ export default function SLAMonitorPage() {
   const handleDelete = async (ruleId: string) => {
     if (confirm('Sei sicuro di voler eliminare questa regola SLA?')) {
       try {
-        await deleteSLARule({ ruleId })
+        await deleteSLARuleMutation({ ruleId: ruleId as any })
+        alert('Regola SLA eliminata con successo!')
       } catch (error) {
         console.error('Errore nell\'eliminare la regola SLA:', error)
-        alert('Errore nell\'eliminare la regola SLA: ' + error)
+        alert('Errore nell\'eliminare la regola SLA: ' + (error as any).message || error)
       }
     }
   }
@@ -250,24 +223,25 @@ export default function SLAMonitorPage() {
   // Handle toggle active
   const handleToggleActive = async (rule: SLARule) => {
     try {
-      await updateSLARule({
-        ruleId: rule._id,
+      await updateSLARuleMutation({
+        ruleId: rule._id as any,
         isActive: !rule.isActive
       })
     } catch (error) {
       console.error('Errore nel cambiare lo stato della regola SLA:', error)
-      alert('Errore nel cambiare lo stato della regola SLA: ' + error)
+      alert('Errore nel cambiare lo stato della regola SLA: ' + (error as any).message || error)
     }
   }
 
   // Get priority color
   const getPriorityColor = (priority: string) => {
     switch (priority) {
+      case 'all': return 'text-blue-600 bg-blue-50 border-blue-200' // 🆕 Colore per "Tutti i ticket"
       case 'urgent': return 'text-red-600 bg-red-50 border-red-200'
       case 'high': return 'text-orange-600 bg-orange-50 border-orange-200'
       case 'medium': return 'text-yellow-600 bg-yellow-50 border-yellow-200'
       case 'low': return 'text-green-600 bg-green-50 border-green-200'
-      default: return 'text-gray-600 bg-gray-50 border-gray-200'
+      default: return 'text-blue-600 bg-blue-50 border-blue-200' // Default = tutti i ticket
     }
   }
 
@@ -289,22 +263,6 @@ export default function SLAMonitorPage() {
   // Controllo permessi: la pagina è visibile a tutti gli utenti autenticati
   // Basato sui permessi del ruolo invece che sul nome
   const canEdit = checkCanEditSLA(user.role)
-  
-  // Se non c'è clinicId, mostra messaggio di errore
-  if (!clinicId) {
-    return (
-      <AppLayout>
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="text-center">
-            <AlertTriangle className="h-16 w-16 text-yellow-500 mx-auto mb-4" />
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">Clinica Non Trovata</h1>
-            <p className="text-gray-600">Non è possibile determinare la clinica di appartenenza.</p>
-            <p className="text-sm text-gray-500 mt-2">Contatta l'amministratore di sistema.</p>
-          </div>
-        </div>
-      </AppLayout>
-    )
-  }
 
   return (
     <AppLayout>
@@ -329,7 +287,7 @@ export default function SLAMonitorPage() {
                   setFormData({ 
                     name: '', 
                     description: '', 
-                    priority: 'medium',
+                    priority: 'all', // 🆕 Default a 'all'
                     responseTime: 24,
                     resolutionTime: 72,
                     businessHoursOnly: true,
@@ -474,9 +432,11 @@ export default function SLAMonitorPage() {
                       <TrendingUp className="h-4 w-4 text-blue-500" />
                       <span className="font-medium">Priorità:</span>
                       <Badge className={getPriorityColor(rule.priority)}>
-                        {rule.priority === 'urgent' ? 'Urgente' :
-                         rule.priority === 'high' ? 'Alta' :
-                         rule.priority === 'medium' ? 'Media' : 'Bassa'}
+                        {rule.priority === 'all' ? '🌐 Tutti i ticket' :
+                         rule.priority === 'urgent' ? '🔴 Urgente' :
+                         rule.priority === 'high' ? '🟠 Alta' :
+                         rule.priority === 'medium' ? '🟡 Media' :
+                         rule.priority === 'low' ? '🟢 Bassa' : '🌐 Tutti i ticket'}
                       </Badge>
                     </div>
                     <div className="flex items-center space-x-2 text-sm">
@@ -508,7 +468,13 @@ export default function SLAMonitorPage() {
                       <FileText className="h-4 w-4 text-indigo-500" />
                       <span className="font-medium">Categorie:</span>
                       <Badge variant="default">
-                        {rule.categories.length > 0 ? rule.categories.join(', ') : 'Tutte'}
+                        {rule.categories.length > 0 
+                          ? rule.categories.map(catId => {
+                              // Trova il nome della categoria dall'ID
+                              const category = availableCategories.find(c => c.id === catId)
+                              return category?.name || catId
+                            }).join(', ')
+                          : 'Tutte'}
                       </Badge>
                     </div>
                   </div>
@@ -575,18 +541,29 @@ export default function SLAMonitorPage() {
                   
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Priorità
+                      Priorità Ticket
                     </label>
-                    <select 
-                      className="w-full p-2 border rounded-md"
+                    <select
+                      className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                       value={formData.priority}
                       onChange={(e) => setFormData(prev => ({ ...prev, priority: e.target.value as any }))}
                     >
-                      <option value="low">Bassa</option>
-                      <option value="medium">Media</option>
-                      <option value="high">Alta</option>
-                      <option value="urgent">Urgente</option>
+                      <option value="all">🌐 Tutti i ticket (qualsiasi priorità)</option>
+                      <option value="low">🟢 Bassa</option>
+                      <option value="medium">🟡 Media</option>
+                      <option value="high">🟠 Alta</option>
+                      <option value="urgent">🔴 Urgente</option>
                     </select>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {formData.priority === 'all' 
+                        ? 'La regola si applicherà a ticket di qualsiasi priorità' 
+                        : `La regola si applicherà solo ai ticket con priorità ${
+                            formData.priority === 'low' ? 'Bassa' :
+                            formData.priority === 'medium' ? 'Media' :
+                            formData.priority === 'high' ? 'Alta' : 'Urgente'
+                          }`
+                      }
+                    </p>
                   </div>
                   
                   <div className="grid grid-cols-2 gap-4">
@@ -723,7 +700,7 @@ export default function SLAMonitorPage() {
                         setFormData({ 
                           name: '', 
                           description: '', 
-                          priority: 'medium',
+                          priority: 'all', // 🆕 Default a 'all'
                           responseTime: 24,
                           resolutionTime: 72,
                           businessHoursOnly: true,

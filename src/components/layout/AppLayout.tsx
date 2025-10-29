@@ -6,6 +6,7 @@ import { Sidebar } from './Sidebar';
 import { NotificationCenter } from './NotificationCenter';
 import { AgentWidget } from '@/components/agent/AgentWidget';
 import { useRole } from '@/providers/RoleProvider';
+import { hasFullAccess } from '@/lib/permissions';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -14,6 +15,9 @@ interface AppLayoutProps {
 export function AppLayout({ children }: AppLayoutProps) {
   const { role, user, isLoading } = useRole();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  
+  // 🔒 Controlla se l'utente è admin per mostrare AgentWidget
+  const isAdmin = role === 'admin';
 
   const handleMenuClick = () => {
     setSidebarOpen(true);
@@ -65,8 +69,8 @@ export function AppLayout({ children }: AppLayoutProps) {
       {/* Notification Center */}
       <NotificationCenter />
 
-      {/* Agent Widget - Fixed position */}
-      <AgentWidget />
+      {/* Agent Widget - Fixed position - 🔒 Solo admin */}
+      <AgentWidget isVisible={isAdmin} />
     </div>
   );
 }

@@ -4,7 +4,7 @@ import React, { useState } from 'react'
 import { useQuery, useMutation } from 'convex/react'
 import { api } from '../../../convex/_generated/api'
 import { useAuth } from '@/hooks/useAuth'
-import { canCreatePersonalViews as checkCanCreatePersonalViews } from '@/lib/permissions'
+import { canCreatePersonalViews as checkCanCreatePersonalViews, hasFullAccess } from '@/lib/permissions'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -21,17 +21,21 @@ import {
   User,
   X,
   Filter,
-  Ticket as TicketIcon
+  Ticket as TicketIcon,
+  Shield
 } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from 'next/link'
 
 export default function ViewsPage() {
-  const { user, isLoading: userLoading } = useAuth()
+  const { user, role, isLoading: userLoading } = useAuth()
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [editingView, setEditingView] = useState<any>(null)
   const [selectedView, setSelectedView] = useState<any>(null)
   const [showTicketsModal, setShowTicketsModal] = useState(false)
+  
+  // 🔒 CONTROLLO ACCESSO: Solo admin possono vedere questa pagina
+  const isAdmin = role ? hasFullAccess(role) : false
   
   // Form state
   const [formData, setFormData] = useState({
@@ -197,6 +201,26 @@ export default function ViewsPage() {
             <AlertTriangle className="h-16 w-16 text-red-500 mx-auto mb-4" />
             <h1 className="text-2xl font-bold text-gray-900 mb-2">Accesso Negato</h1>
             <p className="text-gray-600">Devi essere autenticato per accedere a questa pagina.</p>
+          </div>
+        </div>
+      </AppLayout>
+    )
+  }
+  
+  // 🔒 CONTROLLO ADMIN: Solo amministratori possono accedere
+  if (!isAdmin) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="text-center">
+            <Shield className="h-16 w-16 text-red-500 mx-auto mb-4" />
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">Accesso Riservato</h1>
+            <p className="text-gray-600">Solo gli amministratori possono accedere alla gestione delle viste.</p>
+            <Link href="/dashboard">
+              <Button className="mt-4">
+                Torna alla Dashboard
+              </Button>
+            </Link>
           </div>
         </div>
       </AppLayout>

@@ -147,42 +147,6 @@ export const TicketActions: React.FC<TicketActionsProps> = ({
               Stato
             </button>
           )}
-          {canChangeAssignee && (
-            <button
-              onClick={() => setActiveTab('assignee')}
-              className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === 'assignee'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Assegnazione
-            </button>
-          )}
-          {canManage && onCategoryChange && (
-            <button
-              onClick={() => setActiveTab('category')}
-              className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === 'category'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Categoria
-            </button>
-          )}
-          {canManage && onClinicChange && (
-            <button
-              onClick={() => setActiveTab('clinic')}
-              className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === 'clinic'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Clinica
-            </button>
-          )}
         </div>
 
         {/* Tab Content */}
@@ -224,34 +188,6 @@ export const TicketActions: React.FC<TicketActionsProps> = ({
               value={currentStatus}
               onChange={onStatusChange}
               showConfirmation={true}
-            />
-          )}
-
-          {activeTab === 'assignee' && canChangeAssignee && (
-            <AssigneeSelect
-              ticketId={ticketId}
-              value={currentAssigneeId}
-              showSearch={true}
-              showUnassign={true}
-              onAssigneeChanged={() => {
-                // Il componente gestisce internamente la chiamata a Convex
-                // Non serve più usare onAssigneeChange
-              }}
-            />
-          )}
-
-          {activeTab === 'category' && canManage && onCategoryChange && (
-            <CategorySelect
-              value={currentCategoryId}
-              onChange={onCategoryChange}
-              clinicId={currentClinicId}
-            />
-          )}
-
-          {activeTab === 'clinic' && canManage && onClinicChange && (
-            <ClinicSelect
-              value={currentClinicId}
-              onChange={onClinicChange}
             />
           )}
         </div>

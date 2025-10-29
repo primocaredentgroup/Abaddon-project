@@ -267,17 +267,19 @@ export const getNudgedTickets = query({
 })
 
 // Mutation per aggiornare un ticket
-export const update: any = mutation({
+export const update = mutation({
   args: {
     id: v.id("tickets"),
     title: v.optional(v.string()),
     description: v.optional(v.string()),
-    status: v.optional(v.union(v.literal("open"), v.literal("in_progress"), v.literal("closed"))),
+    status: v.optional(v.union(v.literal("open"), v.literal("in_progress"), v.literal("closed"))), // 🔄 DEPRECATED: usa ticketStatusId
+    ticketStatusId: v.optional(v.id("ticketStatuses")), // 🆕 Nuovo: passa l'ID dello stato
     assigneeId: v.optional(v.id("users")),
     categoryId: v.optional(v.id("categories")),
     clinicId: v.optional(v.id("clinics")),
     userEmail: v.optional(v.string()) // Per test temporaneo
   },
+  returns: v.object({ success: v.boolean() }),
   handler: async (ctx, args): Promise<any> => {
     
     // TEMPORARY: Per ora prendo l'utente con la tua email
@@ -314,7 +316,38 @@ export const update: any = mutation({
 
     if (args.title) updateData.title = args.title
     if (args.description) updateData.description = args.description
-    if (args.status) updateData.status = args.status
+    
+    // 🆕 Gestione nuovo campo ticketStatusId
+    if (args.ticketStatusId) {
+      // Verifica che lo stato esista
+      const newStatus = await ctx.db.get(args.ticketStatusId)
+      if (!newStatus) {
+        throw new ConvexError("Stato non valido")
+      }
+      
+      updateData.ticketStatusId = args.ticketStatusId
+      updateData.status = newStatus.slug // 🔄 Aggiorna anche slug per retrocompatibilità
+      
+      console.log(`✅ Cambio stato ticket ${args.id}: ${newStatus.slug} (ID: ${newStatus._id})`)
+    } 
+    // 🔄 Fallback per vecchio campo status (DEPRECATED)
+    else if (args.status) {
+      // Cerca lo stato per slug
+      const statusBySlug = await ctx.db
+        .query("ticketStatuses")
+        .withIndex("by_slug", (q) => q.eq("slug", args.status!))
+        .first()
+      
+      if (statusBySlug) {
+        updateData.ticketStatusId = statusBySlug._id
+        updateData.status = args.status
+        console.log(`⚠️  DEPRECATED: Usa ticketStatusId invece di status. Aggiornato a ${statusBySlug._id}`)
+      } else {
+        updateData.status = args.status // Fallback se stato non trovato
+        console.warn(`⚠️  Stato '${args.status}' non trovato in ticketStatuses`)
+      }
+    }
+    
     if (args.assigneeId !== undefined) updateData.assigneeId = args.assigneeId
     if (args.categoryId) updateData.categoryId = args.categoryId
     if (args.clinicId) updateData.clinicId = args.clinicId
@@ -660,12 +693,26 @@ export const createWithAuth = mutation({
     //   // Non fallire, forza a privato
     // }
 
-    // Create the ticket
+    // 🆕 Cerca lo stato "open" dalla tabella ticketStatuses
+    const openStatus = await ctx.db
+      .query("ticketStatuses")
+      .withIndex("by_slug", (q) => q.eq("slug", "open"))
+      .first();
+    
+    if (!openStatus) {
+      console.error("❌ ERRORE: Stato 'open' non trovato! Esegui initializeTicketStatuses");
+      throw new ConvexError("Configurazione sistema incompleta: stati ticket mancanti");
+    }
+    
+    console.log(`✅ Stato 'open' trovato (ID: ${openStatus._id})`);
+
+    // Create the ticket (senza slaDeadline per ora)
     const now = Date.now()
     const ticketId: any = await ctx.db.insert("tickets", {
       title: args.title.trim(),
       description: args.description.trim(),
-      status: "open",
+      status: "open", // 🔄 Manteniamo per retrocompatibilità (DEPRECATED)
+      ticketStatusId: openStatus._id, // 🆕 Nuovo campo: ID dello stato dalla tabella
       ticketNumber: ticketNumber, // Il numero incrementale che abbiamo generato
       categoryId: args.categoryId,
       clinicId: targetClinicId!, // 🆕 Usa la clinica selezionata
@@ -676,6 +723,102 @@ export const createWithAuth = mutation({
       priority: priority, // Priorità 1-5 (default: 1, modificabile solo da agenti/admin)
     })
 
+    // ⏱️ CALCOLO SLA: Trova regole SLA applicabili e calcola deadline
+    // 🆕 Query globale: carica TUTTE le regole SLA attive (senza filtro clinica)
+    const allActiveSlaRules = await ctx.db
+      .query("slaRules")
+      .withIndex("by_active", (q) => q.eq("isActive", true))
+      .collect();
+    
+    console.log(`🔍 SLA DEBUG: Trovate ${allActiveSlaRules.length} regole SLA attive globali`);
+    
+    // 🔒 Filtra per società del ticket (se la regola ha societyIds)
+    // Ottieni categoria del ticket per trovare società applicabili
+    const ticketCategory = await ctx.db.get(args.categoryId);
+    const ticketSocietyIds = ticketCategory?.societyIds || [];
+    
+    console.log(`📂 SLA DEBUG: Categoria ticket: "${ticketCategory?.name}", società: ${JSON.stringify(ticketSocietyIds)}`);
+    
+    // Filtra regole: includi regole globali O regole con società in comune con il ticket
+    const slaRules = allActiveSlaRules.filter(rule => {
+      // Regola globale (nessuna società specificata)
+      if (!rule.societyIds || rule.societyIds.length === 0) {
+        return true;
+      }
+      
+      // Se ticket non ha società, skip regole con società specifiche
+      if (ticketSocietyIds.length === 0) {
+        return false;
+      }
+      
+      // Verifica se c'è almeno una società in comune
+      return rule.societyIds.some(sid => ticketSocietyIds.includes(sid));
+    });
+    
+    console.log(`🔍 SLA DEBUG: Regole SLA applicabili dopo filtro società: ${slaRules.length}`);
+    console.log(`🎯 SLA DEBUG: Ticket categoryId = ${args.categoryId}, priority = ${priority}`);
+    
+    // Trova la regola SLA più stringente applicabile
+    let slaDeadline: number | undefined = undefined;
+    
+    for (const rule of slaRules) {
+      console.log(`📋 SLA DEBUG: Valuto regola "${rule.name}" (ID: ${rule._id})`);
+      
+      // Skip se richiede approvazione e non è approvata
+      if (rule.requiresApproval && !rule.isApproved) {
+        console.log(`  ⏭️  Skip: richiede approvazione ma non è approvata`);
+        continue;
+      }
+      
+      const conditions = rule.conditions as any;
+      console.log(`  📝 Conditions:`, JSON.stringify(conditions));
+      let ruleApplies = true;
+      
+      // Verifica categoria (se specificata)
+      if (conditions?.categories && Array.isArray(conditions.categories) && conditions.categories.length > 0) {
+        console.log(`  🏷️  Categorie regola: ${JSON.stringify(conditions.categories)}`);
+        const categoryMatches = conditions.categories.includes(args.categoryId);
+        console.log(`  🎯 Match categoria? ${categoryMatches}`);
+        if (!categoryMatches) ruleApplies = false;
+      } else {
+        console.log(`  ✅ Nessuna categoria specificata → regola si applica a tutte`);
+      }
+      
+      // Verifica priorità (se specificata)
+      if (conditions?.priority && ruleApplies) {
+        const priorityMap: Record<string, number> = { low: 1, medium: 3, high: 4, urgent: 5 };
+        const rulePriority = priorityMap[conditions.priority] || 3;
+        console.log(`  🔥 Priorità regola: ${conditions.priority} (${rulePriority}) vs ticket: ${priority}`);
+        if (rulePriority !== priority) {
+          console.log(`  ❌ Priorità non match`);
+          ruleApplies = false;
+        }
+      }
+      
+      // Se la regola si applica, calcola deadline
+      if (ruleApplies) {
+        const deadlineMs = now + (rule.targetHours * 60 * 60 * 1000);
+        console.log(`  ✅ REGOLA SI APPLICA! Deadline: ${new Date(deadlineMs).toISOString()}`);
+        // Usa la deadline più stringente (più vicina)
+        if (!slaDeadline || deadlineMs < slaDeadline) {
+          slaDeadline = deadlineMs;
+          console.log(`  🏆 Questa è la deadline più stringente finora`);
+        }
+      } else {
+        console.log(`  ❌ Regola NON si applica`);
+      }
+    }
+    
+    if (slaDeadline) {
+      console.log(`✅ SLA FINALE: ${new Date(slaDeadline).toISOString()} (${slaDeadline})`);
+    } else {
+      console.log(`⚠️  NESSUNA REGOLA SLA APPLICABILE per questo ticket`);
+    }
+    
+    // Aggiorna il ticket con la deadline SLA (se trovata)
+    if (slaDeadline) {
+      await ctx.db.patch(ticketId, { slaDeadline });
+    }
 
     // 🎯 ESEGUI I TRIGGER ATTIVI DELLA CLINICA
     const triggers = await ctx.db
@@ -1132,9 +1275,10 @@ export const assignToMe = mutation({
 export const changeStatus = mutation({
   args: {
     ticketId: v.id("tickets"),
-    status: v.union(v.literal("open"), v.literal("in_progress"), v.literal("closed")),
+    status: v.optional(v.union(v.literal("open"), v.literal("in_progress"), v.literal("closed"))), // 🔄 DEPRECATED
+    ticketStatusId: v.optional(v.id("ticketStatuses")), // 🆕 Nuovo campo
   },
-  handler: async (ctx, { ticketId, status }) => {
+  handler: async (ctx, { ticketId, status, ticketStatusId }) => {
     const identity = await ctx.auth.getUserIdentity()
     if (!identity) {
       throw new ConvexError("Not authenticated")
@@ -1164,11 +1308,40 @@ export const changeStatus = mutation({
       throw new ConvexError("Insufficient permissions to change ticket status")
     }
 
+    // 🆕 Gestione nuovo/vecchio formato
+    let newStatusId: any
+    let newStatusSlug: string
+    
+    if (ticketStatusId) {
+      // Nuovo formato: usa ticketStatusId
+      const newStatus = await ctx.db.get(ticketStatusId)
+      if (!newStatus) {
+        throw new ConvexError("Status not found")
+      }
+      newStatusId = ticketStatusId
+      newStatusSlug = newStatus.slug
+    } else if (status) {
+      // Vecchio formato: converti slug -> ID
+      const statusBySlug = await ctx.db
+        .query("ticketStatuses")
+        .withIndex("by_slug", (q) => q.eq("slug", status))
+        .first()
+      
+      if (!statusBySlug) {
+        throw new ConvexError(`Status '${status}' not found`)
+      }
+      newStatusId = statusBySlug._id
+      newStatusSlug = status
+    } else {
+      throw new ConvexError("Either status or ticketStatusId must be provided")
+    }
+
     const oldStatus = ticket.status
 
     // Update the status
     await ctx.db.patch(ticketId, {
-      status,
+      ticketStatusId: newStatusId, // 🆕 Nuovo campo
+      status: newStatusSlug, // 🔄 Retrocompatibilità
       lastActivityAt: Date.now(),
     })
 
@@ -1180,7 +1353,7 @@ export const changeStatus = mutation({
       changes: {
         status: {
           from: oldStatus,
-          to: status,
+          to: newStatusSlug,
         },
       },
     })

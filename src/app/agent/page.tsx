@@ -9,6 +9,8 @@ import { Badge } from '@/components/ui/Badge'
 import { useQuery, useMutation } from 'convex/react'
 import { api } from '../../../convex/_generated/api'
 import { useAuth } from '@/hooks/useAuth'
+import { hasFullAccess } from '@/lib/permissions'
+import Link from 'next/link'
 import { 
   MessageSquare,
   Send,
@@ -21,7 +23,8 @@ import {
   User,
   Clock,
   CheckCircle,
-  AlertCircle
+  AlertCircle,
+  Shield
 } from 'lucide-react'
 
 interface Message {
@@ -45,7 +48,11 @@ interface TicketInfo {
 }
 
 export default function AgentPage() {
-  const { user } = useAuth()
+  const { user, isLoading: userLoading } = useAuth()
+  
+  // 🔒 CONTROLLO ACCESSO: Solo admin possono accedere
+  const isAdmin = user?.role ? hasFullAccess(user.role) : false
+  
   const [inputMessage, setInputMessage] = useState('')
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -194,8 +201,52 @@ export default function AgentPage() {
     }
   }
 
+  // Controllo caricamento
+  if (userLoading) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="text-center">
+            <Bot className="h-12 w-12 text-blue-500 mx-auto mb-4 animate-spin" />
+            <p className="text-gray-600">Caricamento...</p>
+          </div>
+        </div>
+      </AppLayout>
+    )
+  }
+
   if (!user) {
-    return <div>Caricamento...</div>
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="text-center">
+            <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">Accesso Negato</h1>
+            <p className="text-gray-600">Devi essere autenticato per accedere a questa pagina.</p>
+          </div>
+        </div>
+      </AppLayout>
+    )
+  }
+
+  // 🔒 CONTROLLO ADMIN: Solo amministratori possono accedere
+  if (!isAdmin) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="text-center">
+            <Shield className="h-16 w-16 text-red-500 mx-auto mb-4" />
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">Accesso Riservato</h1>
+            <p className="text-gray-600">Solo gli amministratori possono accedere all'Assistente AI.</p>
+            <Link href="/dashboard">
+              <Button className="mt-4">
+                Torna alla Dashboard
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </AppLayout>
+    )
   }
 
   return (

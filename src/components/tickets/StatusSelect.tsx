@@ -1,163 +1,117 @@
 'use client'
 
-import React, { useState } from 'react'
-import { Select } from '@/components/ui/Select'
-import { Button } from '@/components/ui/Button'
-import { TicketStatus } from '@/types'
-import { getStatusConfig, getNextStatuses, isValidStatusTransition } from './StatusBadge'
+import React from 'react'
+import { useTicketStatuses } from '@/hooks/useTicketStatuses'
+import { Id } from '../../../convex/_generated/dataModel'
 
 interface StatusSelectProps {
-  value: TicketStatus
-  onChange: (status: TicketStatus) => Promise<void>
+  value: Id<'ticketStatuses'> | undefined
+  onChange: (statusId: Id<'ticketStatuses'>) => void
   disabled?: boolean
-  showConfirmation?: boolean
   className?: string
+  includeAll?: boolean // Per filtri: mostra opzione "Tutti"
 }
 
+/**
+ * Componente dropdown per selezionare uno stato ticket
+ * Carica automaticamente gli stati dalla tabella ticketStatuses
+ * 
+ * Esempio:
+ * ```tsx
+ * const [selectedStatus, setSelectedStatus] = useState<Id<'ticketStatuses'>>()
+ * 
+ * <StatusSelect 
+ *   value={selectedStatus} 
+ *   onChange={setSelectedStatus}
+ * />
+ * ```
+ */
 export const StatusSelect: React.FC<StatusSelectProps> = ({
   value,
   onChange,
   disabled = false,
-  showConfirmation = true,
   className = '',
+  includeAll = false,
 }) => {
-  const [isChanging, setIsChanging] = useState(false)
-  const [pendingStatus, setPendingStatus] = useState<TicketStatus | null>(null)
-  const [error, setError] = useState('')
+  const { statuses, isLoading } = useTicketStatuses()
 
-  const currentConfig = getStatusConfig(value)
-  const nextStatuses = getNextStatuses(value)
-
-  const handleStatusChange = (newStatus: string) => {
-    const status = newStatus as TicketStatus
-    
-    if (status === value) return
-
-    if (!isValidStatusTransition(value, status)) {
-      setError('Transizione di stato non valida')
-      return
-    }
-
-    if (showConfirmation) {
-      setPendingStatus(status)
-    } else {
-      confirmStatusChange(status)
+  const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newValue = e.target.value
+    if (newValue && newValue !== 'all') {
+      onChange(newValue as Id<'ticketStatuses'>)
     }
   }
 
-  const confirmStatusChange = async (status: TicketStatus) => {
-    setIsChanging(true)
-    setError('')
-
-    try {
-      await onChange(status)
-      setPendingStatus(null)
-    } catch (error) {
-      console.error('Error changing status:', error)
-      setError('Errore durante il cambio stato')
-    } finally {
-      setIsChanging(false)
-    }
-  }
-
-  const cancelStatusChange = () => {
-    setPendingStatus(null)
-    setError('')
-  }
-
-  if (nextStatuses.length === 0) {
+  if (isLoading) {
     return (
-      <div className={`text-sm text-gray-500 ${className}`}>
-        {currentConfig.icon} {currentConfig.label}
-        <div className="text-xs text-gray-400 mt-1">
-          Nessuna transizione disponibile
-        </div>
-      </div>
-    )
-  }
-
-  if (pendingStatus) {
-    const pendingConfig = getStatusConfig(pendingStatus)
-    
-    return (
-      <div className={`space-y-3 ${className}`}>
-        <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-md">
-          <div className="text-sm font-medium text-yellow-800 mb-2">
-            Conferma Cambio Stato
-          </div>
-          <div className="text-sm text-yellow-700 mb-3">
-            Vuoi cambiare lo stato da "{currentConfig.label}" a "{pendingConfig.label}"?
-          </div>
-          <div className="flex items-center space-x-2">
-            <Button
-              size="sm"
-              onClick={() => confirmStatusChange(pendingStatus)}
-              disabled={isChanging}
-            >
-              {isChanging ? 'Cambiando...' : 'Conferma'}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={cancelStatusChange}
-              disabled={isChanging}
-            >
-              Annulla
-            </Button>
-          </div>
-        </div>
-        {error && (
-          <div className="text-sm text-red-600">{error}</div>
-        )}
-      </div>
+      <select disabled className={`${className} opacity-50`}>
+        <option>Caricamento...</option>
+      </select>
     )
   }
 
   return (
-    <div className={`space-y-2 ${className}`}>
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          Stato Ticket
-        </label>
-        <Select
-          value={value}
-          onChange={(e) => handleStatusChange(e.target.value)}
-          disabled={disabled || isChanging}
-          options={[
-            { value: value, label: `${currentConfig.icon} ${currentConfig.label} (Attuale)` },
-            ...nextStatuses.map((status) => {
-              const config = getStatusConfig(status)
-              return {
-                value: status,
-                label: `${config.icon} ${config.label}`
-              }
-            })
-          ]}
-        />
-      </div>
-
-      {/* Status descriptions */}
-      <div className="text-xs text-gray-500 space-y-1">
-        <div className="font-medium">Transizioni disponibili:</div>
-        {nextStatuses.map((status) => {
-          const config = getStatusConfig(status)
-          return (
-            <div key={status} className="flex items-start space-x-1">
-              <span>{config.icon}</span>
-              <div>
-                <span className="font-medium">{config.label}:</span>
-                <span className="ml-1">{config.description}</span>
-              </div>
-            </div>
-          )
-        })}
-      </div>
-
-      {error && (
-        <div className="text-sm text-red-600">{error}</div>
-      )}
-    </div>
+    <select
+      value={value || 'all'}
+      onChange={handleChange}
+      disabled={disabled}
+      className={`block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 ${className}`}
+    >
+      {includeAll && <option value="all">Tutti gli stati</option>}
+      
+      {statuses.map((status) => (
+        <option key={status._id} value={status._id}>
+          {status.name}
+        </option>
+      ))}
+    </select>
   )
 }
 
+/**
+ * Componente dropdown MULTI-SELECT per filtrare per più stati
+ */
+interface StatusMultiSelectProps {
+  values: Id<'ticketStatuses'>[]
+  onChange: (statusIds: Id<'ticketStatuses'>[]) => void
+  disabled?: boolean
+  className?: string
+}
 
+export const StatusMultiSelect: React.FC<StatusMultiSelectProps> = ({
+  values,
+  onChange,
+  disabled = false,
+  className = '',
+}) => {
+  const { statuses, isLoading } = useTicketStatuses()
+
+  const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const selected = Array.from(e.target.selectedOptions, (option) => option.value as Id<'ticketStatuses'>)
+    onChange(selected)
+  }
+
+  if (isLoading) {
+    return (
+      <select disabled multiple className={`${className} opacity-50`}>
+        <option>Caricamento...</option>
+      </select>
+    )
+  }
+
+  return (
+    <select
+      multiple
+      value={values}
+      onChange={handleChange}
+      disabled={disabled}
+      className={`block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 ${className}`}
+    >
+      {statuses.map((status) => (
+        <option key={status._id} value={status._id}>
+          {status.name}
+        </option>
+      ))}
+    </select>
+  )
+}

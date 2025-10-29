@@ -181,8 +181,10 @@ export default defineSchema({
   tickets: defineTable({
     title: v.string(),
     description: v.string(),
-    // Status come string per supportare stati dinamici
+    // Status come string per supportare stati dinamici (DEPRECATED - usa ticketStatusId)
     status: v.string(), // Ora usa slug da ticketStatuses
+    // 🆕 Nuovo campo: riferimento diretto alla tabella ticketStatuses
+    ticketStatusId: v.optional(v.id("ticketStatuses")), // ID dello stato dalla tabella ticketStatuses
     ticketNumber: v.optional(v.number()), // Numero incrementale tipo #1234 - opzionale per compatibilità
     categoryId: v.id("categories"),
     clinicId: v.id("clinics"),
@@ -210,12 +212,15 @@ export default defineSchema({
     .index("by_creator", ["creatorId"])
     .index("by_assignee", ["assigneeId"])
     .index("by_status", ["status"])
+    .index("by_ticket_status", ["ticketStatusId"]) // 🆕 Indice per nuovo campo
     .index("by_category", ["categoryId"])
     .index("by_ticket_number", ["ticketNumber"]) // Per ricerca rapida per numero
     .index("by_clinic_ticket_number", ["clinicId", "ticketNumber"]) // Per ricerca in clinica specifica
     .index("by_clinic_status", ["clinicId", "status"])
+    .index("by_clinic_ticket_status", ["clinicId", "ticketStatusId"]) // 🆕 Indice combinato
     .index("by_last_nudge", ["lastNudgeAt"]) // Per trovare ticket sollecitati recentemente
     .index("by_assignee_status", ["assigneeId", "status"])
+    .index("by_assignee_ticket_status", ["assigneeId", "ticketStatusId"]) // 🆕 Indice combinato
     .index("by_department", ["departmentId"])
     .index("by_activity", ["lastActivityAt"]),
 
@@ -320,7 +325,6 @@ export default defineSchema({
   // SLA rules table
   slaRules: defineTable({
     name: v.string(),
-    clinicId: v.id("clinics"),
     conditions: v.any(),
     targetHours: v.number(),
     isActive: v.boolean(),
@@ -332,8 +336,10 @@ export default defineSchema({
     rejectedAt: v.optional(v.number()),
     rejectionReason: v.optional(v.string()),
     createdBy: v.optional(v.id("users")),
+    
+    // 🆕 Società support - se null/undefined, la regola si applica a tutte le società
+    societyIds: v.optional(v.array(v.id("societies"))),
   })
-    .index("by_clinic", ["clinicId"])
     .index("by_active", ["isActive"]),
 
   // Triggers table

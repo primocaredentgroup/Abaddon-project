@@ -10,9 +10,10 @@ import { useAuth } from '@/hooks/useAuth'
 
 interface AgentWidgetProps {
   className?: string
+  isVisible?: boolean // 🆕 Controlla se il widget è visibile
 }
 
-export function AgentWidget({ className }: AgentWidgetProps) {
+export function AgentWidget({ className, isVisible = true }: AgentWidgetProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [isMinimized, setIsMinimized] = useState(false)
   const [inputMessage, setInputMessage] = useState('')
@@ -162,6 +163,11 @@ export function AgentWidget({ className }: AgentWidgetProps) {
         </div>
       </div>
     )
+  }
+
+  // 🔒 Non renderizzare se non visibile
+  if (!isVisible) {
+    return null
   }
 
   return (

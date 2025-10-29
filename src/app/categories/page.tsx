@@ -100,8 +100,8 @@ export default function AdminCategoriesPage() {
   // Handle form submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!clinicId || !formData.name.trim()) {
-      alert('Errore: Clinica non trovata o nome categoria mancante')
+    if (!formData.name.trim()) {
+      alert('Errore: Nome categoria mancante')
       return
     }
 
@@ -118,18 +118,17 @@ export default function AdminCategoriesPage() {
           description: formData.description || undefined,
           visibility: formData.visibility,
           defaultTicketVisibility: formData.defaultTicketVisibility, // 🆕
-          societyIds: formData.societyIds.length > 0 ? formData.societyIds : undefined // 🆕 Società
+          societyIds: formData.societyIds.length > 0 ? formData.societyIds as any : undefined // 🆕 Società
         })
       } else {
         // Create new category
         await createCategory({
           name: formData.name,
           description: formData.description || undefined,
-          clinicId,
           visibility: formData.visibility,
           defaultTicketVisibility: formData.defaultTicketVisibility, // 🆕
           synonyms: synonymsArray,
-          societyIds: formData.societyIds.length > 0 ? formData.societyIds : undefined // 🆕 Società
+          societyIds: formData.societyIds.length > 0 ? formData.societyIds as any : undefined // 🆕 Società
         })
       }
       

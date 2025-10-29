@@ -8,29 +8,24 @@ import { EditableTitle } from './EditableTitle'
 import { EditableDescription } from './EditableDescription'
 import { CommentInput } from './CommentInput'
 import { TicketAttributes } from './TicketAttributes'
+import { StatusBadge } from './StatusBadge' // 🆕
+import { StatusSelect } from './StatusSelect' // 🆕
 import { useQuery, useMutation } from 'convex/react'
 import { api } from '../../../convex/_generated/api'
+import { useTicketStatuses } from '@/hooks/useTicketStatuses' // 🆕
+import { Id } from '../../../convex/_generated/dataModel'
 
 interface TicketChatViewProps {
   ticketId: string
-}
-
-const STATUS_LABELS = {
-  open: 'Aperto',
-  in_progress: 'In Lavorazione',
-  closed: 'Chiuso',
-}
-
-const STATUS_COLORS = {
-  open: 'red',
-  in_progress: 'yellow',
-  closed: 'green',
 }
 
 export const TicketChatView: React.FC<TicketChatViewProps> = ({ ticketId }) => {
   const [isScrolledToBottom, setIsScrolledToBottom] = useState(true)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
+
+  // 🆕 Hook per caricare stati dinamici
+  const { statuses, getStatusBySlug } = useTicketStatuses()
 
   // Queries
   const currentUser = useQuery(api.users.getCurrentUser, {})
@@ -73,7 +68,11 @@ export const TicketChatView: React.FC<TicketChatViewProps> = ({ ticketId }) => {
     )
   }
 
-  const canEditTicket = ticket.creatorId === currentUser._id && ticket.status !== 'closed'
+  // 🆕 Determina se ticket è chiuso usando isFinal dello stato
+  const currentStatus = ticket.ticketStatusId ? getStatusBySlug(ticket.status) : null
+  const isTicketClosed = currentStatus?.isFinal || ticket.status === 'closed' // Fallback per retrocompatibilità
+
+  const canEditTicket = ticket.creatorId === currentUser._id && !isTicketClosed
   const canManageTicket = 
     ticket.assigneeId === currentUser._id ||
     ticket.creatorId === currentUser._id
@@ -93,10 +92,11 @@ export const TicketChatView: React.FC<TicketChatViewProps> = ({ ticketId }) => {
     })
   }
 
-  const handleStatusChange = async (newStatus: 'open' | 'in_progress' | 'closed') => {
+  // 🆕 Gestisce cambio stato con ID invece di slug
+  const handleStatusChange = async (newStatusId: Id<'ticketStatuses'>) => {
     await changeStatus({
       ticketId: ticketId as any,
-      status: newStatus,
+      ticketStatusId: newStatusId, // 🆕 Usa ID
     })
   }
 
@@ -147,30 +147,22 @@ export const TicketChatView: React.FC<TicketChatViewProps> = ({ ticketId }) => {
 
           {canManageTicket && (
             <div className="flex items-center space-x-2 ml-4">
-              <Badge color={STATUS_COLORS[ticket.status]}>
-                {STATUS_LABELS[ticket.status]}
-              </Badge>
+              {/* 🆕 Badge dinamico */}
+              <StatusBadge 
+                ticketStatusId={ticket.ticketStatusId} 
+                status={ticket.status} 
+              />
               
-              {ticket.status !== 'closed' && (
-                <div className="flex items-center space-x-1">
-                  {ticket.status === 'open' && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleStatusChange('in_progress')}
-                    >
-                      Prendi in carico
-                    </Button>
-                  )}
-                  {ticket.status === 'in_progress' && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleStatusChange('closed')}
-                    >
-                      Chiudi
-                    </Button>
-                  )}
+              {/* 🆕 Dropdown dinamico per cambio stato */}
+              {canManageTicket && ticket.ticketStatusId && (
+                <div className="flex items-center space-x-2">
+                  <span className="text-sm text-gray-600">Cambia stato:</span>
+                  <StatusSelect
+                    value={ticket.ticketStatusId}
+                    onChange={handleStatusChange}
+                    disabled={!canManageTicket}
+                    className="text-sm"
+                  />
                 </div>
               )}
             </div>
@@ -245,7 +237,7 @@ export const TicketChatView: React.FC<TicketChatViewProps> = ({ ticketId }) => {
       )}
 
       {/* Comment input */}
-      {ticket.status !== 'closed' && (
+      {!isTicketClosed && (
         <div className="border-t bg-gray-50 p-4">
           <CommentInput
             onSubmit={handleAddComment}
@@ -254,7 +246,7 @@ export const TicketChatView: React.FC<TicketChatViewProps> = ({ ticketId }) => {
         </div>
       )}
 
-      {ticket.status === 'closed' && (
+      {isTicketClosed && (
         <div className="border-t bg-gray-100 p-4 text-center text-gray-600">
           <div className="text-sm">
             Questo ticket è stato chiuso. Non è possibile aggiungere nuovi commenti.

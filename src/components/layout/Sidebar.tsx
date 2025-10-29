@@ -46,14 +46,14 @@ const navigation: NavItem[] = [
   { name: 'Dashboard', href: '/dashboard', icon: Home, roles: ['user', 'agent', 'admin'] },
   { name: 'I miei ticket', href: '/tickets/my', icon: Ticket, roles: ['user', 'agent', 'admin'] },
   { name: 'Ticket clinica', href: '/tickets/clinic', icon: Building2, roles: ['user', 'agent', 'admin'] },
-  { name: 'Viste', href: '/views', icon: Eye, roles: ['user', 'agent', 'admin'] },
-  { name: 'Assistente AI', href: '/agent', icon: Bot, roles: ['user', 'agent', 'admin'] },
+  { name: 'Viste', href: '/views', icon: Eye, roles: ['admin'] }, // 🔒 Solo admin
+  { name: 'Assistente AI', href: '/agent', icon: Bot, roles: ['admin'] }, // 🔒 Solo admin
 ]
 
 const agentNavigation: NavItem[] = [
   { name: 'Ticket Assegnati', href: '/tickets/assigned', icon: UserCheck, roles: ['agent', 'admin'] },
   { name: 'Categorie', href: '/categories', icon: Filter, roles: ['agent', 'admin'] },
-  { name: 'Ticket da Gestire', href: '/dashboard/nudges', icon: Bell, roles: ['agent', 'admin'] },
+  { name: 'Ticket da Gestire', href: '/dashboard/nudges', icon: Bell, roles: ['admin'] }, // 🔒 Solo admin
   { name: 'Trigger', href: '/automation/triggers', icon: Zap, roles: ['agent', 'admin'] },
   { name: 'Macro', href: '/automation/macros', icon: Zap, roles: ['agent', 'admin'] },
   { name: 'SLA Monitor', href: '/sla', icon: Clock, roles: ['agent', 'admin'] },
@@ -71,7 +71,7 @@ const adminNavigation: NavItem[] = [
 ]
 
 const quickActions: NavItem[] = [
-  { name: 'Knowledge Base', href: '/kb', icon: BookOpen, roles: ['user', 'agent', 'admin'] },
+  { name: 'Knowledge Base', href: '/kb', icon: BookOpen, roles: ['admin'] }, // 🔒 Solo admin
   // { name: 'Filtri salvati', href: '/filters', icon: Filter, roles: ['user', 'agent', 'admin'] }, // TODO: Da implementare
   { name: 'Ruoli e Permessi', href: '/roles', icon: UserCog, roles: ['agent', 'admin'] },
   // { name: 'Impostazioni', href: '/settings', icon: Settings, roles: ['user', 'agent', 'admin'] }, // TODO: Da implementare

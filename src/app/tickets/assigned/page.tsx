@@ -4,8 +4,10 @@ import React, { useState, useMemo } from 'react'
 import { useQuery, useMutation } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { useAuth } from '@/hooks/useAuth'
+import { useRouter } from 'next/navigation' // 🆕 Per navigazione
 import { AppLayout } from '@/components/layout/AppLayout'
 import { PriorityLevel } from '@/components/tickets/PriorityLevel'
+import { SLACountdown } from '@/components/tickets/SLACountdown'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -15,7 +17,7 @@ import { StatusBadge } from '@/components/tickets/StatusBadge'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { useToast } from '@/components/ui/use-toast'
-import { Search, Clock, User, Filter, Calendar, UserPlus } from 'lucide-react'
+import { Search, Clock, User, Filter, Calendar, UserPlus, CheckCircle, AlertTriangle, Activity } from 'lucide-react'
 import Link from 'next/link'
 import { Id } from '@/convex/_generated/dataModel'
 
@@ -29,6 +31,7 @@ interface AssignedTicket {
   visibility: 'public' | 'private'
   _creationTime: number
   lastActivityAt: number
+  slaDeadline?: number // 🆕 SLA deadline timestamp
   category?: {
     _id: string
     name: string
@@ -64,9 +67,11 @@ const priorityOptions = [
 export default function AssignedTicketsPage() {
   const { user } = useAuth()
   const { toast } = useToast()
+  const router = useRouter() // 🆕 Hook per navigazione
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('')
   const [priorityFilter, setPriorityFilter] = useState<string>('all')
+  const [slaFilter, setSlaFilter] = useState<string>('all') // 🆕 Filtro SLA
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'updated' | 'nudged'>('newest')
   const [assigningTicket, setAssigningTicket] = useState<string | null>(null)
   
@@ -89,10 +94,12 @@ export default function AssignedTicketsPage() {
       title: ticket.title,
       description: ticket.description,
       status: ticket.status,
+      ticketStatusId: ticket.ticketStatusId, // 🆕 ID dello stato da ticketStatuses
       priority: ticket.priority,
       visibility: ticket.visibility,
       _creationTime: ticket._creationTime,
       lastActivityAt: ticket.lastActivityAt,
+      slaDeadline: ticket.slaDeadline, // 🆕 SLA deadline
       category: ticket.category ? {
         _id: ticket.category._id,
         name: ticket.category.name,
@@ -116,6 +123,42 @@ export default function AssignedTicketsPage() {
       lastNudgeAt: ticket.lastNudgeAt
     }))
   }, [convexTickets])
+
+  // 🆕 Calcola statistiche SLA
+  const slaStats = useMemo(() => {
+    const now = Date.now()
+    
+    // Solo ticket aperti o in lavorazione (non chiusi)
+    const activeTickets = assignedTickets.filter(t => t.status !== 'closed')
+    
+    const withSLA = activeTickets.filter(t => t.slaDeadline)
+    const withinSLA = withSLA.filter(t => t.slaDeadline && t.slaDeadline > now)
+    const overSLA = withSLA.filter(t => t.slaDeadline && t.slaDeadline <= now)
+    
+    // 🆕 Calcola percentuale ticket risolti dentro SLA
+    const resolvedTickets = assignedTickets.filter(t => t.status === 'closed')
+    const resolvedWithSLA = resolvedTickets.filter(t => t.slaDeadline)
+    const resolvedWithinSLA = resolvedWithSLA.filter(t => {
+      // Consideriamo lastActivityAt come data di chiusura
+      const closedTime = t.lastActivityAt
+      return t.slaDeadline && closedTime <= t.slaDeadline
+    })
+    
+    const slaSuccessRate = resolvedWithSLA.length > 0 
+      ? Math.round((resolvedWithinSLA.length / resolvedWithSLA.length) * 100)
+      : 0
+    
+    return {
+      total: activeTickets.length,
+      withSLA: withSLA.length,
+      withinSLA: withinSLA.length,
+      overSLA: overSLA.length,
+      noSLA: activeTickets.filter(t => !t.slaDeadline).length,
+      slaSuccessRate, // 🆕 Percentuale ticket risolti dentro SLA
+      resolvedWithinSLA: resolvedWithinSLA.length, // 🆕 Numero assoluto
+      resolvedWithSLA: resolvedWithSLA.length, // 🆕 Totale risolti con SLA
+    }
+  }, [assignedTickets])
 
   // Filtering and sorting
   const filteredAndSortedTickets = useMemo(() => {
@@ -143,6 +186,26 @@ export default function AssignedTicketsPage() {
     if (priorityFilter && priorityFilter !== 'all') {
       const targetPriority = parseInt(priorityFilter);
       filtered = filtered.filter(ticket => ticket.priority === targetPriority)
+    }
+    
+    // 🆕 Filter by SLA
+    if (slaFilter && slaFilter !== 'all') {
+      const now = Date.now()
+      
+      switch (slaFilter) {
+        case 'within':
+          // Solo ticket con SLA attiva e dentro il tempo
+          filtered = filtered.filter(t => t.slaDeadline && t.slaDeadline > now)
+          break
+        case 'over':
+          // Solo ticket con SLA scaduta
+          filtered = filtered.filter(t => t.slaDeadline && t.slaDeadline <= now)
+          break
+        case 'no-sla':
+          // Solo ticket senza SLA
+          filtered = filtered.filter(t => !t.slaDeadline)
+          break
+      }
     }
 
     // Sort tickets - SEMPRE prima per priorità (DESC), poi per il criterio scelto
@@ -172,7 +235,7 @@ export default function AssignedTicketsPage() {
     })
 
     return filtered
-  }, [assignedTickets, searchTerm, statusFilter, priorityFilter, sortBy])
+  }, [assignedTickets, searchTerm, statusFilter, priorityFilter, slaFilter, sortBy])
 
   // Get status icon
   const getStatusIcon = (status: string) => {
@@ -338,6 +401,7 @@ export default function AssignedTicketsPage() {
                 setSearchTerm('')
                 setStatusFilter('')
                 setPriorityFilter('all')
+                setSlaFilter('all') // 🆕
                 setSortBy('newest')
               }}
               className="w-full"
@@ -349,67 +413,99 @@ export default function AssignedTicketsPage() {
         </CardContent>
       </Card>
 
-      {/* Statistics */}
+      {/* Statistics SLA */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <Card>
+        {/* Total Active Tickets */}
+        <Card 
+          className={`cursor-pointer hover:shadow-lg transition-shadow ${slaFilter === 'all' ? 'ring-2 ring-blue-500' : ''}`}
+          onClick={() => setSlaFilter('all')}
+        >
           <CardContent className="p-4">
             <div className="flex items-center">
               <div className="p-2 bg-blue-100 rounded-lg">
-                <User className="h-6 w-6 text-blue-600" />
+                <Clock className="h-6 w-6 text-blue-600" />
               </div>
               <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Totali</p>
-                <p className="text-2xl font-bold text-gray-900">{assignedTickets.length}</p>
+                <p className="text-sm font-medium text-gray-600">Ticket Aperti</p>
+                <p className="text-2xl font-bold text-gray-900">{slaStats.total}</p>
               </div>
             </div>
+            <p className="text-xs text-gray-500 mt-2">Totale ticket da risolvere</p>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center">
-              <div className="p-2 bg-orange-100 rounded-lg">
-                <Clock className="h-6 w-6 text-orange-600" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">In Lavorazione</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {assignedTickets.filter(t => t.status === 'in_progress').length}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center">
-              <div className="p-2 bg-red-100 rounded-lg">
-                <Calendar className="h-6 w-6 text-red-600" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Sollecitati</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {assignedTickets.filter(t => t.nudgeCount && t.nudgeCount > 0).length}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
+        {/* Within SLA */}
+        <Card 
+          className={`cursor-pointer hover:shadow-lg transition-shadow ${slaFilter === 'within' ? 'ring-2 ring-green-500' : ''}`}
+          onClick={() => setSlaFilter('within')}
+        >
           <CardContent className="p-4">
             <div className="flex items-center">
               <div className="p-2 bg-green-100 rounded-lg">
-                <Clock className="h-6 w-6 text-green-600" />
+                <CheckCircle className="h-6 w-6 text-green-600" />
               </div>
               <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Aperti</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {assignedTickets.filter(t => t.status === 'open').length}
-                </p>
+                <p className="text-sm font-medium text-gray-600">Dentro SLA</p>
+                <p className="text-2xl font-bold text-green-900">{slaStats.withinSLA}</p>
               </div>
             </div>
+            <p className="text-xs text-gray-500 mt-2">Ticket entro la deadline</p>
+          </CardContent>
+        </Card>
+
+        {/* Over SLA */}
+        <Card 
+          className={`cursor-pointer hover:shadow-lg transition-shadow ${slaFilter === 'over' ? 'ring-2 ring-red-500' : ''}`}
+          onClick={() => setSlaFilter('over')}
+        >
+          <CardContent className="p-4">
+            <div className="flex items-center">
+              <div className="p-2 bg-red-100 rounded-lg">
+                <AlertTriangle className="h-6 w-6 text-red-600" />
+              </div>
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-600">Over SLA</p>
+                <p className="text-2xl font-bold text-red-900">{slaStats.overSLA}</p>
+              </div>
+            </div>
+            <p className="text-xs text-gray-500 mt-2">Ticket scaduti</p>
+          </CardContent>
+        </Card>
+
+        {/* No SLA */}
+        <Card 
+          className={`cursor-pointer hover:shadow-lg transition-shadow ${slaFilter === 'no-sla' ? 'ring-2 ring-gray-500' : ''}`}
+          onClick={() => setSlaFilter('no-sla')}
+        >
+          <CardContent className="p-4">
+            <div className="flex items-center">
+              <div className="p-2 bg-gray-100 rounded-lg">
+                <Calendar className="h-6 w-6 text-gray-600" />
+              </div>
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-600">Senza SLA</p>
+                <p className="text-2xl font-bold text-gray-900">{slaStats.noSLA}</p>
+              </div>
+            </div>
+            <p className="text-xs text-gray-500 mt-2">Ticket senza deadline</p>
+          </CardContent>
+        </Card>
+
+        {/* 🆕 SLA Success Rate */}
+        <Card className="hover:shadow-lg transition-shadow">
+          <CardContent className="p-4">
+            <div className="flex items-center">
+              <div className="p-2 bg-blue-100 rounded-lg">
+                <Activity className="h-6 w-6 text-blue-600" />
+              </div>
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-600">% Risolti in SLA</p>
+                <p className="text-2xl font-bold text-blue-900">{slaStats.slaSuccessRate}%</p>
+              </div>
+            </div>
+            <p className="text-xs text-gray-500 mt-2">
+              {slaStats.resolvedWithinSLA} su {slaStats.resolvedWithSLA} risolti
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -438,6 +534,7 @@ export default function AssignedTicketsPage() {
                   setSearchTerm('')
                   setStatusFilter('')
                   setPriorityFilter('all')
+                  setSlaFilter('all') // 🆕
                   setSortBy('newest')
                 }}
               >
@@ -449,18 +546,19 @@ export default function AssignedTicketsPage() {
       ) : (
         <div className="space-y-4">
           {filteredAndSortedTickets.map((ticket) => (
-            <Card key={ticket._id} className="hover:shadow-md transition-shadow">
+            <Card 
+              key={ticket._id} 
+              className="hover:shadow-lg hover:border-blue-300 transition-all cursor-pointer"
+              onClick={() => router.push(`/tickets/${ticket.ticketNumber}`)}
+            >
               <CardContent className="p-6">
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
                     {/* Header */}
                     <div className="flex items-center space-x-3 mb-3">
-                      <Link
-                        href={`/tickets/${ticket._id}`}
-                        className="text-lg font-semibold text-blue-600 hover:text-blue-800 hover:underline"
-                      >
+                      <h3 className="text-lg font-semibold text-blue-600">
                         #{ticket.ticketNumber || 'N/A'} - {ticket.title}
-                      </Link>
+                      </h3>
                       
                       {/* Nudge indicator */}
                       {ticket.nudgeCount && ticket.nudgeCount > 0 && (
@@ -472,7 +570,10 @@ export default function AssignedTicketsPage() {
 
                     {/* Meta info */}
                     <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600 mb-3">
-                      <StatusBadge status={ticket.status} showIcon />
+                      <StatusBadge 
+                        ticketStatusId={ticket.ticketStatusId} 
+                        status={ticket.status}
+                      />
                       
                       {ticket.category && (
                         <div className="flex items-center">
@@ -498,6 +599,15 @@ export default function AssignedTicketsPage() {
                           />
                         </div>
                       )}
+                      
+                      {/* 🆕 SLA Countdown */}
+                      <div className="flex items-center">
+                        <SLACountdown 
+                          slaDeadline={ticket.slaDeadline}
+                          size="sm"
+                          showIcon={true}
+                        />
+                      </div>
                     </div>
 
                     {/* Description preview */}
@@ -529,18 +639,16 @@ export default function AssignedTicketsPage() {
                           <Button 
                             size="sm" 
                             variant="outline"
-                            onClick={() => handleAssignToMe(ticket._id)}
+                            onClick={(e) => {
+                              e.stopPropagation() // 🆕 Previene apertura ticket
+                              handleAssignToMe(ticket._id)
+                            }}
                             disabled={assigningTicket === ticket._id}
                           >
                             <UserPlus className="h-4 w-4 mr-2" />
                             {assigningTicket === ticket._id ? 'Assegnazione...' : 'Assegna a me'}
                           </Button>
                         )}
-                        <Link href={`/tickets/${ticket._id}`}>
-                          <Button size="sm">
-                            Apri Ticket
-                          </Button>
-                        </Link>
                       </div>
                     </div>
                   </div>

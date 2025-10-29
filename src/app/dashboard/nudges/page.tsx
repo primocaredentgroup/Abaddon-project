@@ -18,7 +18,8 @@ import {
   Building,
   Calendar,
   ArrowRight,
-  Eye
+  Eye,
+  Shield
 } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
@@ -33,7 +34,7 @@ const priorityOptions = [
 ];
 
 export default function NudgedTicketsPage() {
-  const { user } = useRole();
+  const { user, role } = useRole();
   const [assigningTicket, setAssigningTicket] = useState<string | null>(null); // 🆕 Loading state
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
   
@@ -46,14 +47,20 @@ export default function NudgedTicketsPage() {
   // 🆕 Mutation per auto-assegnazione
   const assignTicket = useMutation(api.tickets.assign);
 
-  // Solo agenti e admin possono vedere questa pagina
-  if (user?.roleName !== 'Agente' && user?.roleName !== 'Amministratore') {
+  // 🔒 CONTROLLO ACCESSO: Solo admin possono vedere questa pagina
+  if (role !== 'admin') {
     return (
       <AppLayout>
         <div className="flex items-center justify-center min-h-[50vh]">
           <div className="text-center">
-            <AlertTriangle className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-            <p className="text-gray-600">Accesso riservato agli agenti</p>
+            <Shield className="h-16 w-16 text-red-500 mx-auto mb-4" />
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">Accesso Riservato</h1>
+            <p className="text-gray-600">Solo gli amministratori possono accedere alla gestione dei ticket sollecitati.</p>
+            <Link href="/dashboard">
+              <Button className="mt-4">
+                Torna alla Dashboard
+              </Button>
+            </Link>
           </div>
         </div>
       </AppLayout>

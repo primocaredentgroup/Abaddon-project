@@ -104,11 +104,50 @@ export const executeMacro = mutation({
         })
       } 
       else if (action.type === 'change_status') {
-        // Cambia lo stato del ticket
+        // 🆕 Cambia lo stato del ticket usando ticketStatusId
+        // action.value può essere:
+        // - Un ID (v.id("ticketStatuses")) - nuovo formato
+        // - Uno slug (string) - vecchio formato (DEPRECATED)
+        
+        let ticketStatusId: any
+        let statusSlug: string
+        
+        // Verifica se action.value è un ID o uno slug
+        const isId = typeof action.value === 'string' && action.value.length > 10 // ID Convex sono lunghi
+        
+        if (isId) {
+          // È già un ID, verifica che esista
+          const status = await ctx.db.get(action.value as any)
+          if (!status || !('slug' in status)) {
+            console.error(`❌ Stato con ID ${action.value} non trovato o non valido`)
+            continue // Salta questa azione
+          }
+          ticketStatusId = action.value
+          statusSlug = (status as any).slug
+        } else {
+          // È uno slug, cerca l'ID corrispondente
+          const status = await ctx.db
+            .query("ticketStatuses")
+            .withIndex("by_slug", (q) => q.eq("slug", action.value))
+            .first()
+          
+          if (!status) {
+            console.error(`❌ Stato con slug '${action.value}' non trovato`)
+            continue // Salta questa azione
+          }
+          ticketStatusId = status._id
+          statusSlug = action.value
+          console.log(`⚠️  MACRO DEPRECATED: Usa ticketStatusId invece di slug. Convertito '${statusSlug}' -> ${ticketStatusId}`)
+        }
+        
+        // Aggiorna il ticket con entrambi i campi
         await ctx.db.patch(ticketId, {
-          status: action.value,
+          ticketStatusId: ticketStatusId, // 🆕 Nuovo campo
+          status: statusSlug, // 🔄 Mantieni per retrocompatibilità
           lastActivityAt: Date.now()
         })
+        
+        console.log(`✅ Macro: Stato ticket ${ticketId} cambiato a '${statusSlug}' (${ticketStatusId})`)
       }
       // Aggiungi altri tipi di azioni quando necessario
     }

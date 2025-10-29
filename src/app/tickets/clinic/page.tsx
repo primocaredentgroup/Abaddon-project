@@ -492,7 +492,7 @@ export default function ClinicTicketsPage() {
                           {ticket.createdAt}
                         </td>
                         <td className="px-3 py-3 text-center">
-                          <Link href={`/tickets/${ticket._id}`}>
+                          <Link href={`/tickets/${ticket.ticketNumber}`}>
                             <Button size="sm" variant="ghost" className="h-7 px-2">
                               <Eye className="h-3 w-3" />
                             </Button>

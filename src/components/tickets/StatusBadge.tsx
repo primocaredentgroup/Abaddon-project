@@ -2,45 +2,47 @@
 
 import React from 'react'
 import { Badge } from '@/components/ui/Badge'
-import { TicketStatus } from '@/types'
+import { useTicketStatuses } from '@/hooks/useTicketStatuses'
+import { Id } from '../../../convex/_generated/dataModel'
 
 interface StatusBadgeProps {
-  status: TicketStatus
+  // 🆕 Nuovo: accetta ticketStatusId (preferito)
+  ticketStatusId?: Id<'ticketStatuses'>
+  // 🔄 DEPRECATED: accetta ancora lo slug per retrocompatibilità
+  status?: string
   size?: 'sm' | 'md' | 'lg'
   showIcon?: boolean
   className?: string
 }
 
-const STATUS_CONFIG = {
-  open: {
-    label: 'Aperto',
-    color: 'red' as const,
-    icon: '🔴',
-    description: 'Ticket appena creato, in attesa di essere preso in carico',
-  },
-  in_progress: {
-    label: 'In Lavorazione',
-    color: 'yellow' as const,
-    icon: '🟡',
-    description: 'Ticket assegnato e in lavorazione',
-  },
-  closed: {
-    label: 'Chiuso',
-    color: 'green' as const,
-    icon: '🟢',
-    description: 'Ticket risolto e chiuso',
-  },
-}
-
 export const StatusBadge: React.FC<StatusBadgeProps> = ({
+  ticketStatusId,
   status,
   size = 'md',
   showIcon = false,
   className = '',
 }) => {
-  const config = STATUS_CONFIG[status]
+  const { getStatusById, getStatusBySlug, isLoading } = useTicketStatuses()
 
-  if (!config) {
+  // 🆕 Cerca lo stato per ID (priorità)
+  let statusData = ticketStatusId ? getStatusById(ticketStatusId) : undefined
+
+  // 🔄 Fallback: cerca per slug se ID non presente (DEPRECATED)
+  if (!statusData && status) {
+    statusData = getStatusBySlug(status)
+  }
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <Badge color="gray" size={size} className={className}>
+        ...
+      </Badge>
+    )
+  }
+
+  // Stato non trovato
+  if (!statusData) {
     return (
       <Badge color="gray" size={size} className={className}>
         Sconosciuto
@@ -48,47 +50,37 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({
     )
   }
 
+  // Mappa i colori hex a colori Badge
+  let badgeColor: 'red' | 'yellow' | 'green' | 'blue' | 'gray' = 'gray'
+  
+  if (statusData.color.includes('ef4444') || statusData.color.includes('f87171')) {
+    badgeColor = 'red'
+  } else if (statusData.color.includes('f59e0b') || statusData.color.includes('fbbf24')) {
+    badgeColor = 'yellow'
+  } else if (statusData.color.includes('22c55e') || statusData.color.includes('10b981')) {
+    badgeColor = 'green'
+  } else if (statusData.color.includes('3b82f6') || statusData.color.includes('60a5fa')) {
+    badgeColor = 'blue'
+  }
+
   return (
     <Badge
-      color={config.color}
+      color={badgeColor}
       size={size}
       className={className}
-      title={config.description}
+      title={statusData.description}
     >
-      {showIcon && <span className="mr-1">{config.icon}</span>}
-      {config.label}
+      {showIcon && statusData.icon && <span className="mr-1">{statusData.icon}</span>}
+      {statusData.name}
     </Badge>
   )
 }
 
-// Utility function to get status config
-export const getStatusConfig = (status: TicketStatus) => {
-  return STATUS_CONFIG[status] || {
-    label: 'Sconosciuto',
-    color: 'gray' as const,
-    icon: '❓',
-    description: 'Stato non riconosciuto',
-  }
-}
-
-// Utility function to get next possible statuses
-export const getNextStatuses = (currentStatus: TicketStatus): TicketStatus[] => {
-  switch (currentStatus) {
-    case 'open':
-      return ['in_progress', 'closed']
-    case 'in_progress':
-      return ['open', 'closed']
-    case 'closed':
-      return [] // Closed tickets cannot change status
-    default:
-      return []
-  }
-}
-
-// Utility function to check if status transition is valid
-export const isValidStatusTransition = (from: TicketStatus, to: TicketStatus): boolean => {
-  const nextStatuses = getNextStatuses(from)
-  return nextStatuses.includes(to)
+// 🆕 Utility function to get status data by ID
+export const getStatusData = (ticketStatusId: Id<'ticketStatuses'> | undefined) => {
+  // Questa funzione deve essere usata dentro un componente con useTicketStatuses
+  // Per ora manteniamo solo per compatibilità
+  return null
 }
 
 

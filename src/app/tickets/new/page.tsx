@@ -67,6 +67,14 @@ export default function NewTicketPage() {
       }))
     : [];
   
+  // 🐛 DEBUG: Log categorie caricate (rimuovere in produzione)
+  useEffect(() => {
+    if (categoriesData) {
+      console.log("📋 Categorie caricate:", categoriesData.length);
+      console.log("📝 Lista categorie:", categoriesData.map(c => c.name).join(", "));
+    }
+  }, [categoriesData]);
+  
   // Stato di caricamento
   const isLoadingCategories = categoriesData === undefined;
   

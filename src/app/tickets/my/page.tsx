@@ -3,8 +3,13 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
+import { useRouter } from 'next/navigation'; // 🆕 Per navigazione
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PriorityLevel } from '@/components/tickets/PriorityLevel';
+import { SLACountdown } from '@/components/tickets/SLACountdown';
+import { StatusSelect } from '@/components/tickets/StatusSelect'; // 🆕
+import { StatusBadge } from '@/components/tickets/StatusBadge'; // 🆕
+import { useTicketStatuses } from '@/hooks/useTicketStatuses'; // 🆕
 import { useRole } from '@/providers/RoleProvider';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -24,7 +29,8 @@ import {
   AlertTriangle,
   ArrowUpDown,
   Pencil,
-  Bell
+  Bell,
+  Activity
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -42,6 +48,7 @@ type Ticket = {
   clinic: string;
   creator: string;
   visibility: 'public' | 'private';
+  slaDeadline?: number; // 🆕 SLA deadline timestamp
   _id?: string;
 };
 
@@ -68,6 +75,8 @@ const priorityOptions = [
 export default function MyTicketsPage() {
   const { user } = useRole();
   const { toast } = useToast();
+  const router = useRouter(); // 🆕 Hook per navigazione
+  const { statuses, getStatusBySlug } = useTicketStatuses(); // 🆕 Hook per stati dinamici
   
   // Fetch dei ticket reali da Convex in base al ruolo
   const myCreatedTickets = useQuery(
@@ -81,6 +90,9 @@ export default function MyTicketsPage() {
   
   // Mutation per sollecitare i ticket
   const nudgeTicket = useMutation(api.ticketComments.nudge);
+  
+  // 🆕 Mutation per aggiornare lo stato del ticket
+  const updateTicketMutation = useMutation(api.tickets.update);
   
   // Combina i ticket in base al ruolo
   const ticketsData = useMemo(() => {
@@ -103,11 +115,13 @@ export default function MyTicketsPage() {
     
     return sortedTickets.map((ticket: any) => ({
       id: `#${ticket.ticketNumber || (tempTicketNumber++)}`, // Numero reale o temporaneo sequenziale
+      ticketNumber: ticket.ticketNumber, // 🆕 ticketNumber per URL
       title: ticket.title,
       description: ticket.description,
       status: ticket.status === 'open' ? 'open' : 
               ticket.status === 'in_progress' ? 'in_progress' :
               ticket.status === 'closed' ? 'closed' : 'new',
+      ticketStatusId: ticket.ticketStatusId, // 🆕 ID dello stato da ticketStatuses
       priority: ticket.priority || 1, // Priorità reale dal database (default: 1)
       assignee: ticket.assignee?.name || 'Non assegnato',
       createdAt: new Date(ticket._creationTime).toLocaleDateString(),
@@ -117,6 +131,7 @@ export default function MyTicketsPage() {
       creator: ticket.creator?.name || 'N/A',
       visibility: ticket.visibility,
       _id: ticket._id,
+      slaDeadline: ticket.slaDeadline, // 🆕 SLA deadline per countdown
     }))
   }, [ticketsData]);
 
@@ -126,12 +141,52 @@ export default function MyTicketsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
+  const [slaFilter, setSlaFilter] = useState('all'); // 🆕 Filtro SLA
   const [currentPage, setCurrentPage] = useState(1);
   const [editingStatusId, setEditingStatusId] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState('id');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   // Filtraggio dei ticket
+  // 🆕 Calcola statistiche SLA
+  const slaStats = useMemo(() => {
+    const now = Date.now()
+    
+    // Solo ticket aperti o in lavorazione (non chiusi)
+    const activeTickets = displayTickets.filter(t => t.status !== 'closed' && t.status !== 'resolved')
+    
+    const withSLA = activeTickets.filter(t => t.slaDeadline)
+    const withinSLA = withSLA.filter(t => t.slaDeadline && t.slaDeadline > now)
+    const overSLA = withSLA.filter(t => t.slaDeadline && t.slaDeadline <= now)
+    
+    // 🆕 Calcola percentuale ticket risolti dentro SLA
+    const resolvedTickets = displayTickets.filter(t => t.status === 'closed' || t.status === 'resolved')
+    const resolvedWithSLA = resolvedTickets.filter(t => t.slaDeadline)
+    // Assumiamo che se un ticket è chiuso/risolto e ha uno SLA, è stato risolto entro lo SLA
+    // (In futuro si potrebbe confrontare lastActivityAt con slaDeadline)
+    const resolvedWithinSLA = resolvedWithSLA.filter(t => {
+      // Se il ticket è chiuso, consideriamo lastActivityAt come data di chiusura
+      // e verifichiamo se è prima della deadline
+      const closedTime = new Date(t.lastActivity).getTime()
+      return t.slaDeadline && closedTime <= t.slaDeadline
+    })
+    
+    const slaSuccessRate = resolvedWithSLA.length > 0 
+      ? Math.round((resolvedWithinSLA.length / resolvedWithSLA.length) * 100)
+      : 0
+    
+    return {
+      total: activeTickets.length,
+      withSLA: withSLA.length,
+      withinSLA: withinSLA.length,
+      overSLA: overSLA.length,
+      noSLA: activeTickets.filter(t => !t.slaDeadline).length,
+      slaSuccessRate, // 🆕 Percentuale ticket risolti dentro SLA
+      resolvedWithinSLA: resolvedWithinSLA.length, // 🆕 Numero assoluto
+      resolvedWithSLA: resolvedWithSLA.length, // 🆕 Totale risolti con SLA
+    }
+  }, [displayTickets])
+
   const filteredTickets = useMemo(() => {
     return displayTickets.filter(ticket => {
       const matchesSearch = searchTerm === '' ||
@@ -142,9 +197,27 @@ export default function MyTicketsPage() {
       const matchesStatus = statusFilter === 'all' || ticket.status === statusFilter;
       const matchesPriority = priorityFilter === 'all' || ticket.priority === priorityFilter;
 
-      return matchesSearch && matchesStatus && matchesPriority;
+      // 🆕 Filter by SLA
+      let matchesSLA = true
+      if (slaFilter && slaFilter !== 'all') {
+        const now = Date.now()
+        
+        switch (slaFilter) {
+          case 'within':
+            matchesSLA = ticket.slaDeadline !== undefined && ticket.slaDeadline > now
+            break
+          case 'over':
+            matchesSLA = ticket.slaDeadline !== undefined && ticket.slaDeadline <= now
+            break
+          case 'no-sla':
+            matchesSLA = !ticket.slaDeadline
+            break
+        }
+      }
+
+      return matchesSearch && matchesStatus && matchesPriority && matchesSLA;
     });
-  }, [displayTickets, searchTerm, statusFilter, priorityFilter]);
+  }, [displayTickets, searchTerm, statusFilter, priorityFilter, slaFilter]);
 
   const sortedTickets = useMemo(() => {
     const list = [...filteredTickets];
@@ -203,9 +276,31 @@ export default function MyTicketsPage() {
     }
   };
 
-  const updateTicketStatus = (id: string, newStatus: string) => {
-    // TODO: Implementare con mutation Convex
-    setEditingStatusId(null);
+  // 🆕 Aggiorna lo stato del ticket usando ticketStatusId
+  const updateTicketStatus = async (ticketId: string, newStatusId: string) => {
+    if (!user?.email) return;
+    
+    try {
+      await updateTicketMutation({
+        id: ticketId as any,
+        ticketStatusId: newStatusId as any, // Usa l'ID dello stato
+        userEmail: user.email
+      });
+      
+      toast({ 
+        title: '✅ Stato aggiornato', 
+        description: 'Lo stato del ticket è stato aggiornato con successo',
+        variant: 'default'
+      });
+      
+      setEditingStatusId(null);
+    } catch (error: any) {
+      toast({ 
+        title: 'Errore', 
+        description: error.message, 
+        variant: 'destructive' 
+      });
+    }
   };
 
   const handleNudge = async (ticketId: string, ticketTitle: string) => {
@@ -254,6 +349,103 @@ export default function MyTicketsPage() {
               </Button>
             </Link>
           </div>
+        </div>
+
+        {/* 🆕 Statistics SLA */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {/* Total Active Tickets */}
+          <Card 
+            className={`cursor-pointer hover:shadow-lg transition-shadow ${slaFilter === 'all' ? 'ring-2 ring-blue-500' : ''}`}
+            onClick={() => setSlaFilter('all')}
+          >
+            <CardContent className="p-4">
+              <div className="flex items-center">
+                <div className="p-2 bg-blue-100 rounded-lg">
+                  <Clock className="h-6 w-6 text-blue-600" />
+                </div>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-600">Ticket Aperti</p>
+                  <p className="text-2xl font-bold text-gray-900">{slaStats.total}</p>
+                </div>
+              </div>
+              <p className="text-xs text-gray-500 mt-2">Totale ticket da risolvere</p>
+            </CardContent>
+          </Card>
+
+          {/* Within SLA */}
+          <Card 
+            className={`cursor-pointer hover:shadow-lg transition-shadow ${slaFilter === 'within' ? 'ring-2 ring-green-500' : ''}`}
+            onClick={() => setSlaFilter('within')}
+          >
+            <CardContent className="p-4">
+              <div className="flex items-center">
+                <div className="p-2 bg-green-100 rounded-lg">
+                  <CheckCircle className="h-6 w-6 text-green-600" />
+                </div>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-600">Dentro SLA</p>
+                  <p className="text-2xl font-bold text-green-900">{slaStats.withinSLA}</p>
+                </div>
+              </div>
+              <p className="text-xs text-gray-500 mt-2">Ticket entro la deadline</p>
+            </CardContent>
+          </Card>
+
+          {/* Over SLA */}
+          <Card 
+            className={`cursor-pointer hover:shadow-lg transition-shadow ${slaFilter === 'over' ? 'ring-2 ring-red-500' : ''}`}
+            onClick={() => setSlaFilter('over')}
+          >
+            <CardContent className="p-4">
+              <div className="flex items-center">
+                <div className="p-2 bg-red-100 rounded-lg">
+                  <AlertTriangle className="h-6 w-6 text-red-600" />
+                </div>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-600">Over SLA</p>
+                  <p className="text-2xl font-bold text-red-900">{slaStats.overSLA}</p>
+                </div>
+              </div>
+              <p className="text-xs text-gray-500 mt-2">Ticket scaduti</p>
+            </CardContent>
+          </Card>
+
+          {/* No SLA */}
+          <Card 
+            className={`cursor-pointer hover:shadow-lg transition-shadow ${slaFilter === 'no-sla' ? 'ring-2 ring-gray-500' : ''}`}
+            onClick={() => setSlaFilter('no-sla')}
+          >
+            <CardContent className="p-4">
+              <div className="flex items-center">
+                <div className="p-2 bg-gray-100 rounded-lg">
+                  <AlertCircle className="h-6 w-6 text-gray-600" />
+                </div>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-600">Senza SLA</p>
+                  <p className="text-2xl font-bold text-gray-900">{slaStats.noSLA}</p>
+                </div>
+              </div>
+              <p className="text-xs text-gray-500 mt-2">Ticket senza deadline</p>
+            </CardContent>
+          </Card>
+
+          {/* 🆕 SLA Success Rate */}
+          <Card className="hover:shadow-lg transition-shadow">
+            <CardContent className="p-4">
+              <div className="flex items-center">
+                <div className="p-2 bg-blue-100 rounded-lg">
+                  <Activity className="h-6 w-6 text-blue-600" />
+                </div>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-600">% Risolti in SLA</p>
+                  <p className="text-2xl font-bold text-blue-900">{slaStats.slaSuccessRate}%</p>
+                </div>
+              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                {slaStats.resolvedWithinSLA} su {slaStats.resolvedWithSLA} risolti
+              </p>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Filtri */}
@@ -383,6 +575,9 @@ export default function MyTicketsPage() {
                         Priorità
                       </th>
                       <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        SLA
+                      </th>
+                      <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Clinica
                       </th>
                       <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -407,7 +602,7 @@ export default function MyTicketsPage() {
                       <tr 
                         key={ticket.id} 
                         className="hover:bg-blue-50 cursor-pointer transition-colors"
-                        onClick={() => window.location.href = `/tickets/${ticket._id}`}
+                        onClick={() => router.push(`/tickets/${ticket.ticketNumber}`)}
                       >
                         <td className="px-3 py-3 text-sm font-medium text-blue-600">
                           {ticket.id}
@@ -420,32 +615,34 @@ export default function MyTicketsPage() {
                             {ticket.description}
                           </div>
                         </td>
-                        <td className="px-3 py-3 whitespace-nowrap text-center">
+                        <td 
+                          className="px-3 py-3 whitespace-nowrap text-center"
+                          onClick={(e) => e.stopPropagation()} // 🆕 Previene apertura ticket
+                        >
                           {editingStatusId === ticket.id ? (
-                            <Select
-                              value={ticket.status}
-                              onChange={(e) => updateTicketStatus(ticket.id, e.target.value)}
-                              className="h-8 text-xs w-40 mx-auto"
-                              options={statusOptions}
-                            />
+                            <div className="flex justify-center" onClick={(e) => e.stopPropagation()}>
+                              <StatusSelect
+                                value={ticket.ticketStatusId}
+                                onChange={(statusId) => updateTicketStatus(ticket._id, statusId)}
+                                className="h-8 text-xs w-40"
+                              />
+                            </div>
                           ) : (
-                            <button onClick={() => setEditingStatusId(ticket.id)} className="inline-flex">
-                              <Badge 
-                                variant={
-                                  ticket.status === 'open' ? 'danger' :
-                                  ticket.status === 'in_progress' ? 'warning' :
-                                  ticket.status === 'closed' ? 'success' : 'default'
-                                }
-                                className="text-xs flex items-center cursor-pointer hover:opacity-80"
-                              >
-                                {getStatusIcon(ticket.status)}
-                                <span className="ml-1 capitalize">
-                                  {ticket.status === 'in_progress' ? 'In corso' : 
-                                   ticket.status === 'open' ? 'Aperto' :
-                                   ticket.status === 'closed' ? 'Chiuso' : 'Nuovo'}
-                                </span>
-                                <Pencil className="h-3 w-3 ml-1" />
-                              </Badge>
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation(); // 🆕 Previene apertura ticket
+                                setEditingStatusId(ticket.id);
+                              }} 
+                              className="inline-flex"
+                            >
+                              <div className="flex items-center cursor-pointer hover:opacity-80">
+                                <StatusBadge 
+                                  ticketStatusId={ticket.ticketStatusId}
+                                  status={ticket.status}
+                                  size="sm"
+                                />
+                                <Pencil className="h-3 w-3 ml-1 text-gray-400" />
+                              </div>
                             </button>
                           )}
                         </td>
@@ -460,6 +657,15 @@ export default function MyTicketsPage() {
                               value={ticket.priority || 1}
                               readonly={true}
                               showLabel={false}
+                            />
+                          </div>
+                        </td>
+                        <td className="px-3 py-3 text-center">
+                          <div className="flex justify-center" onClick={(e) => e.stopPropagation()}>
+                            <SLACountdown 
+                              slaDeadline={ticket.slaDeadline} 
+                              size="sm"
+                              showIcon={false}
                             />
                           </div>
                         </td>

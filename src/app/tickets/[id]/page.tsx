@@ -1,11 +1,13 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { TicketActions } from '@/components/tickets/TicketActions';
+import { StatusSelect } from '@/components/tickets/StatusSelect';
+import { StatusBadge } from '@/components/tickets/StatusBadge';
 import { PriorityLevel } from '@/components/tickets/PriorityLevel';
+import { SLACountdown } from '@/components/tickets/SLACountdown';
 import { useRole } from '@/providers/RoleProvider';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -32,7 +34,9 @@ import {
   Building,
   UserCheck,
   Zap,
-  Pencil
+  Pencil,
+  ChevronDown,
+  UserX
 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
@@ -49,7 +53,9 @@ export default function TicketDetailPage() {
   const router = useRouter();
   const { user } = useRole();
   const { toast } = useToast();
-  const ticketId = params.id as string;
+  
+  // 🆕 Interpreta params.id come ticketNumber (non più _id)
+  const ticketNumber = parseInt(params.id as string, 10);
 
   // Stati per editing
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -57,22 +63,29 @@ export default function TicketDetailPage() {
   const [editTitle, setEditTitle] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [newComment, setNewComment] = useState('');
+  
+  // 🆕 Stati per dropdown assegnatario
+  const [showAssigneeDropdown, setShowAssigneeDropdown] = useState(false);
+  const assigneeDropdownRef = useRef<HTMLDivElement>(null);
+  
+  // 🆕 Stati per dropdown categoria
+  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+  const categoryDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Fetch dati reali da Convex
-  // Non fare la query finché non abbiamo l'email dell'utente
+  // 🆕 Fetch ticket by ticketNumber invece di _id
   const ticket = useQuery(
-    api.tickets.getById, 
-    user?.email ? { id: ticketId, userEmail: user.email } : "skip"
+    api.tickets.getByTicketNumber, 
+    user?.email && !isNaN(ticketNumber) ? { ticketNumber, userEmail: user.email } : "skip"
   );
   const comments = useQuery(
     api.ticketComments.getByTicketId, 
-    user?.email ? { ticketId: ticketId as any, userEmail: user.email } : "skip"
+    user?.email && ticket?._id ? { ticketId: ticket._id as any, userEmail: user.email } : "skip"
   );
   
   // 🆕 Fetch ticket attributes
   const allTicketAttributes = useQuery(
     api.ticketAttributes.getByTicket,
-    ticketId ? { ticketId: ticketId as any } : "skip"
+    ticket?._id ? { ticketId: ticket._id as any } : "skip"
   );
   
   // 🆕 Mutation per assicurarsi che gli attributi agentOnly esistano (per ticket vecchi)
@@ -85,9 +98,9 @@ export default function TicketDetailPage() {
     const roleLower = user?.roleName?.toLowerCase();
     const isAgent = roleLower === 'agent' || roleLower === 'agente' || roleLower === 'admin' || roleLower === 'amministratore';
     
-    if (ticketId && isAgent && allTicketAttributes !== undefined && !hasCheckedAttributes) {
+    if (ticket?._id && isAgent && allTicketAttributes !== undefined && !hasCheckedAttributes) {
       // Chiama la mutation per assicurarsi che tutti gli attributi agentOnly esistano
-      ensureAgentOnlyAttributes({ ticketId: ticketId as any })
+      ensureAgentOnlyAttributes({ ticketId: ticket._id as any })
         .then(() => {
           setHasCheckedAttributes(true);
         })
@@ -95,7 +108,7 @@ export default function TicketDetailPage() {
           setHasCheckedAttributes(true);
         });
     }
-  }, [ticketId, user?.roleName, allTicketAttributes, hasCheckedAttributes]);
+  }, [ticket?._id, user?.roleName, allTicketAttributes, hasCheckedAttributes]);
 
   // Filtra gli attributi in base al ruolo: rimuovi agentOnly se l'utente NON è agente
   const ticketAttributes = useMemo(() => {
@@ -123,6 +136,24 @@ export default function TicketDetailPage() {
       categorySlug: ticket.category.slug
     } : "skip"
   );
+  
+  // 🆕 Fetch agenti disponibili per l'assegnazione
+  const availableAgents = useQuery(
+    api.users.getAvailableAgents,
+    clinicId && user?.email ? {
+      clinicId: clinicId,
+      userEmail: user.email
+    } : "skip"
+  );
+  
+  // 🆕 Fetch categorie disponibili (per agenti)
+  const availableCategories = useQuery(
+    api.categories.getCategoriesByClinic,
+    user?.email ? { 
+      isActive: true,
+      userId: (user as any)?._id 
+    } : "skip"
+  );
 
 
   // Mutations
@@ -132,6 +163,7 @@ export default function TicketDetailPage() {
   const updatePriority = useMutation(api.tickets.updatePriority);
   const executeMacro = useMutation(api.macros.executeMacro);
   const updateTicketAttribute = useMutation(api.ticketAttributes.update);
+  const changeAssignee = useMutation(api.tickets.changeAssignee);
 
   // Imposta i valori di editing quando il ticket viene caricato
   useEffect(() => {
@@ -140,6 +172,34 @@ export default function TicketDetailPage() {
       setEditDescription(ticket.description);
     }
   }, [ticket]);
+  
+  // 🆕 Chiudi dropdown assegnatario quando clicco fuori
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (assigneeDropdownRef.current && !assigneeDropdownRef.current.contains(event.target as Node)) {
+        setShowAssigneeDropdown(false);
+      }
+    };
+    
+    if (showAssigneeDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showAssigneeDropdown]);
+  
+  // 🆕 Chiudi dropdown categoria quando clicco fuori
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (categoryDropdownRef.current && !categoryDropdownRef.current.contains(event.target as Node)) {
+        setShowCategoryDropdown(false);
+      }
+    };
+    
+    if (showCategoryDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showCategoryDropdown]);
 
   if (!ticket) {
     return (
@@ -172,7 +232,7 @@ export default function TicketDetailPage() {
   const handleSaveTitle = async () => {
     try {
       await updateTicket({
-        id: ticketId as any,
+        id: ticket._id as any,
         title: editTitle,
         userEmail: user?.email || ""
       });
@@ -186,7 +246,7 @@ export default function TicketDetailPage() {
   const handleSaveDescription = async () => {
     try {
       await updateTicket({
-        id: ticketId as any,
+        id: ticket._id as any,
         description: editDescription,
         userEmail: user?.email || ""
       });
@@ -202,7 +262,7 @@ export default function TicketDetailPage() {
     
     try {
       await addComment({
-        ticketId: ticketId as any,
+        ticketId: ticket._id as any,
         content: newComment,
         userEmail: user?.email || ""
       });
@@ -216,7 +276,7 @@ export default function TicketDetailPage() {
   const handleNudge = async () => {
     try {
       await nudgeTicket({
-        ticketId: ticketId as any,
+        ticketId: ticket._id as any,
         userEmail: user?.email || ""
       });
       toast({ title: 'Ticket sollecitato!', description: 'L\'agente riceverà una notifica.', variant: 'default' });
@@ -231,7 +291,7 @@ export default function TicketDetailPage() {
     try {
       await executeMacro({
         macroId,
-        ticketId: ticketId as any,
+        ticketId: ticket._id as any,
         userEmail: user?.email || ""
       });
       toast({ title: '🎬 Macro eseguita!', description: `"${macroName}" completata con successo`, variant: 'default' });
@@ -244,8 +304,8 @@ export default function TicketDetailPage() {
   const handleStatusChange = async (newStatus: any) => {
     try {
       await updateTicket({
-        id: ticketId as any,
-        status: newStatus,
+        id: ticket._id as any,
+        ticketStatusId: newStatus, // 🆕 Usa ticketStatusId invece di status
         userEmail: user?.email || ""
       });
     } catch (error: any) {
@@ -255,38 +315,31 @@ export default function TicketDetailPage() {
 
   const handleAssigneeChange = async (newAssigneeId?: string) => {
     try {
-      await updateTicket({
-        id: ticketId as any,
-        // Converti stringhe vuote in undefined per Convex
-        assigneeId: (newAssigneeId && newAssigneeId.trim() !== "") ? newAssigneeId as any : undefined,
+      await changeAssignee({
+        ticketId: ticket._id as any,
+        newAssigneeId: newAssigneeId as any,
         userEmail: user?.email || ""
       });
+      setShowAssigneeDropdown(false);
+      toast({ title: '✅ Assegnatario aggiornato!', variant: 'default' });
     } catch (error: any) {
       console.error("❌ Errore:", error.message);
+      toast({ title: 'Errore', description: error.message, variant: 'destructive' });
     }
   };
 
   const handleCategoryChange = async (newCategoryId: string) => {
     try {
       await updateTicket({
-        id: ticketId as any,
+        id: ticket._id as any,
         categoryId: newCategoryId as any,
         userEmail: user?.email || ""
       });
+      setShowCategoryDropdown(false);
+      toast({ title: '✅ Categoria aggiornata!', variant: 'default' });
     } catch (error: any) {
       console.error("❌ Errore:", error.message);
-    }
-  };
-
-  const handleClinicChange = async (newClinicId: string) => {
-    try {
-      await updateTicket({
-        id: ticketId as any,
-        clinicId: newClinicId as any,
-        userEmail: user?.email || ""
-      });
-    } catch (error: any) {
-      console.error("❌ Errore:", error.message);
+      toast({ title: 'Errore', description: error.message, variant: 'destructive' });
     }
   };
 
@@ -305,12 +358,14 @@ export default function TicketDetailPage() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
-            <Link href="/tickets/my">
-              <Button variant="ghost" size="sm">
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                Indietro
-              </Button>
-            </Link>
+            <Button 
+              variant="ghost" 
+              size="sm"
+              onClick={() => router.back()}
+            >
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Indietro
+            </Button>
             <div>
               <h1 className="text-3xl font-bold text-gray-900 flex items-center">
                 Ticket #{ticket.ticketNumber || 'N/A'}
@@ -534,12 +589,72 @@ export default function TicketDetailPage() {
                   </Badge>
                 </div>
 
+                {/* 🆕 Categoria con dropdown inline */}
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-600">Categoria</span>
-                  <Badge variant="outline" className="flex items-center">
-                    <Tag className="h-3 w-3 mr-1" />
-                    {ticket.category?.name || 'N/A'}
-                  </Badge>
+                  {canManage ? (
+                    <div className="relative" ref={categoryDropdownRef}>
+                      <button
+                        onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
+                        className="flex items-center space-x-1 hover:bg-gray-50 px-2 py-1 rounded transition-colors"
+                      >
+                        <Badge variant="outline" className="flex items-center">
+                          <Tag className="h-3 w-3 mr-1" />
+                          {ticket.category?.name || 'N/A'}
+                        </Badge>
+                        <ChevronDown className="h-3 w-3 text-gray-500" />
+                      </button>
+                      
+                      {/* Dropdown Menu */}
+                      {showCategoryDropdown && (
+                        <div className="absolute right-0 mt-2 w-72 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-80 overflow-y-auto">
+                          {availableCategories && availableCategories.length > 0 ? (
+                            availableCategories.map((category: any) => (
+                              <button
+                                key={category._id}
+                                onClick={() => handleCategoryChange(category._id)}
+                                className={`w-full text-left px-4 py-3 text-sm hover:bg-gray-100 transition-colors ${
+                                  ticket.categoryId === category._id ? 'bg-blue-50' : ''
+                                }`}
+                              >
+                                <div className="flex items-start space-x-2">
+                                  <Tag className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                                  <div className="flex-1 min-w-0">
+                                    <div className="font-medium text-gray-900 flex items-center justify-between">
+                                      <span className="truncate">{category.name}</span>
+                                      {ticket.categoryId === category._id && (
+                                        <CheckCircle className="h-4 w-4 text-blue-600 ml-2 flex-shrink-0" />
+                                      )}
+                                    </div>
+                                    {category.description && (
+                                      <div className="text-xs text-gray-500 mt-1 line-clamp-2">
+                                        {category.description}
+                                      </div>
+                                    )}
+                                    {/* Mostra percorso gerarchico se esiste */}
+                                    {category.path && category.path.length > 1 && (
+                                      <div className="text-xs text-gray-400 mt-1">
+                                        📁 {category.path.length - 1} livello{category.path.length > 2 ? 'i' : ''} sopra
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </button>
+                            ))
+                          ) : (
+                            <div className="px-4 py-3 text-sm text-gray-500 text-center">
+                              Nessuna categoria disponibile
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <Badge variant="outline" className="flex items-center">
+                      <Tag className="h-3 w-3 mr-1" />
+                      {ticket.category?.name || 'N/A'}
+                    </Badge>
+                  )}
                 </div>
 
                 {/* Priorità */}
@@ -550,7 +665,7 @@ export default function TicketDetailPage() {
                     onChange={canManage ? async (newPriority) => {
                       try {
                         await updatePriority({
-                          ticketId: ticketId as any,
+                          ticketId: ticket._id as any,
                           priority: newPriority,
                           userEmail: user?.email || '',
                         });
@@ -586,11 +701,67 @@ export default function TicketDetailPage() {
                   </span>
                 </div>
 
+                {/* 🆕 Assegnatario con dropdown inline */}
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-600">Assegnato a</span>
-                  <span className="text-sm text-gray-900">
-                    {ticket.assignee?.name || 'Non assegnato'}
-                  </span>
+                  {canManage ? (
+                    <div className="relative" ref={assigneeDropdownRef}>
+                      <button
+                        onClick={() => setShowAssigneeDropdown(!showAssigneeDropdown)}
+                        className="flex items-center space-x-1 text-sm text-gray-900 hover:bg-gray-100 px-2 py-1 rounded transition-colors"
+                      >
+                        <span>{ticket.assignee?.name || 'Non assegnato'}</span>
+                        <ChevronDown className="h-3 w-3 text-gray-500" />
+                      </button>
+                      
+                      {/* Dropdown Menu */}
+                      {showAssigneeDropdown && (
+                        <div className="absolute right-0 mt-2 w-64 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-64 overflow-y-auto">
+                          {/* Opzione "Non assegnato" */}
+                          <button
+                            onClick={() => handleAssigneeChange(undefined)}
+                            className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 flex items-center space-x-2"
+                          >
+                            <UserX className="h-4 w-4 text-gray-400" />
+                            <span className="text-gray-700">Non assegnato</span>
+                          </button>
+                          
+                          {/* Divider */}
+                          <div className="border-t border-gray-200 my-1"></div>
+                          
+                          {/* Lista agenti */}
+                          {availableAgents && availableAgents.length > 0 ? (
+                            availableAgents.map((agent: any) => (
+                              <button
+                                key={agent._id}
+                                onClick={() => handleAssigneeChange(agent._id)}
+                                className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 flex items-center space-x-2 ${
+                                  ticket.assigneeId === agent._id ? 'bg-blue-50' : ''
+                                }`}
+                              >
+                                <UserCheck className="h-4 w-4 text-blue-600" />
+                                <div className="flex-1">
+                                  <div className="font-medium text-gray-900">{agent.name}</div>
+                                  <div className="text-xs text-gray-500">{agent.email}</div>
+                                </div>
+                                {ticket.assigneeId === agent._id && (
+                                  <CheckCircle className="h-4 w-4 text-blue-600" />
+                                )}
+                              </button>
+                            ))
+                          ) : (
+                            <div className="px-4 py-3 text-sm text-gray-500 text-center">
+                              Nessun agente disponibile
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-sm text-gray-900">
+                      {ticket.assignee?.name || 'Non assegnato'}
+                    </span>
+                  )}
                 </div>
 
                 <div className="flex items-center justify-between">
@@ -606,6 +777,16 @@ export default function TicketDetailPage() {
                   <span className="text-sm text-gray-900">
                     {new Date(ticket.lastActivityAt).toLocaleDateString()}
                   </span>
+                </div>
+
+                {/* 🆕 SLA Countdown */}
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-600">SLA</span>
+                  <SLACountdown 
+                    slaDeadline={ticket.slaDeadline} 
+                    size="sm"
+                    showIcon={true}
+                  />
                 </div>
 
                 {ticket.nudgeCount && ticket.nudgeCount > 0 && (
@@ -691,23 +872,46 @@ export default function TicketDetailPage() {
               </Card>
             )}
 
-            {/* Azioni ticket */}
+            {/* 🆕 Cambio Stato Semplificato */}
             {canManage && (
-              <TicketActions
-                ticketId={ticketId}
-                currentStatus={ticket.status}
-                currentAssigneeId={ticket.assigneeId}
-                currentCategoryId={ticket.categoryId}
-                currentClinicId={ticket.clinicId}
-                creatorId={ticket.creatorId}
-                currentUserId={user?.id || ''}
-                onStatusChange={handleStatusChange}
-                onAssigneeChange={handleAssigneeChange}
-                onCategoryChange={handleCategoryChange}
-                onClinicChange={handleClinicChange}
-                canManage={canManage}
-                canEdit={canEdit}
-              />
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Stato Ticket</CardTitle>
+                  <CardDescription>
+                    Cambia lo stato del ticket
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {/* Stato attuale visualizzato */}
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700">
+                        Stato attuale
+                      </label>
+                      <div className="flex items-center space-x-2">
+                        <StatusBadge 
+                          ticketStatusId={ticket.ticketStatusId} 
+                          status={ticket.status}
+                          showIcon={true}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Dropdown cambio stato */}
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700">
+                        Cambia stato
+                      </label>
+                      <StatusSelect
+                        value={ticket.ticketStatusId}
+                        onChange={handleStatusChange}
+                        disabled={!canManage}
+                        className="w-full"
+                      />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             )}
           </div>
         </div>
