@@ -30,6 +30,7 @@ export const getTicketsToManage = query({
 
     // Verifica che sia un agente (controllo basato su permessi)
     const role = await ctx.db.get(user.roleId)
+    
     if (!role || !canManageAllTickets(role)) {
       return []
     }
@@ -37,18 +38,31 @@ export const getTicketsToManage = query({
     // Ottieni le competenze dell'utente
     const userCompetencies = user.categoryCompetencies || []
 
-    if (!user.clinicId) {
+    // 🆕 Ottieni TUTTE le cliniche dell'utente (multi-clinic support)
+    const userClinicIds: string[] = [];
+    const userClinics = await ctx.db
+      .query("userClinics")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .filter((q) => q.eq(q.field("isActive"), true))
+      .collect();
+    
+    userClinicIds.push(...userClinics.map(uc => uc.clinicId));
+    
+    // Fallback: usa user.clinicId se esiste (backward compatibility)
+    if (user.clinicId && !userClinicIds.includes(user.clinicId)) {
+      userClinicIds.push(user.clinicId);
+    }
+
+    if (userClinicIds.length === 0) {
       throw new ConvexError("User has no clinic assigned")
     }
 
-    // Trova tutti i ticket della clinica
-    const allTickets = await ctx.db
-      .query("tickets")
-      .withIndex("by_clinic", (q) => q.eq("clinicId", user.clinicId!))
-      .collect()
+    // Trova tutti i ticket di TUTTE le cliniche dell'utente
+    const allTickets = await ctx.db.query("tickets").collect()
+    const relevantTickets = allTickets.filter(t => userClinicIds.includes(t.clinicId))
 
     // Filtra i ticket secondo le regole
-    const ticketsToManage = allTickets.filter(ticket => {
+    const ticketsToManage = relevantTickets.filter(ticket => {
       // 1. Ticket assegnati direttamente all'agente
       if (ticket.assigneeId === user._id) {
         return true
@@ -97,7 +111,7 @@ export const getTicketsToManage = query({
       })
     )
 
-    // Ordina per: prima sollecitati, poi per data
+    // Ordina per: prima sollecitati, poi per ticketNumber decrescente
     return populatedTickets.sort((a, b) => {
       // Prima i sollecitati
       const aNudged = (a.nudgeCount || 0) > 0
@@ -111,8 +125,10 @@ export const getTicketsToManage = query({
         return b.lastNudgeAt - a.lastNudgeAt
       }
       
-      // Infine per data creazione
-      return b._creationTime - a._creationTime
+      // Infine per ticketNumber decrescente (più recenti prima)
+      const aNum = a.ticketNumber || 0
+      const bNum = b.ticketNumber || 0
+      return bNum - aNum
     })
   }
 })

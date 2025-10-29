@@ -102,7 +102,23 @@ export const initializeDatabase = mutation({
     
     console.log("Created system roles: User, Agent, Admin")
     
-    // 3. Crea una clinica di esempio
+    // 3. Crea le cliniche di base
+    // 🆕 Clinica HQ per utenti @primogroup.it
+    const hqClinicId = await ctx.db.insert("clinics", {
+      name: "HQ",
+      code: "HQ",
+      address: "Sede Centrale Primo Group",
+      phone: "+39 000 000 0000",
+      email: "hq@primogroup.it",
+      settings: {
+        allowPublicTickets: true,
+        requireApprovalForCategories: false,
+        defaultSlaHours: 24,
+      },
+      isActive: true,
+    })
+    
+    // Clinica di esempio
     const exampleClinicId = await ctx.db.insert("clinics", {
       name: "Clinica Esempio",
       code: "DEMO001",
@@ -243,7 +259,7 @@ export const initializeDatabase = mutation({
       data: {
         permissions: permissionIds.length,
         roles: 3,
-        clinics: 1,
+        clinics: 2, // 🆕 HQ + Clinica Esempio
         departments: 2,
         categories: categoryIds.length,
         ticketStatuses: statusCount, // 🆕 Conteggio stati inizializzati

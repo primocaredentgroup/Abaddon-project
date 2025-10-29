@@ -36,7 +36,8 @@ import {
   Zap,
   Pencil,
   ChevronDown,
-  UserX
+  UserX,
+  Plus
 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
@@ -56,6 +57,16 @@ export default function TicketDetailPage() {
   
   // 🆕 Interpreta params.id come ticketNumber (non più _id)
   const ticketNumber = parseInt(params.id as string, 10);
+  
+  // 🆕 Stato per timeout - DEVE essere prima di ogni return!
+  const [isTimeout, setIsTimeout] = React.useState(false);
+  
+  // 🆕 Log per debugging
+  useEffect(() => {
+    console.log('🎫 Params:', params);
+    console.log('🎫 Ticket Number:', ticketNumber, 'isNaN:', isNaN(ticketNumber));
+    console.log('🎫 User:', user?.email);
+  }, [params, ticketNumber, user?.email]);
 
   // Stati per editing
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -77,6 +88,49 @@ export default function TicketDetailPage() {
     api.tickets.getByTicketNumber, 
     user?.email && !isNaN(ticketNumber) ? { ticketNumber, userEmail: user.email } : "skip"
   );
+  
+  // 🆕 Log risultato query
+  useEffect(() => {
+    console.log('🎫 Ticket loaded:', ticket);
+    if (ticket) {
+      console.log('🎫 Ticket data:', {
+        _id: ticket._id,
+        ticketNumber: ticket.ticketNumber,
+        title: ticket.title,
+        status: ticket.status,
+        category: ticket.category,
+        assignee: ticket.assignee,
+        creator: ticket.creator,
+        clinic: ticket.clinic,
+      });
+    }
+  }, [ticket]);
+
+  // 🆕 Timeout per debugging
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      if (ticket === undefined && user) {
+        console.error('⏰ TIMEOUT: La query non sta ritornando nulla dopo 5 secondi!');
+        console.error('⏰ ticketNumber:', ticketNumber);
+        console.error('⏰ user.email:', user.email);
+        console.error('⏰ Query args:', { ticketNumber, userEmail: user.email });
+      }
+    }, 5000);
+    
+    return () => clearTimeout(timeout);
+  }, [ticket, user, ticketNumber]);
+  
+  // 🆕 Timeout UI per mostrare errore dopo 10 secondi
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (ticket === undefined) {
+        setIsTimeout(true);
+      }
+    }, 10000); // 10 secondi
+    
+    return () => clearTimeout(timer);
+  }, [ticket]);
+  
   const comments = useQuery(
     api.ticketComments.getByTicketId, 
     user?.email && ticket?._id ? { ticketId: ticket._id as any, userEmail: user.email } : "skip"
@@ -342,6 +396,124 @@ export default function TicketDetailPage() {
       toast({ title: 'Errore', description: error.message, variant: 'destructive' });
     }
   };
+
+  // 🆕 Gestione loading e errori
+  
+  // Verifica che ticketNumber sia valido
+  if (isNaN(ticketNumber)) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center min-h-[50vh]">
+          <div className="text-center">
+            <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">URL Non Valido</h1>
+            <p className="text-gray-600 mb-4">Il numero del ticket "{params.id}" non è valido.</p>
+            <Button onClick={() => router.push('/tickets/my')}>
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Vai ai Miei Ticket
+            </Button>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
+  
+  if (!user) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center min-h-[50vh]">
+          <div className="text-center">
+            <Clock className="h-16 w-16 text-gray-400 mx-auto mb-4 animate-spin" />
+            <p className="text-gray-600">Caricamento utente...</p>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  // 🔴 Se ticket è null, significa che non esiste!
+  if (ticket === null) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center min-h-[50vh]">
+          <div className="text-center">
+            <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">Ticket Non Trovato</h1>
+            <p className="text-gray-600 mb-4">
+              Il ticket #{ticketNumber} non esiste o non hai i permessi per vederlo.
+            </p>
+            <div className="flex gap-3 justify-center">
+              <Button onClick={() => router.push('/tickets/my')}>
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                I Miei Ticket
+              </Button>
+              <Button variant="outline" onClick={() => router.push('/tickets/new')}>
+                <Plus className="h-4 w-4 mr-2" />
+                Nuovo Ticket
+              </Button>
+            </div>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
+  
+  if (ticket === undefined && !isTimeout) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center min-h-[50vh]">
+          <div className="text-center">
+            <Clock className="h-16 w-16 text-blue-500 mx-auto mb-4 animate-spin" />
+            <p className="text-gray-600">Caricamento ticket #{ticketNumber}...</p>
+            <p className="text-xs text-gray-400 mt-2">Se il caricamento dura troppo, prova a ricaricare la pagina</p>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
+  
+  if (ticket === undefined && isTimeout) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center min-h-[50vh]">
+          <div className="text-center">
+            <AlertTriangle className="h-16 w-16 text-yellow-500 mx-auto mb-4" />
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">Timeout Caricamento</h1>
+            <p className="text-gray-600 mb-4">
+              Il ticket #{ticketNumber} sta impiegando troppo tempo a caricare.
+            </p>
+            <div className="flex gap-3 justify-center">
+              <Button onClick={() => window.location.reload()}>
+                Ricarica Pagina
+              </Button>
+              <Button variant="outline" onClick={() => router.push('/tickets/my')}>
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                Torna ai Ticket
+              </Button>
+            </div>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  if (!ticket) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center min-h-[50vh]">
+          <div className="text-center">
+            <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">Ticket Non Trovato</h1>
+            <p className="text-gray-600 mb-4">Il ticket #{ticketNumber} non esiste o non hai i permessi per vederlo.</p>
+            <Button onClick={() => router.back()}>
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Torna Indietro
+            </Button>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
 
   // Confronto case-insensitive per i ruoli (italiano e inglese)
   const roleLowerForPermissions = user?.roleName?.toLowerCase();

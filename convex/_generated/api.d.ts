@@ -13,6 +13,7 @@ import type {
   FilterApi,
   FunctionReference,
 } from "convex/server";
+import type * as admin from "../admin.js";
 import type * as agent from "../agent.js";
 import type * as auditLogs from "../auditLogs.js";
 import type * as auth from "../auth.js";
@@ -35,6 +36,7 @@ import type * as lib_slaCalculator from "../lib/slaCalculator.js";
 import type * as lib_utils from "../lib/utils.js";
 import type * as macros from "../macros.js";
 import type * as makeAdmin from "../makeAdmin.js";
+import type * as migrations_assignHQToExistingUsers from "../migrations/assignHQToExistingUsers.js";
 import type * as migrations_cleanDuplicateClinics from "../migrations/cleanDuplicateClinics.js";
 import type * as migrations_initializeTicketStatuses from "../migrations/initializeTicketStatuses.js";
 import type * as migrations_migratePriorityToNumber from "../migrations/migratePriorityToNumber.js";
@@ -78,6 +80,7 @@ import type * as users from "../users.js";
  * ```
  */
 declare const fullApi: ApiFromModules<{
+  admin: typeof admin;
   agent: typeof agent;
   auditLogs: typeof auditLogs;
   auth: typeof auth;
@@ -100,6 +103,7 @@ declare const fullApi: ApiFromModules<{
   "lib/utils": typeof lib_utils;
   macros: typeof macros;
   makeAdmin: typeof makeAdmin;
+  "migrations/assignHQToExistingUsers": typeof migrations_assignHQToExistingUsers;
   "migrations/cleanDuplicateClinics": typeof migrations_cleanDuplicateClinics;
   "migrations/initializeTicketStatuses": typeof migrations_initializeTicketStatuses;
   "migrations/migratePriorityToNumber": typeof migrations_migratePriorityToNumber;

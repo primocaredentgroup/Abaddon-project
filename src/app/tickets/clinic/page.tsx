@@ -1,10 +1,14 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { useQuery } from 'convex/react';
+import { useQuery, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
+import type { Id } from '@/convex/_generated/dataModel';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PriorityLevel } from '@/components/tickets/PriorityLevel';
+import { StatusBadge } from '@/components/tickets/StatusBadge';
+import { StatusSelect } from '@/components/tickets/StatusSelect';
+import { useTicketStatuses } from '@/hooks/useTicketStatuses';
 import { useRole } from '@/providers/RoleProvider';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -18,10 +22,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Ticket as TicketIcon,
-  Clock,
-  AlertCircle,
-  CheckCircle,
-  AlertTriangle,
   ArrowUpDown,
   Pencil,
   Layers
@@ -47,16 +47,6 @@ type Ticket = {
 
 const ITEMS_PER_PAGE = 10;
 
-const statusOptions = [
-  { value: 'all', label: 'Tutti' },
-  { value: 'new', label: 'Nuovo' },
-  { value: 'open', label: 'Aperto' },
-  { value: 'in_progress', label: 'In lavorazione' },
-  { value: 'pending', label: 'In attesa' },
-  { value: 'resolved', label: 'Risolto' },
-  { value: 'closed', label: 'Chiuso' }
-];
-
 const priorityOptions = [
   { value: 'all', label: 'Tutte' },
   { value: 'low', label: 'Bassa' },
@@ -67,6 +57,21 @@ const priorityOptions = [
 
 export default function ClinicTicketsPage() {
   const { user } = useRole();
+  const { statuses } = useTicketStatuses(); // 🆕 Hook per stati dinamici
+  
+  // 🆕 Genera statusOptions dinamicamente dagli stati del database
+  const statusOptions = useMemo(() => {
+    const options = [{ value: 'all', label: 'Tutti' }];
+    if (statuses) {
+      statuses.forEach(status => {
+        options.push({
+          value: status._id,
+          label: status.name
+        });
+      });
+    }
+    return options;
+  }, [statuses]);
   
   // Estrai clinicId
   const clinicId = (user as any)?.clinicId || (user as any)?.clinic?._id
@@ -105,11 +110,11 @@ export default function ClinicTicketsPage() {
     
     return sortedTickets.map((ticket: any) => ({
       id: `#${ticket.ticketNumber || (tempTicketNumber++)}`,
+      ticketNumber: ticket.ticketNumber,
       title: ticket.title,
       description: ticket.description,
-      status: ticket.status === 'open' ? 'open' : 
-              ticket.status === 'in_progress' ? 'in_progress' :
-              ticket.status === 'closed' ? 'closed' : 'new',
+      status: ticket.status,
+      ticketStatusId: ticket.ticketStatusId, // 🆕 ID dello stato da ticketStatuses
       priority: ticket.priority || 1, // Priorità reale dal database (default: 1)
       assignee: ticket.assignee?.name || 'Non assegnato',
       createdAt: new Date(ticket._creationTime).toLocaleDateString(),
@@ -155,7 +160,10 @@ export default function ClinicTicketsPage() {
         ticket.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
         ticket.id.toLowerCase().includes(searchTerm.toLowerCase());
 
-      const matchesStatus = statusFilter === 'all' || ticket.status === statusFilter;
+      // 🆕 Filtra per ticketStatusId (o fallback su status)
+      const matchesStatus = statusFilter === 'all' || 
+                           ticket.ticketStatusId === statusFilter ||
+                           ticket.status === statusFilter;
       const matchesPriority = priorityFilter === 'all' || ticket.priority === priorityFilter;
       
       // Solo ticket pubblici in questa vista (ticket della clinica)
@@ -194,25 +202,19 @@ export default function ClinicTicketsPage() {
   const visibleCount = Math.min(currentPage * ITEMS_PER_PAGE, filteredTickets.length);
   const paginatedTickets = sortedTickets.slice(0, visibleCount);
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'new':
-        return <AlertCircle className="h-4 w-4 text-blue-600" />;
-      case 'open':
-        return <Clock className="h-4 w-4 text-orange-600" />;
-      case 'in_progress':
-        return <AlertTriangle className="h-4 w-4 text-yellow-600" />;
-      case 'resolved':
-      case 'closed':
-        return <CheckCircle className="h-4 w-4 text-green-600" />;
-      default:
-        return <Clock className="h-4 w-4 text-gray-600" />;
-    }
-  };
+  // 🆕 Mutation per aggiornare lo stato del ticket
+  const updateTicketMutation = useMutation(api.tickets.update);
 
-  const updateTicketStatus = (id: string, newStatus: string) => {
-    // TODO: Implementare con mutation Convex
-    setEditingStatusId(null);
+  const updateTicketStatus = async (ticketId: Id<'tickets'>, newStatusId: Id<'ticketStatuses'>) => {
+    try {
+      await updateTicketMutation({
+        id: ticketId,
+        ticketStatusId: newStatusId,
+      });
+      setEditingStatusId(null);
+    } catch (error) {
+      console.error('❌ Errore aggiornamento stato:', error);
+    }
   };
 
   return (
@@ -435,32 +437,34 @@ export default function ClinicTicketsPage() {
                             {ticket.description}
                           </div>
                         </td>
-                        <td className="px-3 py-3 whitespace-nowrap text-center">
+                        <td 
+                          className="px-3 py-3 whitespace-nowrap text-center"
+                          onClick={(e) => e.stopPropagation()} // 🆕 Previene apertura ticket
+                        >
                           {editingStatusId === ticket.id ? (
-                            <Select
-                              value={ticket.status}
-                              onChange={(e) => updateTicketStatus(ticket.id, e.target.value)}
-                              className="h-8 text-xs w-40 mx-auto"
-                              options={statusOptions}
-                            />
+                            <div className="flex justify-center" onClick={(e) => e.stopPropagation()}>
+                              <StatusSelect
+                                value={ticket.ticketStatusId}
+                                onChange={(statusId) => updateTicketStatus(ticket._id as Id<'tickets'>, statusId)}
+                                className="h-8 text-xs w-40"
+                              />
+                            </div>
                           ) : (
-                            <button onClick={() => setEditingStatusId(ticket.id)} className="inline-flex">
-                              <Badge 
-                                variant={
-                                  ticket.status === 'open' ? 'danger' :
-                                  ticket.status === 'in_progress' ? 'warning' :
-                                  ticket.status === 'closed' ? 'success' : 'default'
-                                }
-                                className="text-xs flex items-center cursor-pointer hover:opacity-80"
-                              >
-                                {getStatusIcon(ticket.status)}
-                                <span className="ml-1 capitalize">
-                                  {ticket.status === 'in_progress' ? 'In corso' : 
-                                   ticket.status === 'open' ? 'Aperto' :
-                                   ticket.status === 'closed' ? 'Chiuso' : 'Nuovo'}
-                                </span>
-                                <Pencil className="h-3 w-3 ml-1" />
-                              </Badge>
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation(); // 🆕 Previene apertura ticket
+                                setEditingStatusId(ticket.id);
+                              }} 
+                              className="inline-flex"
+                            >
+                              <div className="flex items-center cursor-pointer hover:opacity-80">
+                                <StatusBadge 
+                                  ticketStatusId={ticket.ticketStatusId}
+                                  status={ticket.status}
+                                  size="sm"
+                                />
+                                <Pencil className="h-3 w-3 ml-1 text-gray-400" />
+                              </div>
                             </button>
                           )}
                         </td>

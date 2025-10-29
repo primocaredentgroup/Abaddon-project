@@ -67,21 +67,26 @@ export default function NudgedTicketsPage() {
     );
   }
   
-  // Conta i ticket sollecitati e filtra per priorità
+  // 🆕 Separa ticket sollecitati e non assegnati
   let nudgedTickets = allTickets.filter((t: any) => (t.nudgeCount || 0) > 0);
+  let unassignedTickets = allTickets.filter((t: any) => !t.assigneeId && (t.nudgeCount || 0) === 0);
   
-  // Applica filtro priorità
+  // Applica filtro priorità a entrambi
   if (priorityFilter && priorityFilter !== 'all') {
     const targetPriority = parseInt(priorityFilter);
     nudgedTickets = nudgedTickets.filter((t: any) => t.priority === targetPriority);
+    unassignedTickets = unassignedTickets.filter((t: any) => t.priority === targetPriority);
   }
   
   // Ordina SEMPRE per priorità (5 urgente prima, poi 4, 3, 2, 1), poi per data creazione
-  nudgedTickets = nudgedTickets.sort((a: any, b: any) => {
+  const sortByPriority = (a: any, b: any) => {
     const priorityDiff = (b.priority || 1) - (a.priority || 1);
     if (priorityDiff !== 0) return priorityDiff;
-    return b._creationTime - a._creationTime; // Se priorità uguale, ordina per più recente
-  });
+    return b._creationTime - a._creationTime;
+  };
+  
+  nudgedTickets = nudgedTickets.sort(sortByPriority);
+  unassignedTickets = unassignedTickets.sort(sortByPriority);
 
   const getUrgencyLevel = (nudgeCount: number, lastNudgeAt: number) => {
     const hoursAgo = (Date.now() - lastNudgeAt) / (1000 * 60 * 60);
@@ -212,7 +217,18 @@ export default function NudgedTicketsPage() {
           </CardContent>
         </Card>
 
-        {/* Lista ticket da risolvere */}
+        {/* 🆕 Sezione: Ticket Sollecitati */}
+        {nudgedTickets.length > 0 && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-bold text-gray-900 flex items-center">
+                <Bell className="h-6 w-6 mr-2 text-orange-600" />
+                Ticket Sollecitati
+                <Badge className="ml-3 bg-orange-100 text-orange-800">{nudgedTickets.length}</Badge>
+              </h2>
+            </div>
+
+        {/* Lista ticket sollecitati */}
         {nudgedTickets.length === 0 && priorityFilter !== 'all' ? (
           <Card>
             <CardContent className="text-center py-12">
@@ -370,6 +386,107 @@ export default function NudgedTicketsPage() {
               );
             })}
           </div>
+          </div>
+        )}
+
+        {/* 🆕 Sezione: Ticket Non Assegnati */}
+        {unassignedTickets.length > 0 && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-bold text-gray-900 flex items-center">
+                <User className="h-6 w-6 mr-2 text-blue-600" />
+                Ticket Non Assegnati
+                <Badge className="ml-3 bg-blue-100 text-blue-800">{unassignedTickets.length}</Badge>
+              </h2>
+              <p className="text-sm text-gray-600">Ticket in attesa di assegnazione</p>
+            </div>
+
+            {unassignedTickets.map((ticket: any) => (
+              <Card key={ticket._id} className="border-l-4 border-l-blue-500 hover:shadow-lg transition-shadow">
+                <CardContent className="p-6">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      {/* Header */}
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex-1">
+                          <Link href={`/tickets/${ticket.ticketNumber}`}>
+                            <h3 className="text-lg font-semibold text-blue-600 hover:text-blue-700 cursor-pointer">
+                              #{ticket.ticketNumber} - {ticket.title}
+                            </h3>
+                          </Link>
+                          <p className="text-sm text-gray-600 mt-1">
+                            {ticket.description?.substring(0, 150)}{ticket.description?.length > 150 ? '...' : ''}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Meta info */}
+                      <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600">
+                        <div className="flex items-center">
+                          <PriorityLevel value={ticket.priority || 1} readonly showLabel />
+                        </div>
+                        <div className="flex items-center">
+                          <Building className="h-4 w-4 mr-1" />
+                          {ticket.clinic?.name || 'N/A'}
+                        </div>
+                        <div className="flex items-center">
+                          <User className="h-4 w-4 mr-1" />
+                          Creato da: {ticket.creator?.name || 'N/A'}
+                        </div>
+                        <div className="flex items-center">
+                          <Calendar className="h-4 w-4 mr-1" />
+                          {new Date(ticket._creationTime).toLocaleDateString('it-IT')}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex gap-2 ml-4">
+                      <Link href={`/tickets/${ticket.ticketNumber}`}>
+                        <Button size="sm" variant="outline">
+                          <Eye className="h-4 w-4 mr-2" />
+                          Visualizza
+                        </Button>
+                      </Link>
+                      <Button
+                        size="sm"
+                        variant="default"
+                        onClick={() => handleAssignToMe(ticket._id, ticket.ticketNumber)}
+                        disabled={assigningTicket === ticket._id}
+                      >
+                        {assigningTicket === ticket._id ? (
+                          <>
+                            <Clock className="h-4 w-4 mr-2 animate-spin" />
+                            Assegnazione...
+                          </>
+                        ) : (
+                          <>
+                            <User className="h-4 w-4 mr-2" />
+                            Assegna a me
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+
+        {/* Empty state */}
+        {nudgedTickets.length === 0 && unassignedTickets.length === 0 && (
+          <Card>
+            <CardContent className="text-center py-12">
+              <Clock className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                Tutti i ticket sono gestiti!
+              </h3>
+              <p className="text-gray-600">
+                Non ci sono ticket sollecitati o da assegnare al momento.
+              </p>
+            </CardContent>
+          </Card>
         )}
       </div>
     </AppLayout>

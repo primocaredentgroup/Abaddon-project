@@ -17,7 +17,7 @@ import { StatusBadge } from '@/components/tickets/StatusBadge'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { useToast } from '@/components/ui/use-toast'
-import { Search, Clock, User, Filter, Calendar, UserPlus, CheckCircle, AlertTriangle, Activity } from 'lucide-react'
+import { Search, Clock, User, Filter, Calendar, CheckCircle, AlertTriangle, Activity } from 'lucide-react'
 import Link from 'next/link'
 import { Id } from '@/convex/_generated/dataModel'
 
@@ -73,10 +73,6 @@ export default function AssignedTicketsPage() {
   const [priorityFilter, setPriorityFilter] = useState<string>('all')
   const [slaFilter, setSlaFilter] = useState<string>('all') // 🆕 Filtro SLA
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'updated' | 'nudged'>('newest')
-  const [assigningTicket, setAssigningTicket] = useState<string | null>(null)
-  
-  // Mutation per assegnare ticket a se stessi
-  const assignToMe = useMutation(api.tickets.assignToMe)
 
   // Fetch "Ticket da gestire" - include ticket assegnati + ticket nelle competenze
   const convexTickets = useQuery(
@@ -208,16 +204,14 @@ export default function AssignedTicketsPage() {
       }
     }
 
-    // Sort tickets - SEMPRE prima per priorità (DESC), poi per il criterio scelto
+    // Sort tickets - ordina per il criterio scelto (SENZA priorità)
     filtered.sort((a, b) => {
-      // Prima ordina per priorità (5 urgente prima, poi 4, 3, 2, 1)
-      const priorityDiff = (b.priority || 1) - (a.priority || 1);
-      if (priorityDiff !== 0) return priorityDiff;
-      
-      // Se priorità uguale, ordina per il criterio scelto
       switch (sortBy) {
         case 'oldest':
-          return a._creationTime - b._creationTime
+          // Ordina per ticketNumber crescente (più vecchi prima)
+          const aNumOld = a.ticketNumber || 0
+          const bNumOld = b.ticketNumber || 0
+          return aNumOld - bNumOld
         case 'updated':
           return b.lastActivityAt - a.lastActivityAt
         case 'nudged':
@@ -227,10 +221,16 @@ export default function AssignedTicketsPage() {
           }
           if (a.lastNudgeAt && !b.lastNudgeAt) return -1
           if (!a.lastNudgeAt && b.lastNudgeAt) return 1
-          return b._creationTime - a._creationTime
+          // Fallback: ordina per ticketNumber decrescente
+          const aNumNudge = a.ticketNumber || 0
+          const bNumNudge = b.ticketNumber || 0
+          return bNumNudge - aNumNudge
         case 'newest':
         default:
-          return b._creationTime - a._creationTime
+          // Ordina per ticketNumber decrescente (più recenti prima)
+          const aNum = a.ticketNumber || 0
+          const bNum = b.ticketNumber || 0
+          return bNum - aNum
       }
     })
 
@@ -251,47 +251,7 @@ export default function AssignedTicketsPage() {
   // Rimossa getPriorityColor - ora usiamo il componente PriorityLevel
 
   // Handler per assegnare ticket a se stessi
-  const handleAssignToMe = async (ticketId: string) => {
-    if (!user?.email) {
-      toast({
-        title: 'Errore',
-        description: 'Devi essere autenticato',
-        variant: 'destructive'
-      })
-      return
-    }
-
-    setAssigningTicket(ticketId)
-    
-    try {
-      const result = await assignToMe({ 
-        ticketId: ticketId as Id<"tickets">, 
-        userEmail: user.email 
-      })
-
-      if (result.alreadyAssigned) {
-        toast({
-          title: 'Già assegnato',
-          description: 'Questo ticket è già assegnato a te',
-          variant: 'default'
-        })
-      } else {
-        toast({
-          title: 'Ticket assegnato',
-          description: 'Il ticket è stato assegnato con successo',
-          variant: 'default'
-        })
-      }
-    } catch (error: any) {
-      toast({
-        title: 'Errore',
-        description: error.message || 'Impossibile assegnare il ticket',
-        variant: 'destructive'
-      })
-    } finally {
-      setAssigningTicket(null)
-    }
-  }
+  // Rimossa funzione handleAssignToMe - non più necessaria
 
   // Format date
   const formatDate = (timestamp: number) => {
@@ -633,23 +593,7 @@ export default function AssignedTicketsPage() {
                         )}
                       </div>
                       
-                      <div className="flex space-x-2">
-                        {/* Mostra "Assegna a me" solo se il ticket NON è assegnato all'utente corrente */}
-                        {ticket.assignee?._id !== user?.id && (
-                          <Button 
-                            size="sm" 
-                            variant="outline"
-                            onClick={(e) => {
-                              e.stopPropagation() // 🆕 Previene apertura ticket
-                              handleAssignToMe(ticket._id)
-                            }}
-                            disabled={assigningTicket === ticket._id}
-                          >
-                            <UserPlus className="h-4 w-4 mr-2" />
-                            {assigningTicket === ticket._id ? 'Assegnazione...' : 'Assegna a me'}
-                          </Button>
-                        )}
-                      </div>
+                      {/* Rimosso bottone "Assegna a me" - i ticket qui sono già assegnati */}
                     </div>
                   </div>
                 </div>

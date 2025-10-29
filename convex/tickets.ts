@@ -610,6 +610,7 @@ export const createWithAuth = mutation({
     description: v.string(),
     categoryId: v.id("categories"),
     clinicId: v.optional(v.id("clinics")), // 🆕 Clinica da usare (se omessa usa user.clinicId)
+    assigneeId: v.optional(v.id("users")), // 🆕 Assegnatario del ticket (opzionale)
     attributes: v.optional(v.any()),
     visibility: v.optional(v.union(v.literal("public"), v.literal("private"))),
     priority: v.optional(v.number()), // Priorità 1-5 (solo agenti/admin, default: 1)
@@ -717,6 +718,7 @@ export const createWithAuth = mutation({
       categoryId: args.categoryId,
       clinicId: targetClinicId!, // 🆕 Usa la clinica selezionata
       creatorId: user._id,
+      assigneeId: args.assigneeId, // 🆕 Assegnatario (se specificato)
       visibility: visibility, // ✅ Usa il valore dal parametro (default: 'private')
       lastActivityAt: now,
       attributeCount: 0,
@@ -820,75 +822,57 @@ export const createWithAuth = mutation({
       await ctx.db.patch(ticketId, { slaDeadline });
     }
 
-    // 🎯 ESEGUI I TRIGGER ATTIVI DELLA CLINICA
+    // 🎯 ESEGUI I TRIGGER ATTIVI (GLOBALI)
     const triggers = await ctx.db
       .query("triggers")
-      .withIndex("by_clinic", (q) => q.eq("clinicId", targetClinicId!))
       .filter((q) => q.eq(q.field("isActive"), true))
       .collect()
 
-
     for (const trigger of triggers) {
-      
       let conditionMet = false
 
       // Valuta le condizioni
       if (trigger.conditions.type === 'category_match') {
-        // Confronta con lo slug della categoria
         const categorySlug = category.slug
         conditionMet = categorySlug === trigger.conditions.value
       } else if (trigger.conditions.type === 'status_change') {
-        // Confronta con lo status del ticket (sempre "open" alla creazione)
         conditionMet = 'open' === trigger.conditions.value
       } else if (trigger.conditions.type === 'priority_eq') {
-        // Confronta con la priorità del ticket (priorità esatta)
         conditionMet = priority === parseInt(trigger.conditions.value)
       } else if (trigger.conditions.type === 'priority_gte') {
-        // Confronta con la priorità del ticket (priorità >= valore)
         conditionMet = priority >= parseInt(trigger.conditions.value)
       } else if (trigger.conditions.type === 'priority_lte') {
-        // Confronta con la priorità del ticket (priorità <= valore)
         conditionMet = priority <= parseInt(trigger.conditions.value)
       }
 
       // Se la condizione è soddisfatta, esegui le azioni
       if (conditionMet) {
-
         if (trigger.actions.type === 'assign_user') {
-          // Trova l'utente da assegnare per email
           const assigneeUser = await ctx.db
             .query("users")
             .filter((q) => q.eq(q.field("email"), trigger.actions.value))
             .first()
 
           if (assigneeUser) {
-            // Assegna il ticket all'utente
             await ctx.db.patch(ticketId, { 
               assigneeId: assigneeUser._id,
               lastActivityAt: Date.now()
             })
-          } else {
-            console.warn(`  ⚠️ Utente ${trigger.actions.value} non trovato`)
           }
         } else if (trigger.actions.type === 'change_status') {
-          // Cambia lo status del ticket
           await ctx.db.patch(ticketId, { 
             status: trigger.actions.value,
             lastActivityAt: Date.now()
           })
         } else if (trigger.actions.type === 'set_priority') {
-          // Imposta la priorità del ticket (1-5)
           const newPriority = parseInt(trigger.actions.value);
           if (newPriority >= 1 && newPriority <= 5) {
             await ctx.db.patch(ticketId, { 
               priority: newPriority,
               lastActivityAt: Date.now()
             })
-          } else {
-            console.warn(`  ⚠️ Priorità non valida: ${trigger.actions.value} (deve essere 1-5)`)
           }
         }
-      } else {
       }
     }
 
@@ -925,8 +909,12 @@ export const getMyCreatedWithAuth = query({
 
     const tickets = await query.collect()
     
-    // Sort by creation time (most recent first)  
-    tickets.sort((a, b) => b._creationTime - a._creationTime)
+    // Sort by ticketNumber descending (most recent first)
+    tickets.sort((a, b) => {
+      const aNum = a.ticketNumber || 0
+      const bNum = b.ticketNumber || 0
+      return bNum - aNum
+    })
 
     const limit = args.limit || 20
     const limitedTickets = tickets.slice(0, limit)
@@ -994,8 +982,12 @@ export const getMyClinicTicketsWithAuth = query({
     }
 
 
-    // Sort by creation time (most recent first)
-    relevantTickets.sort((a, b) => b._creationTime - a._creationTime)
+    // Sort by ticketNumber descending (most recent first)
+    relevantTickets.sort((a, b) => {
+      const aNum = a.ticketNumber || 0
+      const bNum = b.ticketNumber || 0
+      return bNum - aNum
+    })
 
     const limit = args.limit || 20
     const limitedTickets = relevantTickets.slice(0, limit)
@@ -1050,8 +1042,12 @@ export const getMyAssignedTicketsWithAuth = query({
 
     const tickets = await query.collect()
 
-    // Sort by creation time (most recent first)
-    tickets.sort((a, b) => b._creationTime - a._creationTime)
+    // Sort by ticketNumber descending (most recent first)
+    tickets.sort((a, b) => {
+      const aNum = a.ticketNumber || 0
+      const bNum = b.ticketNumber || 0
+      return bNum - aNum
+    })
 
     const limit = args.limit || 20
     const limitedTickets = tickets.slice(0, limit)
@@ -1127,8 +1123,12 @@ export const list = query({
       ticket.assigneeId === user._id
     )
 
-    // Sort by last activity (most recent first)
-    visibleTickets.sort((a, b) => b.lastActivityAt - a.lastActivityAt)
+    // Sort by ticketNumber (most recent first)
+    visibleTickets.sort((a, b) => {
+      const aNum = a.ticketNumber || 0
+      const bNum = b.ticketNumber || 0
+      return bNum - aNum
+    })
 
     // Enrich with related data
     const enrichedTickets = await Promise.all(
@@ -1176,8 +1176,8 @@ export const assign = mutation({
     }
 
     const ticket = await ctx.db.get(ticketId)
-    if (!ticket || ticket.clinicId !== user.clinicId) {
-      throw new ConvexError("Ticket not found or access denied")
+    if (!ticket) {
+      throw new ConvexError("Ticket not found")
     }
 
     // TODO: Add role-based permission check (only agents/admins can assign)
@@ -1185,7 +1185,7 @@ export const assign = mutation({
     // Validate assignee if provided
     if (assigneeId) {
       const assignee = await ctx.db.get(assigneeId)
-      if (!assignee || assignee.clinicId !== user.clinicId) {
+      if (!assignee) {
         throw new ConvexError("Invalid assignee")
       }
       // TODO: Add role validation for assignee (must be agent or admin)
@@ -1223,7 +1223,6 @@ export const assignToMe = mutation({
     userEmail: v.string()
   },
   handler: async (ctx, { ticketId, userEmail }) => {
-
     // Trova l'utente corrente
     const user = await ctx.db
       .query("users")
@@ -1240,14 +1239,10 @@ export const assignToMe = mutation({
       throw new ConvexError("Solo agenti e admin possono assegnarsi ticket")
     }
 
-    // Verifica che il ticket esista e appartenga alla stessa clinica
+    // Verifica che il ticket esista
     const ticket = await ctx.db.get(ticketId)
     if (!ticket) {
       throw new ConvexError("Ticket non trovato")
-    }
-
-    if (ticket.clinicId !== user.clinicId) {
-      throw new ConvexError("Non puoi assegnarti ticket di altre cliniche")
     }
 
     // Verifica che il ticket non sia già assegnato all'utente
@@ -1294,8 +1289,8 @@ export const changeStatus = mutation({
     }
 
     const ticket = await ctx.db.get(ticketId)
-    if (!ticket || ticket.clinicId !== user.clinicId) {
-      throw new ConvexError("Ticket not found or access denied")
+    if (!ticket) {
+      throw new ConvexError("Ticket not found")
     }
 
     // Check permissions
@@ -2055,48 +2050,119 @@ export const searchTicketsOptimized = query({
   },
 })
 
-// Query per trovare un ticket tramite numero incrementale
+// Query per trovare un ticket tramite numero incrementale GLOBALE
 export const getByTicketNumber = query({
   args: {
     ticketNumber: v.number(),
-    clinicId: v.optional(v.id("clinics")), // Se non specificato, usa clinica dell'utente
     userEmail: v.string(),
   },
-  handler: async (ctx, { ticketNumber, clinicId, userEmail }) => {
+  returns: v.union(
+    v.null(),
+    v.object({
+      _id: v.id("tickets"),
+      _creationTime: v.number(),
+      title: v.string(),
+      description: v.string(),
+      status: v.string(),
+      ticketStatusId: v.optional(v.id("ticketStatuses")),
+      ticketNumber: v.optional(v.number()),
+      categoryId: v.id("categories"),
+      clinicId: v.id("clinics"),
+      creatorId: v.id("users"),
+      assigneeId: v.optional(v.id("users")),
+      priority: v.number(),
+      visibility: v.union(v.literal("public"), v.literal("private")),
+      lastActivityAt: v.number(),
+      slaDeadline: v.optional(v.number()),
+      attributeCount: v.number(),
+      nudgeCount: v.optional(v.number()),
+      lastNudgeAt: v.optional(v.number()),
+      lastNudgeBy: v.optional(v.id("users")),
+      departmentId: v.optional(v.id("departments")),
+      tags: v.optional(v.array(v.string())),
+      customFields: v.optional(v.any()),
+      category: v.union(v.null(), v.any()),
+      assignee: v.union(v.null(), v.any()),
+      creator: v.union(v.null(), v.any()),
+      clinic: v.union(v.null(), v.any()),
+    })
+  ),
+  handler: async (ctx, { ticketNumber, userEmail }) => {
+    console.log(`🔍 getByTicketNumber - Cercando ticket #${ticketNumber} per utente ${userEmail}`)
+    
     const user = await ctx.db
       .query("users")
       .filter((q) => q.eq(q.field("email"), userEmail))
       .first()
     
     if (!user) {
+      console.error(`❌ Utente con email ${userEmail} non trovato`)
       throw new ConvexError("Utente non trovato nel sistema")
     }
 
-    const targetClinicId = clinicId || user.clinicId
-    
+    console.log(`✅ Utente trovato: ${user.name} (${user._id})`)
 
-    const ticket = await ctx.db
+    // 🆕 Cerca per ticketNumber GLOBALE (non per clinica)
+    console.log(`🔍 Cercando con indice by_ticket_number per ticketNumber=${ticketNumber}`)
+    let ticket = await ctx.db
       .query("tickets")
-      .withIndex("by_clinic_ticket_number", (q) => 
-        q.eq("clinicId", targetClinicId!).eq("ticketNumber", ticketNumber)
+      .withIndex("by_ticket_number", (q) => 
+        q.eq("ticketNumber", ticketNumber)
       )
       .first()
+
+    // 🆕 Fallback: cerca senza indice se non trovato
+    if (!ticket) {
+      console.log(`⚠️  Ticket non trovato con indice, provo senza indice...`)
+      const allTickets = await ctx.db.query("tickets").collect()
+      ticket = allTickets.find(t => t.ticketNumber === ticketNumber) || null
+      
+      if (ticket) {
+        console.log(`✅ TROVATO senza indice! Il problema è l'indice by_ticket_number`)
+        console.log(`📊 Ticket trovato: #${ticket.ticketNumber} - ${ticket.title}`)
+      } else {
+        console.log(`❌ Ticket #${ticketNumber} NON ESISTE nel database`)
+        console.log(`📊 Totale ticket nel DB: ${allTickets.length}`)
+        const ticketNumbers = allTickets.map(t => t.ticketNumber).filter((n): n is number => typeof n === 'number').sort((a, b) => a - b)
+        console.log(`📊 Ticket numbers esistenti: ${ticketNumbers.slice(0, 20).join(', ')}`)
+        return null
+      }
+    }
 
     if (!ticket) {
       return null
     }
 
-    // Arricchisci con categoria e assegnatario
-    const [category, assignee] = await Promise.all([
-      ctx.db.get(ticket.categoryId),
+    console.log(`✅ Ticket #${ticketNumber} trovato!`, {
+      _id: ticket._id,
+      title: ticket.title,
+      status: ticket.status,
+      categoryId: ticket.categoryId,
+      creatorId: ticket.creatorId,
+      clinicId: ticket.clinicId,
+    })
+
+    // Arricchisci con categoria, assegnatario, creator e clinica
+    const [category, assignee, creator, clinic] = await Promise.all([
+      ticket.categoryId ? ctx.db.get(ticket.categoryId) : null,
       ticket.assigneeId ? ctx.db.get(ticket.assigneeId) : null,
+      ticket.creatorId ? ctx.db.get(ticket.creatorId) : null,
+      ticket.clinicId ? ctx.db.get(ticket.clinicId) : null,
     ])
 
+    console.log(`✅ Dati arricchiti:`, {
+      category: category?.name,
+      assignee: assignee?.name,
+      creator: creator?.name,
+      clinic: clinic?.name,
+    })
 
     return {
       ...ticket,
       category,
       assignee,
+      creator,
+      clinic,
     }
   },
 })

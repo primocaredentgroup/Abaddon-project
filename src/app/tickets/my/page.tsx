@@ -107,8 +107,12 @@ export default function MyTicketsPage() {
   
   // Trasforma i dati di Convex nel formato aspettato dal componente
   const convexTickets = useMemo(() => {
-    // Prima ordino i ticket per data di creazione per mantenere ordine cronologico
-    const sortedTickets = [...ticketsData].sort((a, b) => a._creationTime - b._creationTime)
+    // Ordino i ticket per ticketNumber decrescente (più recenti prima)
+    const sortedTickets = [...ticketsData].sort((a, b) => {
+      const aNum = a.ticketNumber || 0
+      const bNum = b.ticketNumber || 0
+      return bNum - aNum
+    })
     
     // Genero numeri temporanei per ticket senza ticketNumber
     let tempTicketNumber = 1000 // Parto da 1000 per distinguere dai numeri veri
@@ -223,11 +227,7 @@ export default function MyTicketsPage() {
     const list = [...filteredTickets];
     
     list.sort((a, b) => {
-      // SEMPRE prima ordina per priorità (5 urgente prima, poi 4, 3, 2, 1)
-      const priorityDiff = (b.priority || 1) - (a.priority || 1);
-      if (priorityDiff !== 0) return priorityDiff;
-      
-      // Se priorità uguale, ordina per la colonna scelta
+      // Ordina per la colonna scelta (senza priorità)
       let aVal: any = a[sortBy as keyof Ticket];
       let bVal: any = b[sortBy as keyof Ticket];
       

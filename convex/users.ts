@@ -196,6 +196,42 @@ export const createUser = mutation({
       },
     })
     
+    // 🆕 Se l'utente ha dominio @primogroup.it, assegna anche la clinica HQ
+    if (args.email.endsWith('@primogroup.it')) {
+      console.log(`🏢 Utente ${args.email} ha dominio @primogroup.it, assegno clinica HQ`)
+      
+      // Cerca la clinica HQ
+      const hqClinic = await ctx.db
+        .query("clinics")
+        .withIndex("by_code", (q) => q.eq("code", "HQ"))
+        .unique()
+      
+      if (hqClinic) {
+        // Determina il ruolo per la clinica HQ basato sul ruolo principale dell'utente
+        const userRole = await ctx.db.get(args.roleId)
+        let clinicRole: "user" | "agent" | "admin" = "user"
+        if (userRole) {
+          if (userRole.name === "Amministratore") {
+            clinicRole = "admin"
+          } else if (userRole.name === "Agente") {
+            clinicRole = "agent"
+          }
+        }
+        
+        // Aggiungi l'utente alla clinica HQ tramite userClinics
+        await ctx.db.insert("userClinics", {
+          userId,
+          clinicId: hqClinic._id,
+          role: clinicRole,
+          isActive: true,
+          joinedAt: Date.now(),
+        })
+        console.log(`✅ Utente ${args.email} assegnato alla clinica HQ con ruolo ${clinicRole}`)
+      } else {
+        console.warn(`⚠️ Clinica HQ non trovata per utente ${args.email}`)
+      }
+    }
+    
     return userId
   }
 })
