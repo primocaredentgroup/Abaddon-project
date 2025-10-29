@@ -228,40 +228,6 @@ export default function NudgedTicketsPage() {
               </h2>
             </div>
 
-        {/* Lista ticket sollecitati */}
-        {nudgedTickets.length === 0 && priorityFilter !== 'all' ? (
-          <Card>
-            <CardContent className="text-center py-12">
-              <Clock className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
-                Nessun ticket trovato con questi filtri
-              </h3>
-              <p className="text-gray-600">
-                Prova a modificare il filtro priorità per vedere più risultati.
-              </p>
-              <Button
-                variant="outline"
-                onClick={() => setPriorityFilter('all')}
-                className="mt-4"
-              >
-                Mostra tutti i ticket
-              </Button>
-            </CardContent>
-          </Card>
-        ) : allTickets.length === 0 ? (
-          <Card>
-            <CardContent className="text-center py-12">
-              <Clock className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
-                Nessun ticket da risolvere
-              </h3>
-              <p className="text-gray-600">
-                Ottimo lavoro! Non ci sono ticket aperti al momento.
-              </p>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-4">
             {nudgedTickets.map((ticket: any) => {
               const isNudged = (ticket.nudgeCount || 0) > 0;
               const urgency = isNudged ? getUrgencyLevel(ticket.nudgeCount || 0, ticket.lastNudgeAt || 0) : null;
@@ -385,7 +351,6 @@ export default function NudgedTicketsPage() {
                 </Card>
               );
             })}
-          </div>
           </div>
         )}
 
